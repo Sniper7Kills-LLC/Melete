@@ -14,7 +14,7 @@ Personal OneNote/rnote alternative for Linux. Framework 12 laptop, touchscreen +
 
 - **Language:** Rust
 - **UI Framework:** GTK4 (via gtk4-rs)
-- **Canvas Rendering:** Skia (via rust-skia) — GPU-accelerated through GLArea
+- **Canvas Rendering:** Cairo (via gtk4::cairo, on GTK4 DrawingArea). GPU acceleration deferred — GSK paths (GTK 4.14+) is the migration target if/when CPU rendering becomes a bottleneck. Skia via GLArea was attempted in Phase 1 but `direct_contexts::make_gl` fails on GTK4 + Wayland (Mesa) without a clear root cause.
 - **Storage:** SQLite per notebook (one `.journal` file)
 
 ## Architecture Principles

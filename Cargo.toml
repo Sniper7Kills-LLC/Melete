@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "crates/journal-core",
+    "crates/journal-canvas",
+    "crates/journal-storage",
+    "crates/journal-templates",
+    "crates/journal-app",
+]
+resolver = "2"
+
+[workspace.dependencies]
+gtk4 = { version = "0.9", features = ["v4_12"] }
+rusqlite = { version = "0.32", features = ["bundled", "vtab"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+bincode = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"

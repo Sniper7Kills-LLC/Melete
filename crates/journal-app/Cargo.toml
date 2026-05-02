@@ -1,0 +1,18 @@
+[package]
+name = "journal-app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "journal-app"
+path = "src/main.rs"
+
+[dependencies]
+journal-core = { path = "../journal-core" }
+journal-canvas = { path = "../journal-canvas" }
+gtk4 = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }

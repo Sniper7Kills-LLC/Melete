@@ -124,21 +124,22 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ---
 
-## Phase 1: Foundation — Canvas + Drawing
+## Phase 1: Foundation — Canvas + Drawing ✅
 
 **Goal:** Single infinite canvas with stylus drawing, pan/zoom.
 
-- [ ] Cargo workspace setup (5 crates)
-- [ ] `journal-core`: Stroke, StrokePoint, Viewport, PenSettings types
-- [ ] `journal-canvas`: GTK4 GLArea + Skia DirectContext init
-- [ ] `journal-canvas`: Stroke rendering (pressure-variable width)
-- [ ] `journal-canvas`: Infinite pan/zoom viewport
-- [ ] `journal-app`: Window with GLArea canvas
-- [ ] `journal-app`: Stylus input (GestureStylus — pressure, tilt)
-- [ ] `journal-app`: Touch pan + pinch zoom
-- [ ] `journal-app`: Basic pen toolbar (color, width)
+- [x] Cargo workspace setup (5 crates)
+- [x] `journal-core`: Stroke, StrokePoint, Viewport, PenSettings types
+- [x] `journal-canvas`: GTK4 DrawingArea + Cairo (Skia/GLArea attempted, dropped — see CLAUDE.md)
+- [x] `journal-canvas`: Stroke rendering (per-segment pressure-variable width via line_width)
+- [x] `journal-canvas`: Infinite pan/zoom viewport (`ViewportTransform`)
+- [x] `journal-app`: Window with DrawingArea canvas
+- [x] `journal-app`: Stylus input (GestureStylus — pressure, tilt)
+- [x] `journal-app`: Touch pan + pinch zoom (mode-locked GestureZoom: 12px drift → pan, 8% scale → zoom)
+- [x] `journal-app`: Basic pen toolbar (ColorDialogButton, width Scale)
+- [x] Mouse + middle-drag pan + ctrl-scroll zoom (desktop fallbacks)
 
-**Milestone:** Draw with stylus, pan/zoom, infinite canvas. No save yet.
+**Milestone:** Draw with stylus, pan/zoom, infinite canvas. No save yet. ✅
 
 ---
 
@@ -291,22 +292,26 @@ Journal/
 
 ```toml
 gtk4 = { version = "0.9", features = ["v4_12"] }
-skia-safe = { version = "0.80", features = ["gpu", "gl"] }
 rusqlite = { version = "0.32", features = ["bundled", "vtab"] }
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 bincode = "1"
 thiserror = "2"
 tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 ```
+
+(Cairo accessed via `gtk4::cairo` re-export — no separate dep.)
 
 ---
 
 ## Resolved Decisions
 
+- **Renderer:** Cairo via `gtk4::DrawingArea`, not Skia. Phase 1 GPU Skia integration via GLArea hit Mesa/Wayland incompatibility (`direct_contexts::make_gl` returned None despite valid GL 4.6 context and resolved entry points). Cairo CPU rendering is fast enough for Phase 1 stroke counts; migrate to GSK paths (GTK 4.14+) if perf becomes a bottleneck.
+- **Touch gesture mode-lock:** A two-finger gesture is locked to either pan or zoom on the first frame that crosses a threshold (12px centroid drift → pan; 8% scale change → zoom). Avoids GestureZoom's tendency to interpret minor finger-distance jitter as zoom during a pure pan.
 - **Template backgrounds:** Fixed size. Canvas extends as blank beyond. Grid templates tile infinitely.
 - **Template size:** Physical units (mm). Default: US Letter (215.9mm × 279.4mm). Viewport fits full page on screen by default.
 - **Grid zoom behavior:** Grids overlay at zoom levels — inner grids align with outer grids. Deeper zoom = finer grid lines (lighter). Coarser grid lines stay visible (darker). Hierarchical grid that maintains alignment. **Subdivision levels customizable per-page in-app.**
