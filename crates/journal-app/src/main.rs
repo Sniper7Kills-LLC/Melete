@@ -1,7 +1,9 @@
 mod canvas_widget;
 mod dialogs;
 mod input;
+mod settings_dialogs;
 mod state;
+mod template_manager;
 mod toolbar;
 mod views;
 mod window;
@@ -14,7 +16,7 @@ use anyhow::{Context, Result};
 use gtk4::prelude::*;
 use gtk4::{Application, ApplicationWindow};
 use journal_storage::Db;
-use journal_templates::TemplateRegistry;
+use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use tracing_subscriber::EnvFilter;
 
 const APP_ID: &str = "dev.s7k.journal";
@@ -66,7 +68,17 @@ fn load_templates() -> TemplateRegistry {
 fn build_ui(app: &Application) -> Result<()> {
     let db = Rc::new(RefCell::new(open_db()?));
     let templates = Rc::new(RefCell::new(load_templates()));
-    let state = state::new_shared_state(db, templates);
+    let mut nb_reg = NotebookTemplateRegistry::with_builtins();
+    if let Ok(dir) = data_dir() {
+        let nbtdir = dir.join("notebook_templates");
+        match nb_reg.load_dir(&nbtdir) {
+            Ok(n) if n > 0 => tracing::info!("loaded {} notebook templates from {:?}", n, nbtdir),
+            Ok(_) => {}
+            Err(e) => tracing::warn!("load notebook templates failed: {}", e),
+        }
+    }
+    let notebook_templates = Rc::new(RefCell::new(nb_reg));
+    let state = state::new_shared_state(db, templates, notebook_templates);
 
     let window = ApplicationWindow::builder()
         .application(app)

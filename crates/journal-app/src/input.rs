@@ -245,6 +245,9 @@ pub fn attach_pan_zoom(area: &DrawingArea, state: SharedState) {
 
 fn begin_stroke(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, ty: f32) {
     let mut s = state.borrow_mut();
+    if s.current_page_id.is_none() {
+        return;
+    }
     let canvas = s.transform.screen_to_canvas((sx, sy));
     let pt = StrokePoint {
         x: canvas.x,
@@ -266,6 +269,9 @@ fn begin_stroke(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, t
 
 fn extend_stroke(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, ty: f32) {
     let mut s = state.borrow_mut();
+    if s.current_stroke.is_none() {
+        return;
+    }
     let canvas = s.transform.screen_to_canvas((sx, sy));
     let pt = StrokePoint {
         x: canvas.x,

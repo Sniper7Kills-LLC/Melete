@@ -4,16 +4,37 @@ pub mod builtin;
 pub mod canvas_bridge;
 pub mod error;
 pub mod format;
+pub mod notebook_template_builtin;
 pub mod registry;
+pub mod title_format;
 
-pub use builtin::builtin_templates;
+pub use builtin::{
+    builtin_templates, BUILTIN_BLANK_ID, BUILTIN_DAILY_PLANNER_ID, BUILTIN_DOTTED_ID,
+    BUILTIN_GRID_ID, BUILTIN_RULED_ID,
+};
+pub use notebook_template_builtin::{
+    builtin_notebook_templates, builtin_yearly_planner, BUILTIN_YEARLY_PLANNER_ID,
+};
+pub use title_format::{render as render_title, TitleContext};
+
+/// True if this template id matches one of the built-in template ids.
+pub fn is_builtin(id: journal_core::TemplateId) -> bool {
+    matches!(
+        id.0,
+        BUILTIN_BLANK_ID
+            | BUILTIN_DOTTED_ID
+            | BUILTIN_RULED_ID
+            | BUILTIN_GRID_ID
+            | BUILTIN_DAILY_PLANNER_ID
+    )
+}
 pub use canvas_bridge::page_template_to_background_config;
 pub use error::TemplateError;
 pub use format::{
-    parse_template_toml, template_file_from_page_template, template_file_to_page_template,
-    TemplateFile,
+    parse_template_toml, serialize_template_toml, template_file_from_page_template,
+    template_file_to_page_template, TemplateFile,
 };
-pub use registry::TemplateRegistry;
+pub use registry::{NotebookTemplateRegistry, TemplateRegistry};
 
 #[cfg(test)]
 mod tests {
@@ -141,5 +162,45 @@ type = "blank"
                 _ => panic!("unexpected mapping for {:?}", t.background),
             }
         }
+    }
+
+    #[test]
+    fn canvas_bridge_maps_image() {
+        use journal_canvas::BackgroundConfig;
+        use journal_core::{PageTemplate, TemplateId, TilingMode};
+        use uuid::Uuid;
+        let t = PageTemplate {
+            id: TemplateId(Uuid::new_v4()),
+            name: "Img".into(),
+            description: String::new(),
+            background: BackgroundType::Image { path: "/tmp/x.png".into() },
+            size_mm: (200.0, 100.0),
+            tiling: TilingMode::None,
+            default_viewport: None,
+        };
+        match page_template_to_background_config(&t) {
+            BackgroundConfig::Image { path, size_canvas } => {
+                assert_eq!(path.to_string_lossy(), "/tmp/x.png");
+                assert_eq!(size_canvas, (200.0, 100.0));
+            }
+            other => panic!("expected Image variant, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn canvas_bridge_pdf_falls_back_to_blank() {
+        use journal_canvas::BackgroundConfig;
+        use journal_core::{PageTemplate, TemplateId, TilingMode};
+        use uuid::Uuid;
+        let t = PageTemplate {
+            id: TemplateId(Uuid::new_v4()),
+            name: "P".into(),
+            description: String::new(),
+            background: BackgroundType::Pdf { path: "/tmp/x.pdf".into(), page: 0 },
+            size_mm: (215.9, 279.4),
+            tiling: TilingMode::None,
+            default_viewport: None,
+        };
+        assert!(matches!(page_template_to_background_config(&t), BackgroundConfig::Blank));
     }
 }

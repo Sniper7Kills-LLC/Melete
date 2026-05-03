@@ -10,11 +10,14 @@ use journal_storage::{notebook_store, Db};
 use uuid::Uuid;
 
 use crate::dialogs;
+use crate::state::SharedState;
+use crate::template_manager;
 
 /// Build the home screen widget. `on_open` is called when a notebook is selected.
 /// Returns the root widget — caller is responsible for placing it in the window.
 pub fn build_home(
     parent: &ApplicationWindow,
+    state: SharedState,
     db: Rc<RefCell<Db>>,
     on_open: Rc<dyn Fn(NotebookId)>,
 ) -> GtkBox {
@@ -39,10 +42,24 @@ pub fn build_home(
     title.add_css_class("title-1");
     header.append(&title);
 
+    let templates_btn = Button::with_label("Templates");
+    header.append(&templates_btn);
+
+    let new_planner_btn = Button::with_label("New planner");
+    header.append(&new_planner_btn);
+
     let new_btn = Button::with_label("New notebook");
     new_btn.add_css_class("suggested-action");
     header.append(&new_btn);
     root.append(&header);
+
+    {
+        let parent = parent.clone();
+        let state = state.clone();
+        templates_btn.connect_clicked(move |_| {
+            template_manager::open(&parent, state.clone());
+        });
+    }
 
     let scroller = ScrolledWindow::builder()
         .hexpand(true)
@@ -82,6 +99,39 @@ pub fn build_home(
                     };
                     if let Err(e) = notebook_store::insert_notebook(db_inner.borrow().conn(), &nb) {
                         tracing::error!("failed to insert notebook: {}", e);
+                        return;
+                    }
+                    refresh_list(&list_box, db_inner.clone(), on_open.clone());
+                }),
+            );
+        });
+    }
+
+    {
+        let parent = parent.clone();
+        let state = state.clone();
+        let db = db.clone();
+        let list_box = list_box_rc.clone();
+        let on_open = on_open.clone();
+        new_planner_btn.connect_clicked(move |_| {
+            let db_inner = db.clone();
+            let list_box = list_box.clone();
+            let on_open = on_open.clone();
+            dialogs::prompt_new_planner(
+                &parent,
+                state.clone(),
+                Box::new(move |choice| {
+                    let nb = Notebook {
+                        id: NotebookId(Uuid::new_v4()),
+                        name: choice.name,
+                        kind: NotebookKind::Planner {
+                            template_id: choice.template_id,
+                            creation_date: choice.creation_date,
+                        },
+                        assigned_templates: Vec::new(),
+                    };
+                    if let Err(e) = notebook_store::insert_notebook(db_inner.borrow().conn(), &nb) {
+                        tracing::error!("failed to insert planner notebook: {}", e);
                         return;
                     }
                     refresh_list(&list_box, db_inner.clone(), on_open.clone());

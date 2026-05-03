@@ -53,6 +53,55 @@ impl Default for PageTemplate {
     }
 }
 
+/// How a planner notebook groups its days under each year section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
+pub enum PlannerGrouping {
+    Month,
+    Week,
+}
+
+impl Default for PlannerGrouping {
+    fn default() -> Self {
+        PlannerGrouping::Month
+    }
+}
+
+/// Title format strings for the section wrappers a planner generates.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SectionTitleFormats {
+    #[serde(default = "default_year_format")]
+    pub year: String,
+    #[serde(default = "default_month_format")]
+    pub month: String,
+    #[serde(default = "default_week_format")]
+    pub week: String,
+}
+
+fn default_year_format() -> String {
+    "{year}".into()
+}
+fn default_month_format() -> String {
+    "{month_name} {year}".into()
+}
+fn default_week_format() -> String {
+    "Week {week} {year}".into()
+}
+
+impl Default for SectionTitleFormats {
+    fn default() -> Self {
+        Self {
+            year: default_year_format(),
+            month: default_month_format(),
+            week: default_week_format(),
+        }
+    }
+}
+
+fn default_page_title_format() -> String {
+    "{date}".into()
+}
+
 /// A notebook template describing the structure of a planner.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NotebookTemplate {
@@ -69,6 +118,15 @@ pub struct NotebookTemplate {
     pub before_week: Vec<TemplateId>,
     /// Daily page slots with day-of-week selectors.
     pub daily_slots: Vec<DailySlot>,
+    /// Whether days are bucketed under month or week wrapper sections.
+    #[serde(default)]
+    pub grouping: PlannerGrouping,
+    /// Format string for daily page titles. See `journal_templates::title_format`.
+    #[serde(default = "default_page_title_format")]
+    pub page_title_format: String,
+    /// Title formats for the year and month/week wrapper sections.
+    #[serde(default)]
+    pub section_title_formats: SectionTitleFormats,
 }
 
 /// Specifies which page templates to use on which days of the week.

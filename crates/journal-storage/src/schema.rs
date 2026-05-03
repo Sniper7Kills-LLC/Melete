@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS sections (
     notebook_id BLOB NOT NULL REFERENCES notebooks(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     position INTEGER NOT NULL,
-    allowed_templates_json TEXT
+    allowed_templates_json TEXT,
+    parent_section_id BLOB NULL REFERENCES sections(id) ON DELETE CASCADE
 );";
 
 pub const CREATE_PAGES: &str = "
@@ -67,6 +68,9 @@ pub const CREATE_INDEX_PAGES_SECTION_POSITION: &str =
 pub const CREATE_INDEX_SECTIONS_NOTEBOOK_POSITION: &str =
     "CREATE INDEX IF NOT EXISTS idx_sections_notebook_position ON sections(notebook_id, position);";
 
+pub const CREATE_INDEX_SECTIONS_PARENT_POSITION: &str =
+    "CREATE INDEX IF NOT EXISTS idx_sections_parent_position ON sections(notebook_id, parent_section_id, position);";
+
 pub const CREATE_INDEX_STROKES_PAGE: &str =
     "CREATE INDEX IF NOT EXISTS idx_strokes_page ON strokes(page_id);";
 
@@ -82,7 +86,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
     let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
     if v < 1 {
         conn.execute_batch(&format!(
-            "{}{}{}{}{}{}{}{}{}{}",
+            "{}{}{}{}{}{}{}{}{}{}{}",
             CREATE_NOTEBOOKS,
             CREATE_SECTIONS,
             CREATE_PAGES,
@@ -91,6 +95,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             CREATE_STROKES_RTREE,
             CREATE_INDEX_PAGES_SECTION_POSITION,
             CREATE_INDEX_SECTIONS_NOTEBOOK_POSITION,
+            CREATE_INDEX_SECTIONS_PARENT_POSITION,
             CREATE_INDEX_STROKES_PAGE,
             CREATE_TRIGGER_STROKES_DELETE_RTREE,
         ))?;
@@ -103,5 +108,39 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         )?;
         conn.pragma_update(None, "user_version", 2)?;
     }
+    if v < 3 {
+        if !column_exists(conn, "sections", "parent_section_id")? {
+            conn.execute(
+                "ALTER TABLE sections ADD COLUMN parent_section_id BLOB NULL REFERENCES sections(id) ON DELETE CASCADE",
+                [],
+            )?;
+        }
+        conn.execute(CREATE_INDEX_SECTIONS_PARENT_POSITION, [])?;
+        conn.pragma_update(None, "user_version", 3)?;
+    }
+    if v < 4 {
+        // v3 added parent_section_id but earlier-versioned databases of v3
+        // built between Phase 4 and Phase 4.5 may have user_version=3 without
+        // the column. Re-check and ALTER if missing.
+        if !column_exists(conn, "sections", "parent_section_id")? {
+            conn.execute(
+                "ALTER TABLE sections ADD COLUMN parent_section_id BLOB NULL REFERENCES sections(id) ON DELETE CASCADE",
+                [],
+            )?;
+            conn.execute(CREATE_INDEX_SECTIONS_PARENT_POSITION, [])?;
+        }
+        conn.pragma_update(None, "user_version", 4)?;
+    }
     Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+    for r in rows {
+        if r? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }

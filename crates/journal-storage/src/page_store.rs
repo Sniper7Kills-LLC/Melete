@@ -41,6 +41,26 @@ pub fn get_page(conn: &Connection, id: PageId) -> Result<Page> {
     inner.ok_or(StorageError::NotFound)?
 }
 
+/// Find a page in `section_id` whose `planner_address` matches `address`.
+/// Used by the planner page-generation flow to avoid duplicating pages that
+/// already exist on disk for a given calendar slot.
+pub fn find_page_by_address(
+    conn: &Connection,
+    section_id: SectionId,
+    address: &PlannerPageAddress,
+) -> Result<Option<Page>> {
+    let needle = serde_json::to_string(address)?;
+    let mut stmt = conn.prepare(
+        "SELECT id, section_id, position, template_id, planner_address_json, created_at, modified_at, name
+         FROM pages WHERE section_id = ?1 AND planner_address_json = ?2 LIMIT 1",
+    )?;
+    let mut rows = stmt.query(params![uuid_to_blob(section_id.0), needle])?;
+    if let Some(row) = rows.next()? {
+        return Ok(Some(row_to_page(row)??));
+    }
+    Ok(None)
+}
+
 pub fn list_pages(conn: &Connection, section_id: SectionId) -> Result<Vec<Page>> {
     let mut stmt = conn.prepare(
         "SELECT id, section_id, position, template_id, planner_address_json, created_at, modified_at, name
@@ -225,6 +245,7 @@ mod tests {
             name: "s".into(),
             position: 0,
             allowed_templates: None,
+            parent_section_id: None,
         };
         insert_section(db.conn(), &s).unwrap();
         (db, s.id)

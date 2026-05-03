@@ -163,9 +163,7 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ---
 
-## Phase 3: Page Templates ✅ (image/PDF import deferred)
-
-**Goal:** Apply templates as page backgrounds, template management.
+## Phase 3: Page Templates ✅
 
 - [x] `journal-templates`: Template data model (background type, metadata)
 - [x] `journal-templates`: Built-in templates (blank, dotted, ruled, grid, daily-planner placeholder)
@@ -173,32 +171,34 @@ Home screen (no notebook open) shows notebook grid/list.
 - [x] `journal-canvas`: Render template backgrounds behind strokes (Cairo-based)
 - [x] `journal-app`: Template picker when creating new page
 - [x] `journal-app`: Auto-fit viewport to page on template load (when `tiling = None`)
-- [ ] `journal-app`: Notebook settings — assign available templates (deferred)
-- [ ] `journal-app`: Section settings — further limit templates (deferred)
-- [ ] `journal-app`: Template management area (list, preview) (deferred)
-- [ ] `journal-app`: Import image as template background (deferred — needs `image` crate + Cairo surface)
+
+## Phase 3.5: Template polish ✅
+
+- [x] `journal-app`: Notebook settings — assign available templates (gear button in header)
+- [x] `journal-app`: Section settings — limit templates (gear button per section, "inherit notebook" toggle)
+- [x] `journal-app`: Template management area (list + delete user templates; built-ins protected)
+- [x] `journal-app`: Import image as template background (via `gdk_pixbuf` → Cairo `ImageSurface` cache)
 - [ ] `journal-app`: Import PDF page as template background (deferred — needs poppler bindings)
 - [ ] `journal-app`: Basic template creator (deferred)
 
-**Milestone:** Create pages with template backgrounds. ✅ (Custom background import deferred to Phase 3.5.)
-
 ---
 
-## Phase 4: Notebook Templates (Planner Auto-Generation)
+## Phase 4: Notebook Templates (Planner Auto-Generation) ✅
 
-**Goal:** Calendar-based notebooks with automatic page structure.
+- [x] `journal-core`: NotebookTemplate with `grouping` (Month|Week), `page_title_format`, `section_title_formats`
+- [x] `journal-core`: Section gains `parent_section_id` for hierarchy
+- [x] `journal-storage`: schema migrations v3 (parent col) + v4 (idempotent re-ALTER)
+- [x] `journal-storage`: `find_page_by_address`, `ensure_section`, `list_root_sections`, `list_child_sections`
+- [x] `journal-templates`: NotebookTemplateRegistry with builtins + `load_dir`; title-format engine (`{year}/{month}/{month_name}/{week}/{day}/{weekday}/{date}`)
+- [x] `journal-app`: Create planner notebook dialog (name + template + grouping dropdown + creation_date Calendar)
+- [x] `journal-app`: Cloned NotebookTemplate persisted to TOML at `XDG_DATA_HOME/journal/notebook_templates/`
+- [x] `journal-app`: Calendar navigation strip (Prev/Today/[date popover Calendar]/Next)
+- [x] `journal-app`: Auto-land on today's page when opening planner; sidebar refresh after every date nav
+- [x] `journal-app`: Hierarchical sidebar — Year section → Month-or-Week wrapper → daily pages, recursive expanders
+- [x] `journal-app`: No-page placeholder canvas (drawing disabled until a page is selected)
+- [ ] `journal-app`: Notebook template editor — full version (deferred; minimal stub exists)
 
-- [ ] `journal-core`: NotebookTemplate struct (period → page template mappings)
-- [ ] `journal-core`: Planner page address resolution (date → sequence of pages)
-- [ ] `journal-core`: Creation date anchor + deterministic page ordering
-- [ ] `journal-storage`: Lazy page creation from planner address
-- [ ] `journal-app`: Create planner notebook (select notebook template)
-- [ ] `journal-app`: Notebook template editor (define period structure)
-- [ ] `journal-app`: Calendar navigation (today, prev/next day/week/month)
-- [ ] `journal-app`: Auto-land on today's page when opening planner
-- [ ] `journal-app`: Browse past/future dates (pages generate on demand)
-
-**Milestone:** Create yearly planner. Navigate to any date. Pages auto-generate from template structure.
+**Milestone:** Yearly planner. Navigate any date. Pages auto-generate. ✅
 
 ---
 

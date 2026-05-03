@@ -13,7 +13,7 @@ pub use page::{Page, PageId};
 pub use notebook::{Notebook, NotebookId, NotebookKind, Section, SectionId};
 pub use template::{
     PageTemplate, TemplateId, BackgroundType, TilingMode,
-    NotebookTemplate, DailySlot,
+    NotebookTemplate, DailySlot, PlannerGrouping, SectionTitleFormats,
 };
 pub use calendar::{CalendarPageAddress, PlannerPageAddress};
 

@@ -4,7 +4,7 @@ use std::rc::Rc;
 use journal_canvas::{BackgroundConfig, GridSettings, ViewportTransform};
 use journal_core::{Color, PageId, PageTemplate, PenSettings, Point, Rect, Stroke, TilingMode, Viewport};
 use journal_storage::{stroke_store, Db};
-use journal_templates::TemplateRegistry;
+use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
 
 pub struct CanvasState {
     pub transform: ViewportTransform,
@@ -15,6 +15,7 @@ pub struct CanvasState {
     pub page_rect: Rect,
     pub db: Rc<RefCell<Db>>,
     pub templates: Rc<RefCell<TemplateRegistry>>,
+    pub notebook_templates: Rc<RefCell<NotebookTemplateRegistry>>,
     pub current_page_id: Option<PageId>,
     pub current_template: Option<PageTemplate>,
 }
@@ -40,7 +41,11 @@ pub fn default_page_rect() -> Rect {
     DEFAULT_PAGE_RECT
 }
 
-pub fn new_shared_state(db: Rc<RefCell<Db>>, templates: Rc<RefCell<TemplateRegistry>>) -> SharedState {
+pub fn new_shared_state(
+    db: Rc<RefCell<Db>>,
+    templates: Rc<RefCell<TemplateRegistry>>,
+    notebook_templates: Rc<RefCell<NotebookTemplateRegistry>>,
+) -> SharedState {
     let viewport = Viewport {
         center: journal_core::Point { x: 408.0, y: 528.0 },
         zoom: 1.0,
@@ -64,6 +69,7 @@ pub fn new_shared_state(db: Rc<RefCell<Db>>, templates: Rc<RefCell<TemplateRegis
         page_rect: DEFAULT_PAGE_RECT,
         db,
         templates,
+        notebook_templates,
         current_page_id: None,
         current_template: None,
     }))

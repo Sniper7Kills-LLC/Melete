@@ -32,6 +32,10 @@ pub struct Notebook {
 }
 
 /// A section within a notebook, grouping pages together.
+///
+/// `parent_section_id = None` means this is a root section under the notebook.
+/// Otherwise it is nested beneath the named parent. `serde(default)` keeps older
+/// blobs (Phase 2/3) deserializing cleanly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Section {
     pub id: SectionId,
@@ -39,4 +43,6 @@ pub struct Section {
     pub name: String,
     pub position: u32,
     pub allowed_templates: Option<Vec<TemplateId>>,
+    #[serde(default)]
+    pub parent_section_id: Option<SectionId>,
 }

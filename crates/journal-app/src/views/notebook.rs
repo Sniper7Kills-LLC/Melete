@@ -19,7 +19,7 @@ use crate::dialogs;
 use crate::state::{self, SharedState};
 
 pub struct NotebookView {
-    pub root: Paned,
+    pub root: GtkBox,
 }
 
 #[derive(Clone)]
@@ -124,6 +124,7 @@ pub fn build_notebook_view(
                         name,
                         position,
                         allowed_templates: None,
+                        parent_section_id: None,
                     };
                     if let Err(e) =
                         section_store::insert_section(ctx_inner.db.borrow().conn(), &section)
@@ -137,7 +138,27 @@ pub fn build_notebook_view(
         });
     }
 
-    NotebookView { root: paned }
+    let root = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+
+    if let Some(template) = crate::views::planner_nav::resolve_planner_template(&state, notebook_id) {
+        let ctx_for_refresh = ctx.clone();
+        let on_refresh: Rc<dyn Fn()> = Rc::new(move || ctx_for_refresh.refresh());
+        let strip = crate::views::planner_nav::build_nav_strip(
+            state.clone(),
+            canvas.clone(),
+            notebook_id,
+            template,
+            on_refresh,
+        );
+        root.append(&strip);
+    }
+    root.append(&paned);
+
+    NotebookView { root }
 }
 
 fn refresh_sections(
@@ -152,15 +173,15 @@ fn refresh_sections(
         sections_box.remove(&child);
     }
 
-    let sections = match section_store::list_sections(db.borrow().conn(), notebook_id) {
+    let roots = match section_store::list_root_sections(db.borrow().conn(), notebook_id) {
         Ok(v) => v,
         Err(e) => {
-            tracing::error!("failed to list sections: {}", e);
+            tracing::error!("failed to list root sections: {}", e);
             return;
         }
     };
 
-    if sections.is_empty() {
+    if roots.is_empty() {
         let empty = Label::new(Some("No sections — add one below."));
         empty.add_css_class("dim-label");
         empty.set_halign(gtk4::Align::Start);
@@ -177,13 +198,13 @@ fn refresh_sections(
         canvas: canvas.clone(),
     };
 
-    for section in sections {
-        let row = build_section_row(&ctx, section);
+    for section in roots {
+        let row = build_section_row(&ctx, section, 0);
         sections_box.append(&row);
     }
 }
 
-fn build_section_row(ctx: &SidebarCtx, section: Section) -> GtkBox {
+fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
     let wrapper = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(0)
@@ -194,10 +215,11 @@ fn build_section_row(ctx: &SidebarCtx, section: Section) -> GtkBox {
         .expanded(true)
         .build();
 
+    // Indent nested levels so the hierarchy reads at a glance.
     let inner = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(4)
-        .margin_start(8)
+        .margin_start(8 + 12 * depth.min(6) as i32)
         .build();
 
     let pages_box = GtkBox::builder()
@@ -219,26 +241,34 @@ fn build_section_row(ctx: &SidebarCtx, section: Section) -> GtkBox {
         pages_box.append(&row);
     }
 
+    // Render child sections as nested expanders inside this section's body.
+    let child_sections = match section_store::list_child_sections(ctx.db.borrow().conn(), section.id) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("failed to list child sections: {}", e);
+            Vec::new()
+        }
+    };
+    for child in child_sections {
+        let row = build_section_row(ctx, child, depth + 1);
+        inner.append(&row);
+    }
+
     let new_page_btn = Button::with_label("+ New Page");
     new_page_btn.set_halign(gtk4::Align::Start);
     inner.append(&new_page_btn);
 
     let section_id = section.id;
+    let notebook_id = ctx.notebook_id;
     {
         let ctx_outer = ctx.clone();
         new_page_btn.connect_clicked(move |_| {
-            let templates = ctx_outer.state.borrow().templates.clone();
-            let template_list: Vec<_> = templates
-                .borrow()
-                .list()
-                .iter()
-                .map(|t| (*t).clone())
-                .collect();
-
             let ctx_inner = ctx_outer.clone();
             dialogs::prompt_new_page(
                 &ctx_outer.parent,
-                template_list,
+                ctx_outer.state.clone(),
+                notebook_id,
+                section_id,
                 Box::new(move |template_id| {
                     let position = match page_store::list_pages(
                         ctx_inner.db.borrow().conn(),
@@ -274,14 +304,33 @@ fn build_section_row(ctx: &SidebarCtx, section: Section) -> GtkBox {
     let header = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(4)
+        .hexpand(true)
         .build();
     let section_handle = drag_handle_box();
     let section_label = Label::builder()
         .label(&section.name)
         .halign(gtk4::Align::Start)
+        .hexpand(true)
         .build();
+    let gear = Button::from_icon_name("emblem-system-symbolic");
+    gear.set_tooltip_text(Some("Section settings"));
+    gear.add_css_class("flat");
+    {
+        let ctx = ctx.clone();
+        let sid = section.id;
+        gear.connect_clicked(move |_| {
+            let ctx_for_save = ctx.clone();
+            crate::settings_dialogs::open_section_settings(
+                &ctx.parent,
+                ctx.state.clone(),
+                sid,
+                Box::new(move || ctx_for_save.refresh()),
+            );
+        });
+    }
     header.append(&section_handle);
     header.append(&section_label);
+    header.append(&gear);
     expander.set_label_widget(Some(&header));
 
     expander.set_child(Some(&inner));
@@ -289,7 +338,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section) -> GtkBox {
 
     attach_section_context_menu(ctx, &section_label, &section);
     attach_section_drag_source(&section_handle, section.id);
-    attach_section_drop_target(ctx, &wrapper, section.id);
+    attach_section_drop_target(ctx, &wrapper, section.id, section.parent_section_id);
 
     wrapper
 }
@@ -551,10 +600,14 @@ fn attach_section_drag_source(handle: &GtkBox, section_id: SectionId) {
     handle.add_controller(source);
 }
 
-fn attach_section_drop_target(ctx: &SidebarCtx, wrapper: &GtkBox, target_section_id: SectionId) {
+fn attach_section_drop_target(
+    ctx: &SidebarCtx,
+    wrapper: &GtkBox,
+    target_section_id: SectionId,
+    target_parent_id: Option<SectionId>,
+) {
     let target = DropTarget::new(glib::types::Type::STRING, DragAction::MOVE);
     let ctx = ctx.clone();
-    let wrapper_clone = wrapper.clone();
     target.connect_drop(move |_, value, _x, _y| {
         let payload = match value.get::<String>() {
             Ok(s) => s,
@@ -597,9 +650,31 @@ fn attach_section_drop_target(ctx: &SidebarCtx, wrapper: &GtkBox, target_section
         if src_id == target_section_id {
             return false;
         }
-        let new_pos = match section_index_in_box(&ctx.sections_box, &wrapper_clone) {
-            Some(i) => i,
-            None => return false,
+        // Cross-parent moves are out of scope; reject them with a log so the
+        // drop appears as a no-op at the UI level.
+        let src_parent = match section_store::get_section(ctx.db.borrow().conn(), src_id) {
+            Ok(s) => s.parent_section_id,
+            Err(e) => {
+                tracing::error!("failed to load drag source section: {}", e);
+                return false;
+            }
+        };
+        if src_parent != target_parent_id {
+            tracing::info!(
+                "rejected cross-parent section move src={:?} src_parent={:?} target_parent={:?}",
+                src_id,
+                src_parent,
+                target_parent_id
+            );
+            return false;
+        }
+        // Find the target's position within its sibling group.
+        let new_pos = match section_store::get_section(ctx.db.borrow().conn(), target_section_id) {
+            Ok(s) => s.position,
+            Err(e) => {
+                tracing::error!("failed to read target section position: {}", e);
+                return false;
+            }
         };
         let mut db = ctx.db.borrow_mut();
         if let Err(e) = section_store::reorder_section(db.conn_mut(), src_id, new_pos) {
@@ -611,19 +686,6 @@ fn attach_section_drop_target(ctx: &SidebarCtx, wrapper: &GtkBox, target_section
         true
     });
     wrapper.add_controller(target);
-}
-
-fn section_index_in_box(sections_box: &GtkBox, target: &GtkBox) -> Option<u32> {
-    let mut idx: u32 = 0;
-    let mut child = sections_box.first_child();
-    while let Some(c) = child {
-        if c.eq(target) {
-            return Some(idx);
-        }
-        idx += 1;
-        child = c.next_sibling();
-    }
-    None
 }
 
 fn load_page(state: &SharedState, page: &Page, canvas: &DrawingArea) {

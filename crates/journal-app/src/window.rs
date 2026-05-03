@@ -13,7 +13,7 @@ use crate::canvas_widget;
 use crate::input;
 use crate::state::SharedState;
 use crate::toolbar;
-use crate::views::{home, notebook as notebook_view};
+use crate::views::{home, notebook as notebook_view, planner_nav};
 
 const HOME_NAME: &str = "home";
 const NOTEBOOK_NAME: &str = "notebook";
@@ -26,9 +26,11 @@ pub struct AppWindow {
     notebook_container: GtkBox,
     canvas_overlay: Overlay,
     back_btn: Button,
+    notebook_settings_btn: Button,
     title_label: Label,
     state: SharedState,
     parent: ApplicationWindow,
+    current_notebook: Rc<RefCell<Option<NotebookId>>>,
 }
 
 pub type SharedWindow = Rc<RefCell<AppWindow>>;
@@ -42,6 +44,11 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     back_btn.set_tooltip_text(Some("Back to notebooks"));
     back_btn.set_visible(false);
     header.pack_start(&back_btn);
+
+    let notebook_settings_btn = Button::from_icon_name("emblem-system-symbolic");
+    notebook_settings_btn.set_tooltip_text(Some("Notebook settings"));
+    notebook_settings_btn.set_visible(false);
+    header.pack_end(&notebook_settings_btn);
 
     let canvas = canvas_widget::build_canvas(state.clone());
     input::attach_stylus(&canvas, state.clone());
@@ -85,14 +92,35 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         notebook_container,
         canvas_overlay,
         back_btn: back_btn.clone(),
+        notebook_settings_btn: notebook_settings_btn.clone(),
         title_label,
         state: state.clone(),
         parent: parent.clone(),
+        current_notebook: Rc::new(RefCell::new(None)),
     }));
 
     {
         let win = win.clone();
         back_btn.connect_clicked(move |_| show_home(&win));
+    }
+
+    {
+        let win = win.clone();
+        notebook_settings_btn.connect_clicked(move |_| {
+            let (parent, state, nb_id) = {
+                let w = win.borrow();
+                let nb = *w.current_notebook.borrow();
+                (w.parent.clone(), w.state.clone(), nb)
+            };
+            if let Some(nid) = nb_id {
+                crate::settings_dialogs::open_notebook_settings(
+                    &parent,
+                    state,
+                    nid,
+                    Box::new(|| {}),
+                );
+            }
+        });
     }
 
     build_home_into(&win);
@@ -105,6 +133,8 @@ pub fn show_home(win: &SharedWindow) {
     let w = win.borrow();
     w.stack.set_visible_child_name(HOME_NAME);
     w.back_btn.set_visible(false);
+    w.notebook_settings_btn.set_visible(false);
+    *w.current_notebook.borrow_mut() = None;
     w.title_label.set_text("Journal");
 }
 
@@ -121,20 +151,12 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
         container.remove(&child);
     }
 
-    // Build a fresh notebook view containing the persistent overlay.
     let parent = win.borrow().parent.clone();
     let state = win.borrow().state.clone();
     let canvas = win.borrow().canvas.clone();
-    let view = notebook_view::build_notebook_view(
-        &parent,
-        state.clone(),
-        notebook_id,
-        canvas,
-        overlay,
-    );
-    container.append(&view.root);
 
-    // Reset canvas: clear strokes + page until user picks one.
+    // Reset canvas: clear strokes + page until user picks one (or the planner
+    // generation below lands on today's page).
     {
         let mut s = state.borrow_mut();
         s.strokes.clear();
@@ -146,6 +168,24 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
     }
     win.borrow().canvas.queue_draw();
 
+    // For planner notebooks, materialize today's section/page tree before we
+    // render the sidebar, so the sidebar shows the freshly created sections.
+    let planner_template = planner_nav::resolve_planner_template(&state, notebook_id);
+    if let Some(ref template) = planner_template {
+        let today = chrono::Local::now().date_naive();
+        let _ = planner_nav::goto_date(&state, &canvas, notebook_id, template, today);
+    }
+
+    // Build a fresh notebook view containing the persistent overlay.
+    let view = notebook_view::build_notebook_view(
+        &parent,
+        state.clone(),
+        notebook_id,
+        canvas,
+        overlay,
+    );
+    container.append(&view.root);
+
     // Update header.
     let title = match notebook_store::get_notebook(state.borrow().db.borrow().conn(), notebook_id) {
         Ok(nb) => nb.name,
@@ -153,6 +193,8 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
     };
     win.borrow().title_label.set_text(&title);
     win.borrow().back_btn.set_visible(true);
+    win.borrow().notebook_settings_btn.set_visible(true);
+    *win.borrow().current_notebook.borrow_mut() = Some(notebook_id);
     win.borrow().stack.set_visible_child_name(NOTEBOOK_NAME);
 }
 
@@ -163,12 +205,13 @@ fn build_home_into(win: &SharedWindow) {
     }
 
     let parent = win.borrow().parent.clone();
-    let db = win.borrow().state.borrow().db.clone();
+    let state = win.borrow().state.clone();
+    let db = state.borrow().db.clone();
     let win_for_open = win.clone();
     let on_open: Rc<dyn Fn(NotebookId)> = Rc::new(move |id| {
         show_notebook(&win_for_open, id);
     });
 
-    let home = home::build_home(&parent, db, on_open);
+    let home = home::build_home(&parent, state, db, on_open);
     container.append(&home);
 }

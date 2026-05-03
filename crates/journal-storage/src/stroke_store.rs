@@ -168,6 +168,7 @@ mod tests {
             name: "s".into(),
             position: 0,
             allowed_templates: None,
+            parent_section_id: None,
         };
         insert_section(db.conn(), &s).unwrap();
         let now = Utc::now();
