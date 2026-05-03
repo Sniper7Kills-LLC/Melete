@@ -50,6 +50,60 @@ mod tests {
     }
 
     #[test]
+    fn widget_round_trip() {
+        use journal_core::{Color, PageTemplate, TemplateId, TemplateWidget, TilingMode, WidgetKind, WidgetRect, WidgetStyle};
+        use uuid::Uuid;
+        let t = PageTemplate {
+            id: TemplateId(Uuid::new_v4()),
+            name: "With Widgets".into(),
+            description: String::new(),
+            background: BackgroundType::Blank,
+            size_mm: (210.0, 297.0),
+            tiling: TilingMode::None,
+            default_viewport: None,
+            widgets: vec![
+                TemplateWidget {
+                    id: Uuid::new_v4(),
+                    kind: WidgetKind::GridRegion { spacing_mm: 5.0 },
+                    rect: WidgetRect { x: 10.0, y: 20.0, width: 100.0, height: 80.0 },
+                    style: WidgetStyle::default(),
+                },
+                TemplateWidget {
+                    id: Uuid::new_v4(),
+                    kind: WidgetKind::CalendarMonth,
+                    rect: WidgetRect { x: 0.0, y: 0.0, width: 50.0, height: 50.0 },
+                    style: WidgetStyle {
+                        stroke_color: Color { r: 0, g: 0, b: 0, a: 255 },
+                        fill_color: Some(Color { r: 240, g: 240, b: 240, a: 255 }),
+                        stroke_width_mm: 0.2,
+                    },
+                },
+            ],
+        };
+        let file = template_file_from_page_template(&t);
+        let toml = serialize_template_toml(&file).expect("serialize");
+        let parsed = parse_template_toml(&toml).expect("parse");
+        let back = template_file_to_page_template(parsed);
+        assert_eq!(back.widgets.len(), 2);
+        assert!(matches!(&back.widgets[0].kind, WidgetKind::GridRegion { spacing_mm } if (*spacing_mm - 5.0).abs() < 1e-9));
+        assert!(matches!(&back.widgets[1].kind, WidgetKind::CalendarMonth));
+    }
+
+    #[test]
+    fn old_template_without_widgets_parses() {
+        let src = r#"
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000099"
+name = "Legacy"
+[background]
+type = "blank"
+"#;
+        let f = parse_template_toml(src).expect("parse");
+        let t = template_file_to_page_template(f);
+        assert_eq!(t.widgets.len(), 0);
+    }
+
+    #[test]
     fn parse_minimal_toml() {
         let src = r#"
 schema_version = 1
@@ -177,6 +231,7 @@ type = "blank"
             size_mm: (200.0, 100.0),
             tiling: TilingMode::None,
             default_viewport: None,
+            widgets: Vec::new(),
         };
         match page_template_to_background_config(&t) {
             BackgroundConfig::Image { path, size_canvas } => {
@@ -200,6 +255,7 @@ type = "blank"
             size_mm: (215.9, 279.4),
             tiling: TilingMode::None,
             default_viewport: None,
+            widgets: Vec::new(),
         };
         match page_template_to_background_config(&t) {
             BackgroundConfig::Pdf { path, page, size_canvas } => {

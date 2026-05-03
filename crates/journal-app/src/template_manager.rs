@@ -44,8 +44,11 @@ pub fn open(parent: &ApplicationWindow, state: SharedState) {
     title.add_css_class("title-3");
     header.append(&title);
 
+    let new_btn = Button::with_label("New template...");
+    new_btn.add_css_class("suggested-action");
+    header.append(&new_btn);
+
     let import_btn = Button::with_label("Import image...");
-    import_btn.add_css_class("suggested-action");
     header.append(&import_btn);
 
     let import_pdf_btn = Button::with_label("Import PDF...");
@@ -75,7 +78,21 @@ pub fn open(parent: &ApplicationWindow, state: SharedState) {
     win.set_child(Some(&body));
 
     let list_rc = Rc::new(list);
-    refresh_list(&list_rc, state.clone());
+    refresh_list(&list_rc, state.clone(), parent);
+
+    {
+        let parent = parent.clone();
+        let state = state.clone();
+        let list = list_rc.clone();
+        new_btn.connect_clicked(move |_| {
+            let list2 = list.clone();
+            let state2 = state.clone();
+            let parent2 = parent.clone();
+            crate::template_creator::open(&parent, state.clone(), None, move || {
+                refresh_list(&list2, state2.clone(), &parent2);
+            });
+        });
+    }
 
     {
         let parent = parent.clone();
@@ -114,6 +131,7 @@ fn run_pdf_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListB
     dialog.set_default_filter(Some(&filter));
 
     let parent_for_cb = parent.clone();
+    let parent_for_ref = parent.clone();
     dialog.open(Some(parent), None::<&gtk4::gio::Cancellable>, move |result| {
         let file = match result {
             Ok(f) => f,
@@ -167,7 +185,7 @@ fn import_pdf(parent: &ApplicationWindow, src: &std::path::Path, state: SharedSt
 
     if n_pages <= 1 {
         finalize_pdf_template(id, name, dst_str, 0, state.clone());
-        refresh_list(&list, state);
+        refresh_list(&list, state, parent);
         return Ok(());
     }
 
@@ -185,6 +203,7 @@ fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: 
         size_mm: (215.9, 279.4),
         tiling: TilingMode::None,
         default_viewport: None,
+        widgets: Vec::new(),
     };
 
     let tdir = match templates_dir() {
@@ -211,6 +230,7 @@ fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: 
 }
 
 fn show_pdf_page_picker(parent: &ApplicationWindow, id: Uuid, name: String, dst: String, n_pages: u32, state: SharedState, list: Rc<ListBox>) {
+    let parent_for_refresh = parent.clone();
     use gtk4::{Adjustment, Align, SpinButton, Window};
 
     let win = Window::builder()
@@ -265,7 +285,7 @@ fn show_pdf_page_picker(parent: &ApplicationWindow, id: Uuid, name: String, dst:
         ok_btn.connect_clicked(move |_| {
             let page = (spin.value() as u32).saturating_sub(1);
             finalize_pdf_template(id, name.clone(), dst.clone(), page, state.clone());
-            refresh_list(&list, state.clone());
+            refresh_list(&list, state.clone(), &parent_for_refresh);
             win.close();
         });
     }
@@ -273,7 +293,7 @@ fn show_pdf_page_picker(parent: &ApplicationWindow, id: Uuid, name: String, dst:
     win.present();
 }
 
-fn refresh_list(list: &Rc<ListBox>, state: SharedState) {
+fn refresh_list(list: &Rc<ListBox>, state: SharedState, parent: &ApplicationWindow) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
@@ -287,12 +307,12 @@ fn refresh_list(list: &Rc<ListBox>, state: SharedState) {
     };
 
     for t in templates {
-        let row = build_row(&t, state.clone(), list.clone());
+        let row = build_row(&t, state.clone(), list.clone(), parent);
         list.append(&row);
     }
 }
 
-fn build_row(t: &PageTemplate, state: SharedState, list: Rc<ListBox>) -> GtkBox {
+fn build_row(t: &PageTemplate, state: SharedState, list: Rc<ListBox>, parent: &ApplicationWindow) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
@@ -326,15 +346,37 @@ fn build_row(t: &PageTemplate, state: SharedState, list: Rc<ListBox>) -> GtkBox 
     row.append(&text_col);
 
     if !is_builtin(t.id) {
+        let edit_btn = Button::from_icon_name("document-edit-symbolic");
+        edit_btn.set_tooltip_text(Some("Edit template"));
+        let template_for_edit = t.clone();
+        let state_for_edit = state.clone();
+        let list_for_edit = list.clone();
+        let parent_for_edit = parent.clone();
+        edit_btn.connect_clicked(move |_| {
+            let list2 = list_for_edit.clone();
+            let state2 = state_for_edit.clone();
+            let parent2 = parent_for_edit.clone();
+            crate::template_creator::open(
+                &parent_for_edit,
+                state_for_edit.clone(),
+                Some(template_for_edit.clone()),
+                move || {
+                    refresh_list(&list2, state2.clone(), &parent2);
+                },
+            );
+        });
+        row.append(&edit_btn);
+
         let del = Button::from_icon_name("edit-delete-symbolic");
         del.set_tooltip_text(Some("Delete template"));
         del.add_css_class("destructive-action");
         let tid = t.id;
         let state_for_del = state.clone();
         let list_for_del = list.clone();
+        let parent_for_del = parent.clone();
         del.connect_clicked(move |_| {
             delete_template(tid, state_for_del.clone());
-            refresh_list(&list_for_del, state_for_del.clone());
+            refresh_list(&list_for_del, state_for_del.clone(), &parent_for_del);
         });
         row.append(&del);
     } else {
@@ -421,6 +463,7 @@ fn run_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListBox>)
     dialog.set_default_filter(Some(&filter));
 
     let parent_for_cb = parent.clone();
+    let parent_for_ref = parent.clone();
     dialog.open(Some(parent), None::<&gtk4::gio::Cancellable>, move |result| {
         let file = match result {
             Ok(f) => f,
@@ -445,7 +488,7 @@ fn run_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListBox>)
             show_error(&parent_for_cb, &format!("Failed to import image: {}", e));
             return;
         }
-        refresh_list(&list, state.clone());
+        refresh_list(&list, state.clone(), &parent_for_ref);
     });
 }
 
@@ -478,6 +521,7 @@ fn import_image(src: &std::path::Path, state: SharedState) -> anyhow::Result<()>
         size_mm: (215.9, 279.4),
         tiling: TilingMode::None,
         default_viewport: None,
+        widgets: Vec::new(),
     };
 
     let tdir = templates_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;

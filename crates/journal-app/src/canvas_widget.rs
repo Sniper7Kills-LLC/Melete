@@ -1,6 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::DrawingArea;
-use journal_canvas::{draw_lasso_overlay, draw_page_bounds_outline, paint};
+use journal_canvas::{draw_lasso_overlay, draw_page_bounds_outline, paint_with_widgets};
 
 use crate::state::SharedState;
 
@@ -31,6 +31,11 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
             let dark_mode = s.dark_mode;
             let selected_ids = s.selected_stroke_ids.clone();
             let lasso_points = s.lasso_points.clone();
+            let widgets: Vec<journal_core::TemplateWidget> = s
+                .current_template
+                .as_ref()
+                .map(|t| t.widgets.clone())
+                .unwrap_or_default();
 
             let show_bounds = s.show_page_bounds;
             let page_rect = s.page_rect;
@@ -42,9 +47,9 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
                     Vec::with_capacity(s.strokes.len() + 1);
                 frame.extend_from_slice(&s.strokes);
                 frame.push(cs);
-                paint(ctx, &s.transform, &s.background, page_rect, &frame, &selected_ids, dark_mode);
+                paint_with_widgets(ctx, &s.transform, &s.background, page_rect, &widgets, &frame, &selected_ids, dark_mode);
             } else {
-                paint(ctx, &s.transform, &s.background, page_rect, &s.strokes, &selected_ids, dark_mode);
+                paint_with_widgets(ctx, &s.transform, &s.background, page_rect, &widgets, &s.strokes, &selected_ids, dark_mode);
             }
 
             if show_bounds {

@@ -19,6 +19,7 @@ pub fn builtin_blank() -> PageTemplate {
         size_mm: US_LETTER,
         tiling: TilingMode::None,
         default_viewport: None,
+        widgets: Vec::new(),
     }
 }
 
@@ -31,6 +32,7 @@ pub fn builtin_dotted() -> PageTemplate {
         size_mm: US_LETTER,
         tiling: TilingMode::None,
         default_viewport: None,
+        widgets: Vec::new(),
     }
 }
 
@@ -43,6 +45,7 @@ pub fn builtin_ruled() -> PageTemplate {
         size_mm: US_LETTER,
         tiling: TilingMode::None,
         default_viewport: None,
+        widgets: Vec::new(),
     }
 }
 
@@ -55,6 +58,7 @@ pub fn builtin_grid() -> PageTemplate {
         size_mm: US_LETTER,
         tiling: TilingMode::Repeat,
         default_viewport: None,
+        widgets: Vec::new(),
     }
 }
 
@@ -67,6 +71,7 @@ pub fn builtin_daily_planner() -> PageTemplate {
         size_mm: US_LETTER,
         tiling: TilingMode::None,
         default_viewport: None,
+        widgets: Vec::new(),
     }
 }
 

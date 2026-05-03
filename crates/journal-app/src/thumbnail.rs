@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use gtk4::cairo;
-use journal_canvas::{paint, BackgroundConfig, ViewportTransform};
-use journal_core::{PageId, PageTemplate, Rect, Stroke, Viewport};
+use journal_canvas::{paint_with_widgets, BackgroundConfig, ViewportTransform};
+use journal_core::{PageId, PageTemplate, Rect, Stroke, TemplateWidget, Viewport};
 use journal_storage::stroke_store;
 
 use crate::state::SharedState;
@@ -13,6 +13,7 @@ const THUMB_H: i32 = 52;
 pub fn render_thumbnail(
     background: &BackgroundConfig,
     page_rect: Rect,
+    widgets: &[TemplateWidget],
     strokes: &[Stroke],
     dark_mode: bool,
 ) -> Option<cairo::ImageSurface> {
@@ -34,7 +35,7 @@ pub fn render_thumbnail(
     };
     let transform = ViewportTransform::new(viewport, THUMB_W as f64, THUMB_H as f64);
     let empty_selected = HashSet::new();
-    paint(&ctx, &transform, background, page_rect, strokes, &empty_selected, dark_mode);
+    paint_with_widgets(&ctx, &transform, background, page_rect, widgets, strokes, &empty_selected, dark_mode);
 
     Some(surface)
 }
@@ -52,12 +53,12 @@ pub fn get_or_generate_thumbnail(
         }
     }
 
-    let (background, page_rect) = if let Some(t) = template {
+    let (background, page_rect, widgets) = if let Some(t) = template {
         let bg = journal_templates::page_template_to_background_config(t);
         let rect = Rect { x: 0.0, y: 0.0, width: t.size_mm.0, height: t.size_mm.1 };
-        (bg, rect)
+        (bg, rect, t.widgets.clone())
     } else {
-        (crate::state::default_background(), crate::state::default_page_rect())
+        (crate::state::default_background(), crate::state::default_page_rect(), Vec::new())
     };
 
     let db = state.borrow().db.clone();
@@ -69,5 +70,5 @@ pub fn get_or_generate_thumbnail(
         }
     };
 
-    render_thumbnail(&background, page_rect, &strokes, dark_mode)
+    render_thumbnail(&background, page_rect, &widgets, &strokes, dark_mode)
 }
