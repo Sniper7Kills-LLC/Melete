@@ -275,6 +275,34 @@ const APP_CSS: &str = r#"
     font-size: 0.88em;
     opacity: 0.85;
 }
+.nbtc-preview-card {
+    border: 1px solid alpha(@accent_color, 0.45);
+    border-radius: 8px;
+    padding: 6px 8px;
+    background-color: alpha(@accent_color, 0.04);
+}
+.nbtc-preview-title {
+    font-weight: 700;
+    font-size: 0.95em;
+}
+.nbtc-preview-multiplier {
+    font-family: "Source Code Pro", monospace;
+    font-weight: 700;
+    color: @amber_accent;
+    font-size: 0.95em;
+}
+.nbtc-preview-chip {
+    background-color: alpha(@accent_color, 0.18);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.85em;
+}
+.nbtc-preview-day {
+    font-family: "Source Code Pro", monospace;
+    font-weight: 700;
+    min-width: 28px;
+    opacity: 0.7;
+}
 .nbtc-palette-chip {
     border: 1px solid alpha(@borders, 0.45);
     border-radius: 6px;

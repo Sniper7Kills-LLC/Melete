@@ -838,7 +838,12 @@ fn build_canvas_area(
                 let mut s = cs.borrow_mut();
                 if s.tool != PlaceTool::None {
                     s.drag_start_canvas = Some(canvas_pt);
-                    s.drag_active = false;
+                    // Set drag_active TRUE on begin (was false). Without
+                    // this, a pure click (no motion → no drag_update) would
+                    // leave drag_active = false and the placement branch
+                    // in drag_end never fired — click-to-place silently
+                    // dropped nothing.
+                    s.drag_active = true;
                     sel_change = None; // no selection change
                 } else {
                     let hit = hit_test(&s.template.widgets, canvas_pt);
@@ -1280,14 +1285,24 @@ fn refresh_props_panel(
         fill_switch.connect_active_notify(move |sw| {
             let on = sw.is_active();
             fill_btn2.set_sensitive(on);
+            // Snapshot the widget BEFORE we mutate. Bind the result to an
+            // owned Option so the underlying RefCell borrow drops at this
+            // statement's end — before we call borrow_mut() on the next line.
             let before = snapshot_widget(&cs2.borrow(), idx);
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 w.style.fill_color = if on {
                     Some(rgba_to_color(fill_btn2.rgba()))
                 } else { None };
             }
-            if let (Some(bef), Some(after)) = (before, snapshot_widget(&cs2.borrow(), idx)) {
-                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, bef, after);
+            // CRITICAL: in Rust 2018+, temporaries in `if let` head live
+            // until the end of the `if let` BODY — so the cs2.borrow() in
+            // the head of the previous version of this block was still
+            // alive when push_or_coalesce_modify did borrow_mut, which
+            // panicked. Extract the after-snapshot to its own statement
+            // first, then enter the if-let.
+            let after = snapshot_widget(&cs2.borrow(), idx);
+            if let (Some(bef), Some(aft)) = (before, after) {
+                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, bef, aft);
             }
             area2.queue_draw();
         });
@@ -1306,8 +1321,9 @@ fn refresh_props_panel(
                     w.style.fill_color = Some(c);
                 }
             }
-            if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
-                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
+            let after = snapshot_widget(&cs2.borrow(), idx);
+            if let Some(aft) = after {
+                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, aft);
             }
             area2.queue_draw();
         });
@@ -1330,7 +1346,7 @@ fn refresh_props_panel(
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 w.style.stroke_width_mm = sb.value();
             }
-            if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+            let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
                 push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
             }
             area2.queue_draw();
@@ -1360,7 +1376,7 @@ fn refresh_props_panel(
                             *text = s;
                         }
                     }
-                    if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                    let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
                         push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
@@ -1444,7 +1460,7 @@ fn refresh_props_panel(
                             *font_size_mm = sb.value();
                         }
                     }
-                    if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                    let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
                         push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
@@ -1469,7 +1485,7 @@ fn refresh_props_panel(
                         *thickness_mm = sb.value();
                     }
                 }
-                if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
                     push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
@@ -1499,7 +1515,7 @@ fn refresh_props_panel(
                         _ => {}
                     }
                 }
-                if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
                     push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
@@ -1532,7 +1548,7 @@ fn refresh_props_panel(
                             _ => {}
                         }
                     }
-                    if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                    let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
                         push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
@@ -1565,7 +1581,7 @@ fn refresh_props_panel(
                             _ => {}
                         }
                     }
-                    if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                    let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
                         push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
@@ -1590,7 +1606,7 @@ fn refresh_props_panel(
                         *count = sb.value() as u32;
                     }
                 }
-                if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
                     push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
@@ -1615,7 +1631,7 @@ fn refresh_props_panel(
                         *items = parts;
                     }
                 }
-                if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
                     push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
