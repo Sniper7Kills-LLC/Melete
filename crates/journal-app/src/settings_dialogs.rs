@@ -60,7 +60,7 @@ pub fn open_notebook_settings(
     hint.add_css_class("dim-label");
     body.append(&hint);
 
-    let nb = match notebook_store::get_notebook(state.borrow().db.borrow().conn(), notebook_id) {
+    let nb = match state.borrow().backend.borrow_mut().get_notebook(notebook_id) {
         Ok(n) => n,
         Err(e) => {
             tracing::error!("failed to load notebook for settings: {}", e);
@@ -106,10 +106,8 @@ pub fn open_notebook_settings(
                 .iter()
                 .filter_map(|(id, cb)| if cb.is_active() { Some(*id) } else { None })
                 .collect();
-            let mut updated = match notebook_store::get_notebook(
-                state.borrow().db.borrow().conn(),
-                notebook_id,
-            ) {
+            let backend = state.borrow().backend.clone();
+            let mut updated = match backend.borrow_mut().get_notebook(notebook_id) {
                 Ok(n) => n,
                 Err(e) => {
                     tracing::error!("failed to load notebook for save: {}", e);
@@ -118,10 +116,7 @@ pub fn open_notebook_settings(
                 }
             };
             updated.assigned_templates = selected;
-            if let Err(e) = notebook_store::update_notebook(
-                state.borrow().db.borrow().conn(),
-                &updated,
-            ) {
+            if let Err(e) = backend.borrow_mut().update_notebook(&updated) {
                 tracing::error!("failed to update notebook: {}", e);
             }
             (on_saved)();
@@ -159,7 +154,7 @@ pub fn open_section_settings(
     title.add_css_class("title-3");
     body.append(&title);
 
-    let section = match section_store::get_section(state.borrow().db.borrow().conn(), section_id) {
+    let section = match state.borrow().backend.borrow_mut().get_section(section_id) {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("failed to load section: {}", e);
@@ -241,10 +236,8 @@ pub fn open_section_settings(
                     .collect();
                 Some(selected)
             };
-            let mut updated = match section_store::get_section(
-                state.borrow().db.borrow().conn(),
-                section_id,
-            ) {
+            let backend = state.borrow().backend.clone();
+            let mut updated = match backend.borrow_mut().get_section(section_id) {
                 Ok(s) => s,
                 Err(e) => {
                     tracing::error!("failed to load section for save: {}", e);
@@ -253,10 +246,7 @@ pub fn open_section_settings(
                 }
             };
             updated.allowed_templates = allowed;
-            if let Err(e) = section_store::update_section(
-                state.borrow().db.borrow().conn(),
-                &updated,
-            ) {
+            if let Err(e) = backend.borrow_mut().update_section(&updated) {
                 tracing::error!("failed to update section: {}", e);
             }
             (on_saved)();

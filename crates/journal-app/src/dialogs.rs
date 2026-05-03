@@ -11,7 +11,7 @@ use gtk4::{
 use journal_core::{
     NotebookId, NotebookTemplate, PageTemplate, PlannerGrouping, SectionId, TemplateId,
 };
-use journal_storage::{notebook_store, section_store};
+use journal_storage::{NotebookStore, SectionStore};
 use uuid::Uuid;
 
 use crate::state::SharedState;
@@ -220,10 +220,10 @@ fn available_templates_for_section(
     section_id: SectionId,
 ) -> Vec<PageTemplate> {
     let s = state.borrow();
-    let conn = s.db.borrow();
-    let section = section_store::get_section(conn.conn(), section_id).ok();
-    let notebook = notebook_store::get_notebook(conn.conn(), notebook_id).ok();
-    drop(conn);
+    let (section, notebook) = {
+        let mut b = s.backend.borrow_mut();
+        (b.get_section(section_id).ok(), b.get_notebook(notebook_id).ok())
+    };
     let reg = s.templates.borrow();
     let all: Vec<PageTemplate> = {
         let mut v: Vec<PageTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();

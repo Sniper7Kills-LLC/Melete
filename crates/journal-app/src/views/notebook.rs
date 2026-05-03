@@ -12,7 +12,7 @@ use gtk4::{
     GestureClick, Label, Orientation, Overlay, Paned, PopoverMenu, ScrolledWindow, Stack, Window,
 };
 use journal_core::{NotebookId, Page, PageId, Section, SectionId};
-use journal_storage::{page_store, section_store, stroke_store, Db};
+use journal_storage::{JournalBackend, NotebookStore, PageStore, SectionStore, StrokeStore};
 use uuid::Uuid;
 
 use crate::dialogs;
@@ -26,7 +26,7 @@ pub struct NotebookView {
 struct SidebarCtx {
     parent: ApplicationWindow,
     sections_box: Rc<GtkBox>,
-    db: Rc<RefCell<Db>>,
+    db: Rc<RefCell<dyn JournalBackend>>,
     state: SharedState,
     notebook_id: NotebookId,
     canvas: DrawingArea,
@@ -86,7 +86,7 @@ pub fn build_notebook_view(
     // generated automatically by date navigation. Free-form section/page
     // creation is hidden so the user can't drift the structure out of sync.
     let is_planner = matches!(
-        journal_storage::notebook_store::get_notebook(state.borrow().db.borrow().conn(), notebook_id),
+        state.borrow().backend.borrow_mut().get_notebook(notebook_id),
         Ok(nb) if matches!(nb.kind, journal_core::NotebookKind::Planner { .. })
     );
 
@@ -103,7 +103,7 @@ pub fn build_notebook_view(
     paned.set_resize_start_child(false);
     paned.set_shrink_start_child(false);
 
-    let db = state.borrow().db.clone();
+    let db = state.borrow().backend.clone();
     let sections_box_rc = Rc::new(sections_box);
 
     let ctx = SidebarCtx {
@@ -125,10 +125,7 @@ pub fn build_notebook_view(
             dialogs::prompt_new_section(
                 &ctx.parent,
                 Box::new(move |name| {
-                    let position = match section_store::list_sections(
-                        ctx_inner.db.borrow().conn(),
-                        ctx_inner.notebook_id,
-                    ) {
+                    let position = match ctx_inner.db.borrow_mut().list_sections(ctx_inner.notebook_id) {
                         Ok(v) => v.len() as u32,
                         Err(_) => 0,
                     };
@@ -141,7 +138,7 @@ pub fn build_notebook_view(
                         parent_section_id: None,
                     };
                     if let Err(e) =
-                        section_store::insert_section(ctx_inner.db.borrow().conn(), &section)
+                        ctx_inner.db.borrow_mut().insert_section(&section)
                     {
                         tracing::error!("failed to insert section: {}", e);
                         return;
@@ -178,7 +175,7 @@ pub fn build_notebook_view(
 fn refresh_sections(
     parent: &ApplicationWindow,
     sections_box: &Rc<GtkBox>,
-    db: Rc<RefCell<Db>>,
+    db: Rc<RefCell<dyn JournalBackend>>,
     state: SharedState,
     notebook_id: NotebookId,
     canvas: DrawingArea,
@@ -188,7 +185,7 @@ fn refresh_sections(
         sections_box.remove(&child);
     }
 
-    let roots = match section_store::list_root_sections(db.borrow().conn(), notebook_id) {
+    let roots = match db.borrow_mut().list_root_sections(notebook_id) {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("failed to list root sections: {}", e);
@@ -252,7 +249,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
         .build();
     inner.append(&pages_box);
 
-    let pages = match page_store::list_pages(ctx.db.borrow().conn(), section.id) {
+    let pages = match ctx.db.borrow_mut().list_pages(section.id) {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("failed to list pages: {}", e);
@@ -266,7 +263,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
     }
 
     // Render child sections as nested expanders inside this section's body.
-    let child_sections = match section_store::list_child_sections(ctx.db.borrow().conn(), section.id) {
+    let child_sections = match ctx.db.borrow_mut().list_child_sections(section.id) {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("failed to list child sections: {}", e);
@@ -295,10 +292,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
                 notebook_id,
                 section_id,
                 Box::new(move |template_id| {
-                    let position = match page_store::list_pages(
-                        ctx_inner.db.borrow().conn(),
-                        section_id,
-                    ) {
+                    let position = match ctx_inner.db.borrow_mut().list_pages(section_id) {
                         Ok(v) => v.len() as u32,
                         Err(_) => 0,
                     };
@@ -314,7 +308,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
                         name: String::new(),
                     };
                     if let Err(e) =
-                        page_store::insert_page(ctx_inner.db.borrow().conn(), &page)
+                        ctx_inner.db.borrow_mut().insert_page(&page)
                     {
                         tracing::error!("failed to insert page: {}", e);
                         return;
@@ -410,13 +404,13 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
             let new_text = entry.text().to_string();
             let trimmed = new_text.trim();
             if save && !trimmed.is_empty() && trimmed != label.text() {
-                let current = match section_store::get_section(ctx.db.borrow().conn(), section_id_local) {
+                let current = match ctx.db.borrow_mut().get_section(section_id_local) {
                     Ok(s) => s,
                     Err(e) => { tracing::error!("rename section: {}", e); return; }
                 };
                 let mut updated = current;
                 updated.name = trimmed.to_string();
-                if let Err(e) = section_store::update_section(ctx.db.borrow().conn(), &updated) {
+                if let Err(e) = ctx.db.borrow_mut().update_section(&updated) {
                     tracing::error!("rename section: {}", e);
                 } else {
                     label.set_text(trimmed);
@@ -544,7 +538,7 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
                 let mut updated = page.clone();
                 updated.name = trimmed.to_string();
                 updated.modified_at = Utc::now();
-                if let Err(e) = page_store::update_page(ctx.db.borrow().conn(), &updated) {
+                if let Err(e) = ctx.db.borrow_mut().update_page(&updated) {
                     tracing::error!("rename page: {}", e);
                 } else {
                     label.set_text(trimmed);
@@ -685,11 +679,9 @@ fn attach_page_context_menu(ctx: &SidebarCtx, row: &GtkBox, page: &Page) {
                 let ctx = ctx.clone();
                 let page = page.clone();
                 delete_btn.connect_clicked(move |_| {
-                    let db = ctx.db.borrow();
-                    if let Err(e) = page_store::delete_page(db.conn(), page.id) {
+                    if let Err(e) = ctx.db.borrow_mut().delete_page(page.id) {
                         tracing::error!("delete page {:?}: {}", page.id, e);
                     } else {
-                        drop(db);
                         ctx.refresh();
                     }
                     win.close();
@@ -719,8 +711,6 @@ fn attach_page_context_menu(ctx: &SidebarCtx, row: &GtkBox, page: &Page) {
 }
 
 fn duplicate_page(ctx: &SidebarCtx, page: &Page, canvas: &DrawingArea) {
-    let db_ref = ctx.db.borrow();
-    // Clone the page: fresh UUID, same section, position = original + 1, name suffix.
     let new_name = if page.name.is_empty() {
         String::new()
     } else {
@@ -739,31 +729,26 @@ fn duplicate_page(ctx: &SidebarCtx, page: &Page, canvas: &DrawingArea) {
         name: new_name,
     };
 
-    if let Err(e) = page_store::insert_page(db_ref.conn(), &new_page) {
-        tracing::error!("duplicate page insert: {}", e);
-        return;
-    }
-
-    // Clone all strokes from the source page to the new page.
-    let strokes = match stroke_store::list_strokes_for_page(db_ref.conn(), page.id) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("duplicate: list strokes: {}", e);
-            vec![]
-        }
-    };
-    for mut s in strokes {
-        s.id = Uuid::new_v4();
-        if let Err(e) = stroke_store::insert_stroke(db_ref.conn(), &s, new_id) {
-            tracing::error!("duplicate stroke insert: {}", e);
-        }
-    }
-    drop(db_ref);
-
-    // Slot the new page right after the original.
     {
         let mut db = ctx.db.borrow_mut();
-        if let Err(e) = page_store::reorder_page(db.conn_mut(), new_id, page.position + 1) {
+        if let Err(e) = db.insert_page(&new_page) {
+            tracing::error!("duplicate page insert: {}", e);
+            return;
+        }
+        let strokes = match db.list_strokes_for_page(page.id) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("duplicate: list strokes: {}", e);
+                vec![]
+            }
+        };
+        for mut s in strokes {
+            s.id = Uuid::new_v4();
+            if let Err(e) = db.insert_stroke(&s, new_id) {
+                tracing::error!("duplicate stroke insert: {}", e);
+            }
+        }
+        if let Err(e) = db.reorder_page(new_id, page.position + 1) {
             tracing::warn!("duplicate reorder: {}", e);
         }
     }
@@ -890,17 +875,15 @@ fn attach_page_drop_target(
         if src_id == target_page_id {
             return false;
         }
-        let mut db = ctx.db.borrow_mut();
         let result = if src_section_id == target_section_id {
-            page_store::reorder_page(db.conn_mut(), src_id, target_index)
+            ctx.db.borrow_mut().reorder_page(src_id, target_index)
         } else {
-            page_store::move_page(db.conn_mut(), src_id, target_section_id, target_index)
+            ctx.db.borrow_mut().move_page(src_id, target_section_id, target_index)
         };
         if let Err(e) = result {
             tracing::error!("failed to move/reorder page: {}", e);
             return false;
         }
-        drop(db);
         ctx.refresh();
         true
     });
@@ -962,15 +945,14 @@ fn attach_section_drop_target(
             if src_section_id == target_section_id {
                 return false;
             }
-            let mut db = ctx.db.borrow_mut();
-            let n = page_store::list_pages(db.conn(), target_section_id)
+            let n = ctx.db.borrow_mut()
+                .list_pages(target_section_id)
                 .map(|v| v.len() as u32)
                 .unwrap_or(0);
-            if let Err(e) = page_store::move_page(db.conn_mut(), src_id, target_section_id, n) {
+            if let Err(e) = ctx.db.borrow_mut().move_page(src_id, target_section_id, n) {
                 tracing::error!("failed to move page across sections: {}", e);
                 return false;
             }
-            drop(db);
             ctx.refresh();
             return true;
         }
@@ -986,7 +968,7 @@ fn attach_section_drop_target(
         }
         // Cross-parent moves are out of scope; reject them with a log so the
         // drop appears as a no-op at the UI level.
-        let src_parent = match section_store::get_section(ctx.db.borrow().conn(), src_id) {
+        let src_parent = match ctx.db.borrow_mut().get_section(src_id) {
             Ok(s) => s.parent_section_id,
             Err(e) => {
                 tracing::error!("failed to load drag source section: {}", e);
@@ -1003,19 +985,17 @@ fn attach_section_drop_target(
             return false;
         }
         // Find the target's position within its sibling group.
-        let new_pos = match section_store::get_section(ctx.db.borrow().conn(), target_section_id) {
+        let new_pos = match ctx.db.borrow_mut().get_section(target_section_id) {
             Ok(s) => s.position,
             Err(e) => {
                 tracing::error!("failed to read target section position: {}", e);
                 return false;
             }
         };
-        let mut db = ctx.db.borrow_mut();
-        if let Err(e) = section_store::reorder_section(db.conn_mut(), src_id, new_pos) {
+        if let Err(e) = ctx.db.borrow_mut().reorder_section(src_id, new_pos) {
             tracing::error!("failed to reorder section: {}", e);
             return false;
         }
-        drop(db);
         ctx.refresh();
         true
     });

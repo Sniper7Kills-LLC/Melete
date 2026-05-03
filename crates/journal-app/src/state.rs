@@ -5,7 +5,7 @@ use std::rc::Rc;
 use gtk4::cairo;
 use journal_canvas::{BackgroundConfig, GridSettings, ViewportTransform};
 use journal_core::{Color, PageId, PageTemplate, PenSettings, Point, Rect, Stroke, TilingMode, Viewport};
-use journal_storage::{stroke_store, Db};
+use journal_storage::{JournalBackend, StrokeStore};
 use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use uuid::Uuid;
 
@@ -38,7 +38,7 @@ pub struct CanvasState {
     pub pen: PenSettings,
     pub background: BackgroundConfig,
     pub page_rect: Rect,
-    pub db: Rc<RefCell<Db>>,
+    pub backend: Rc<RefCell<dyn JournalBackend>>,
     pub templates: Rc<RefCell<TemplateRegistry>>,
     pub notebook_templates: Rc<RefCell<NotebookTemplateRegistry>>,
     pub current_page_id: Option<PageId>,
@@ -97,7 +97,7 @@ pub fn default_page_rect() -> Rect {
 }
 
 pub fn new_shared_state(
-    db: Rc<RefCell<Db>>,
+    backend: Rc<RefCell<dyn JournalBackend>>,
     templates: Rc<RefCell<TemplateRegistry>>,
     notebook_templates: Rc<RefCell<NotebookTemplateRegistry>>,
 ) -> SharedState {
@@ -122,7 +122,7 @@ pub fn new_shared_state(
         pen,
         background: default_background(),
         page_rect: DEFAULT_PAGE_RECT,
-        db,
+        backend,
         templates,
         notebook_templates,
         current_page_id: None,
@@ -189,21 +189,25 @@ fn load_image_surface(path: std::path::PathBuf) -> Option<cairo::ImageSurface> {
 /// Load strokes for the given page and update current_page_id.
 /// Caller is responsible for queue_draw on the canvas afterwards.
 pub fn set_current_page(state: &SharedState, page_id: PageId) {
-    let db = state.borrow().db.clone();
-    let strokes = match stroke_store::list_strokes_for_page(db.borrow().conn(), page_id) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("failed to load strokes for {:?}: {}", page_id, e);
-            Vec::new()
-        }
-    };
-    // Resolve the page's calendar date if it has a planner address (Day variant).
-    let page_date = match journal_storage::page_store::get_page(db.borrow().conn(), page_id) {
-        Ok(p) => match p.planner_address {
-            Some(journal_core::CalendarPageAddress::Day { date, .. }) => Some(date),
-            _ => None,
-        },
-        Err(_) => None,
+    let backend = state.borrow().backend.clone();
+    let (strokes, page_date) = {
+        let mut b = backend.borrow_mut();
+        let strokes = match b.list_strokes_for_page(page_id) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("failed to load strokes for {:?}: {}", page_id, e);
+                Vec::new()
+            }
+        };
+        // Resolve the page's calendar date if it has a planner address.
+        let page_date = match b.get_page(page_id) {
+            Ok(p) => match p.planner_address {
+                Some(journal_core::CalendarPageAddress::Day { date, .. }) => Some(date),
+                _ => None,
+            },
+            Err(_) => None,
+        };
+        (strokes, page_date)
     };
     let mut s = state.borrow_mut();
     s.strokes = strokes;

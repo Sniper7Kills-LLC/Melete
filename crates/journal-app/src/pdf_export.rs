@@ -5,7 +5,7 @@ use gtk4::cairo;
 use gtk4::cairo::PdfSurface;
 use journal_canvas::{paint, ViewportTransform};
 use journal_core::{Viewport};
-use journal_storage::stroke_store;
+use journal_storage::StrokeStore;
 
 use crate::state::SharedState;
 
@@ -13,13 +13,13 @@ const A4_W_PT: f64 = 595.28;
 const A4_H_PT: f64 = 841.89;
 
 pub fn export_page_to_pdf(state: &SharedState, path: &Path) -> anyhow::Result<()> {
-    let (page_id, background, page_rect, db, dark_mode) = {
+    let (page_id, background, page_rect, backend, dark_mode) = {
         let s = state.borrow();
         let page_id = s.current_page_id.ok_or_else(|| anyhow::anyhow!("no page selected"))?;
-        (page_id, s.background.clone(), s.page_rect, s.db.clone(), s.dark_mode)
+        (page_id, s.background.clone(), s.page_rect, s.backend.clone(), s.dark_mode)
     };
 
-    let strokes = stroke_store::list_strokes_for_page(db.borrow().conn(), page_id)
+    let strokes = backend.borrow_mut().list_strokes_for_page(page_id)
         .map_err(|e| anyhow::anyhow!("failed to load strokes: {}", e))?;
 
     let path_str = path.to_string_lossy();

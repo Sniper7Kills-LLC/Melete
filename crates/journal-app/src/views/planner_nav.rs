@@ -17,7 +17,7 @@ use journal_core::{
     DailySlot, NotebookId, NotebookKind, NotebookTemplate, Page, PageId, PlannerGrouping,
     PlannerPageAddress, SectionId, TemplateId,
 };
-use journal_storage::{page_store, section_store, Db};
+use journal_storage::{JournalBackend, PageStore, SectionStore};
 use journal_templates::{render_title, TitleContext};
 
 use crate::state::{self, SharedState};
@@ -67,18 +67,16 @@ fn template_for_address<'a>(
 /// page, then later "today" rolls around, the new today page lands BEFORE
 /// the future page rather than appended after it.
 pub fn ensure_planner_pages(
-    db: &mut Db,
+    db: &mut dyn JournalBackend,
     section_id: SectionId,
     entries: &[(PlannerPageAddress, Option<TemplateId>, String)],
 ) -> Vec<Page> {
     let mut out = Vec::with_capacity(entries.len());
     for (addr, tid, title) in entries {
-        match page_store::find_page_by_address(db.conn(), section_id, addr) {
+        match db.find_page_by_address(section_id, addr) {
             Ok(Some(page)) => out.push(page),
             Ok(None) => {
-                // Insert at end first; we'll reorder to the correct
-                // chronological slot below for Day-addressed pages.
-                let end_position = page_store::list_pages(db.conn(), section_id)
+                let end_position = db.list_pages(section_id)
                     .map(|v| v.len() as u32)
                     .unwrap_or(0);
                 let now = chrono::Utc::now();
@@ -92,7 +90,7 @@ pub fn ensure_planner_pages(
                     modified_at: now,
                     name: title.clone(),
                 };
-                if let Err(e) = page_store::insert_page(db.conn(), &page) {
+                if let Err(e) = db.insert_page(&page) {
                     tracing::error!("failed to insert planner page: {}", e);
                     continue;
                 }
@@ -106,9 +104,7 @@ pub fn ensure_planner_pages(
                         page.id,
                     );
                     if target != end_position {
-                        if let Err(e) =
-                            page_store::reorder_page(db.conn_mut(), page.id, target)
-                        {
+                        if let Err(e) = db.reorder_page(page.id, target) {
                             tracing::warn!("reorder planner page chronologically: {}", e);
                         }
                     }
@@ -125,16 +121,16 @@ pub fn ensure_planner_pages(
 /// Find the earliest `Day`-address date among all pages in `section_id` and
 /// (recursively) its descendant sections. Returns `None` for sections that
 /// contain no dated pages — they sort to the bottom in chronological reorder.
-fn min_day_date_in_section(db: &Db, section_id: SectionId) -> Option<NaiveDate> {
+fn min_day_date_in_section(db: &mut dyn JournalBackend, section_id: SectionId) -> Option<NaiveDate> {
     let mut min_d: Option<NaiveDate> = None;
-    if let Ok(pages) = page_store::list_pages(db.conn(), section_id) {
+    if let Ok(pages) = db.list_pages(section_id) {
         for p in &pages {
             if let Some(PlannerPageAddress::Day { date, .. }) = p.planner_address {
                 min_d = Some(min_d.map_or(date, |m| m.min(date)));
             }
         }
     }
-    if let Ok(children) = section_store::list_child_sections(db.conn(), section_id) {
+    if let Ok(children) = db.list_child_sections(section_id) {
         for c in children {
             if let Some(d) = min_day_date_in_section(db, c.id) {
                 min_d = Some(min_d.map_or(d, |m| m.min(d)));
@@ -149,13 +145,13 @@ fn min_day_date_in_section(db: &Db, section_id: SectionId) -> Option<NaiveDate> 
 /// by the earliest Day-addressed page they contain. Sections with no dated
 /// pages keep relative order at the bottom.
 fn reorder_sections_chronologically(
-    db: &mut Db,
+    db: &mut dyn JournalBackend,
     notebook_id: NotebookId,
     parent: Option<SectionId>,
 ) {
     let siblings = match parent {
-        None => section_store::list_root_sections(db.conn(), notebook_id),
-        Some(pid) => section_store::list_child_sections(db.conn(), pid),
+        None => db.list_root_sections(notebook_id),
+        Some(pid) => db.list_child_sections(pid),
     };
     let siblings = match siblings {
         Ok(v) => v,
@@ -177,7 +173,7 @@ fn reorder_sections_chronologically(
     });
 
     for (i, (id, _, _)) in keyed.iter().enumerate() {
-        if let Err(e) = section_store::reorder_section(db.conn_mut(), *id, i as u32) {
+        if let Err(e) = db.reorder_section(*id, i as u32) {
             tracing::warn!("reorder_section {:?}: {}", id, e);
         }
     }
@@ -187,13 +183,13 @@ fn reorder_sections_chronologically(
 /// `section_id` so that all Day pages stay in (date, template_index) order.
 /// Non-Day pages keep their relative order at the front.
 fn chronological_target_position(
-    db: &Db,
+    db: &mut dyn JournalBackend,
     section_id: SectionId,
     new_date: NaiveDate,
     new_template_index: u32,
     new_page_id: PageId,
 ) -> u32 {
-    let pages = match page_store::list_pages(db.conn(), section_id) {
+    let pages = match db.list_pages(section_id) {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!("list_pages for chronological insert: {}", e);
@@ -234,19 +230,13 @@ pub fn goto_date(
     template: &NotebookTemplate,
     date: NaiveDate,
 ) -> Option<PageId> {
-    let db_rc = state.borrow().db.clone();
-    let mut db = db_rc.borrow_mut();
+    let backend_rc = state.borrow().backend.clone();
 
     let year_title = render_title(
         &template.section_title_formats.year,
         &TitleContext::new(date),
     );
-    let year_section = match section_store::ensure_section(
-        db.conn_mut(),
-        notebook_id,
-        None,
-        &year_title,
-    ) {
+    let year_section = match backend_rc.borrow_mut().ensure_section(notebook_id, None, &year_title) {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("failed to ensure year section: {}", e);
@@ -264,12 +254,7 @@ pub fn goto_date(
             &TitleContext::new(date),
         ),
     };
-    let wrapper_section = match section_store::ensure_section(
-        db.conn_mut(),
-        notebook_id,
-        Some(year_section.id),
-        &wrapper_title,
-    ) {
+    let wrapper_section = match backend_rc.borrow_mut().ensure_section(notebook_id, Some(year_section.id), &wrapper_title) {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("failed to ensure wrapper section: {}", e);
@@ -286,22 +271,21 @@ pub fn goto_date(
         })
         .collect();
 
-    let pages = ensure_planner_pages(&mut db, wrapper_section.id, &entries);
-
-    // Keep year sections (root) and wrapper sections (children of the year)
-    // sorted chronologically. ensure_section appends to the end, so jumping
-    // back to a past month/year leaves it stranded at the bottom; this fixes
-    // it idempotently after every navigation.
-    reorder_sections_chronologically(&mut db, notebook_id, None);
-    reorder_sections_chronologically(&mut db, notebook_id, Some(year_section.id));
-
-    drop(db);
+    let pages = {
+        let mut b = backend_rc.borrow_mut();
+        let pages = ensure_planner_pages(&mut *b, wrapper_section.id, &entries);
+        // Keep year + wrapper sections sorted chronologically every time
+        // we land — ensure_section appends to the end.
+        reorder_sections_chronologically(&mut *b, notebook_id, None);
+        reorder_sections_chronologically(&mut *b, notebook_id, Some(year_section.id));
+        pages
+    };
 
     // Land on first daily page; fall back to wrapper section's first existing
     // page if no daily pages were generated.
     let landing = pages.into_iter().next().or_else(|| {
-        let db = db_rc.borrow();
-        page_store::list_pages(db.conn(), wrapper_section.id)
+        backend_rc.borrow_mut()
+            .list_pages(wrapper_section.id)
             .ok()
             .and_then(|v| v.into_iter().next())
     });
@@ -620,9 +604,7 @@ pub fn resolve_planner_template(
     notebook_id: journal_core::NotebookId,
 ) -> Option<NotebookTemplate> {
     let s = state.borrow();
-    let db = s.db.borrow();
-    let nb = journal_storage::notebook_store::get_notebook(db.conn(), notebook_id).ok()?;
-    drop(db);
+    let nb = s.backend.borrow_mut().get_notebook(notebook_id).ok()?;
     match nb.kind {
         NotebookKind::Planner { template_id, .. } => {
             s.notebook_templates.borrow().get(template_id).cloned()

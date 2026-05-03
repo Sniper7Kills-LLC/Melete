@@ -106,7 +106,7 @@ fn prompt_notebook_kind(
 
     win.present();
 }
-use journal_storage::{notebook_store, Db};
+use journal_storage::{JournalBackend, NotebookStore};
 use uuid::Uuid;
 
 use crate::dialogs;
@@ -118,7 +118,7 @@ use crate::template_manager;
 pub fn build_home(
     parent: &ApplicationWindow,
     state: SharedState,
-    db: Rc<RefCell<Db>>,
+    db: Rc<RefCell<dyn JournalBackend>>,
     on_open: Rc<dyn Fn(NotebookId)>,
     on_open_template_editor: Rc<dyn Fn(Option<PageTemplate>)>,
 ) -> GtkBox {
@@ -229,7 +229,7 @@ pub fn build_home(
                                     assigned_templates: Vec::new(),
                                 };
                                 if let Err(e) =
-                                    notebook_store::insert_notebook(db2.borrow().conn(), &nb)
+                                    db2.borrow_mut().insert_notebook(&nb)
                                 {
                                     tracing::error!("failed to insert notebook: {}", e);
                                     return;
@@ -253,7 +253,7 @@ pub fn build_home(
                                     assigned_templates: Vec::new(),
                                 };
                                 if let Err(e) =
-                                    notebook_store::insert_notebook(db2.borrow().conn(), &nb)
+                                    db2.borrow_mut().insert_notebook(&nb)
                                 {
                                     tracing::error!("failed to insert planner: {}", e);
                                     return;
@@ -366,14 +366,14 @@ fn build_empty_state() -> GtkBox {
 
 fn refresh_list(
     list_box: &Rc<GtkBox>,
-    db: Rc<RefCell<Db>>,
+    db: Rc<RefCell<dyn JournalBackend>>,
     on_open: Rc<dyn Fn(NotebookId)>,
 ) {
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
 
-    let notebooks = match notebook_store::list_notebooks(db.borrow().conn()) {
+    let notebooks = match db.borrow_mut().list_notebooks() {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("failed to list notebooks: {}", e);

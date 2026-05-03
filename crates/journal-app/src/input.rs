@@ -11,7 +11,7 @@ use gtk4::{
 };
 use journal_canvas::{hit_test_handle, selection_combined_bbox};
 use journal_core::{Rect, Stroke, StrokePoint};
-use journal_storage::stroke_store;
+use journal_storage::StrokeStore;
 use uuid::Uuid;
 
 use crate::history::Op;
@@ -373,7 +373,7 @@ fn finish_stroke(state: &SharedState) {
                 let saved = stroke.clone();
                 s.strokes.push(stroke);
                 s.history.push_add(saved.clone());
-                (Some(saved), Some(s.db.clone()), s.current_page_id)
+                (Some(saved), Some(s.backend.clone()), s.current_page_id)
             } else {
                 (None, None, None)
             }
@@ -383,7 +383,7 @@ fn finish_stroke(state: &SharedState) {
     };
 
     if let (Some(stroke), Some(db), Some(page_id)) = (saved, db_opt, page_opt) {
-        if let Err(e) = stroke_store::insert_stroke(db.borrow().conn(), &stroke, page_id) {
+        if let Err(e) = db.borrow_mut().insert_stroke(&stroke, page_id) {
             tracing::error!("failed to persist stroke for {:?}: {}", page_id, e);
         }
     }
@@ -396,7 +396,7 @@ fn erase_at(state: &SharedState, sx: f64, sy: f64, area: &DrawingArea) {
             return;
         }
         let cp = s.transform.screen_to_canvas((sx, sy));
-        (s.current_page_id.unwrap(), cp, s.transform.zoom(), s.db.clone())
+        (s.current_page_id.unwrap(), cp, s.transform.zoom(), s.backend.clone())
     };
 
     let radius_canvas = 5.0 / zoom.max(1e-6);
@@ -425,7 +425,7 @@ fn erase_at(state: &SharedState, sx: f64, sy: f64, area: &DrawingArea) {
     }
 
     for stroke in &to_remove {
-        if let Err(e) = stroke_store::delete_stroke(db.borrow().conn(), stroke.id) {
+        if let Err(e) = db.borrow_mut().delete_stroke(stroke.id) {
             tracing::warn!("erase: failed to delete stroke {} for page {:?}: {}", stroke.id, page_id, e);
         }
     }
@@ -503,7 +503,7 @@ fn partial_erase_at(state: &SharedState, sx: f64, sy: f64, area: &DrawingArea) {
             return;
         }
         let cp = s.transform.screen_to_canvas((sx, sy));
-        (s.current_page_id.unwrap(), cp, s.transform.zoom(), s.db.clone())
+        (s.current_page_id.unwrap(), cp, s.transform.zoom(), s.backend.clone())
     };
 
     let radius_canvas = 10.0 / zoom.max(1e-6);
@@ -542,7 +542,7 @@ fn partial_erase_at(state: &SharedState, sx: f64, sy: f64, area: &DrawingArea) {
             s.history.push_replace(stroke.clone(), children.clone());
         }
 
-        if let Err(e) = stroke_store::replace_stroke(db.borrow().conn(), stroke.id, &children, page_id) {
+        if let Err(e) = db.borrow_mut().replace_stroke(stroke.id, &children, page_id) {
             tracing::warn!("partial_erase: replace_stroke failed for {}: {}", stroke.id, e);
         }
     }
@@ -830,12 +830,12 @@ fn finish_selection(state: &SharedState) {
                 .cloned()
                 .collect();
 
-            (s.db.clone(), s.current_page_id, strokes_to_update, (ids.clone(), ax, ay, csx, csy))
+            (s.backend.clone(), s.current_page_id, strokes_to_update, (ids.clone(), ax, ay, csx, csy))
         };
 
         if let Some(pid) = page_id {
             for st in &strokes_to_update {
-                if let Err(e) = stroke_store::update_stroke(db.borrow().conn(), st, pid) {
+                if let Err(e) = db.borrow_mut().update_stroke(st, pid) {
                     tracing::warn!("resize: update_stroke {}: {}", st.id, e);
                 }
             }
@@ -910,7 +910,7 @@ fn finish_selection(state: &SharedState) {
         s.lasso_active = false;
 
         let page_id = s.current_page_id;
-        let db = s.db.clone();
+        let db = s.backend.clone();
         let strokes_to_update: Vec<Stroke> = if !moved_ids.is_empty() {
             s.strokes.iter().filter(|st| moved_ids.contains(&st.id)).cloned().collect()
         } else {
@@ -922,12 +922,12 @@ fn finish_selection(state: &SharedState) {
 
     if let Some(pid) = page_id {
         for stroke in &strokes_to_update {
-            if let Err(e) = stroke_store::update_stroke(db.borrow().conn(), stroke, pid) {
+            if let Err(e) = db.borrow_mut().update_stroke(stroke, pid) {
                 tracing::warn!("selection move: failed to update stroke {}: {}", stroke.id, e);
             }
         }
         for (old, new) in &lasso_replacements {
-            if let Err(e) = stroke_store::replace_stroke(db.borrow().conn(), old.id, new, pid) {
+            if let Err(e) = db.borrow_mut().replace_stroke(old.id, new, pid) {
                 tracing::warn!("lasso split: replace_stroke failed for {}: {}", old.id, e);
             }
         }
@@ -942,7 +942,7 @@ pub fn delete_selection(state: &SharedState, area: &DrawingArea) {
             return;
         }
         let ids: Vec<Uuid> = s.selected_stroke_ids.iter().cloned().collect();
-        (ids, s.db.clone(), s.current_page_id.unwrap())
+        (ids, s.backend.clone(), s.current_page_id.unwrap())
     };
 
     let strokes_removed: Vec<Stroke> = {
@@ -962,7 +962,7 @@ pub fn delete_selection(state: &SharedState, area: &DrawingArea) {
     }
 
     for id in &ids {
-        if let Err(e) = stroke_store::delete_stroke(db.borrow().conn(), *id) {
+        if let Err(e) = db.borrow_mut().delete_stroke(*id) {
             tracing::warn!("delete_selection: failed to delete stroke {} for page {:?}: {}", id, page_id, e);
         }
     }
@@ -983,10 +983,10 @@ pub fn undo(state: &SharedState, area: &DrawingArea) {
                 let mut s = state.borrow_mut();
                 s.strokes.retain(|st| st.id != stroke.id);
                 s.history.redo.push(Op::AddStroke(stroke.clone()));
-                (s.db.clone(), s.current_page_id)
+                (s.backend.clone(), s.current_page_id)
             };
             if let Some(pid) = page_id {
-                if let Err(e) = stroke_store::delete_stroke(db.borrow().conn(), stroke.id) {
+                if let Err(e) = db.borrow_mut().delete_stroke(stroke.id) {
                     tracing::warn!("undo AddStroke: delete failed for {}: {}", stroke.id, e);
                 }
                 let _ = pid;
@@ -997,10 +997,10 @@ pub fn undo(state: &SharedState, area: &DrawingArea) {
                 let mut s = state.borrow_mut();
                 s.strokes.push(stroke.clone());
                 s.history.redo.push(Op::RemoveStroke(stroke.clone()));
-                (s.db.clone(), s.current_page_id)
+                (s.backend.clone(), s.current_page_id)
             };
             if let Some(pid) = page_id {
-                if let Err(e) = stroke_store::insert_stroke(db.borrow().conn(), &stroke, pid) {
+                if let Err(e) = db.borrow_mut().insert_stroke(&stroke, pid) {
                     tracing::warn!("undo RemoveStroke: insert failed for {}: {}", stroke.id, e);
                 }
             }
@@ -1017,13 +1017,13 @@ pub fn undo(state: &SharedState, area: &DrawingArea) {
                 }
                 s.strokes.push(old.clone());
                 s.history.redo.push(Op::ReplaceStroke { old: old.clone(), new: new.clone() });
-                (s.db.clone(), s.current_page_id)
+                (s.backend.clone(), s.current_page_id)
             };
             if let Some(pid) = page_id {
                 for child in &new {
-                    let _ = stroke_store::delete_stroke(db.borrow().conn(), child.id);
+                    let _ = db.borrow_mut().delete_stroke(child.id);
                 }
-                if let Err(e) = stroke_store::insert_stroke(db.borrow().conn(), &old, pid) {
+                if let Err(e) = db.borrow_mut().insert_stroke(&old, pid) {
                     tracing::warn!("undo ReplaceStroke: insert original failed for {}: {}", old.id, e);
                 }
             }
@@ -1050,10 +1050,10 @@ pub fn redo(state: &SharedState, area: &DrawingArea) {
                 let mut s = state.borrow_mut();
                 s.strokes.push(stroke.clone());
                 s.history.undo.push(Op::AddStroke(stroke.clone()));
-                (s.db.clone(), s.current_page_id)
+                (s.backend.clone(), s.current_page_id)
             };
             if let Some(pid) = page_id {
-                if let Err(e) = stroke_store::insert_stroke(db.borrow().conn(), &stroke, pid) {
+                if let Err(e) = db.borrow_mut().insert_stroke(&stroke, pid) {
                     tracing::warn!("redo AddStroke: insert failed for {}: {}", stroke.id, e);
                 }
             }
@@ -1063,10 +1063,10 @@ pub fn redo(state: &SharedState, area: &DrawingArea) {
                 let mut s = state.borrow_mut();
                 s.strokes.retain(|st| st.id != stroke.id);
                 s.history.undo.push(Op::RemoveStroke(stroke.clone()));
-                (s.db.clone(), s.current_page_id)
+                (s.backend.clone(), s.current_page_id)
             };
             if let Some(pid) = page_id {
-                if let Err(e) = stroke_store::delete_stroke(db.borrow().conn(), stroke.id) {
+                if let Err(e) = db.borrow_mut().delete_stroke(stroke.id) {
                     tracing::warn!("redo RemoveStroke: delete failed for {}: {}", stroke.id, e);
                 }
                 let _ = pid;
@@ -1084,10 +1084,10 @@ pub fn redo(state: &SharedState, area: &DrawingArea) {
                     s.strokes.push(child.clone());
                 }
                 s.history.undo.push(Op::ReplaceStroke { old: old.clone(), new: new.clone() });
-                (s.db.clone(), s.current_page_id)
+                (s.backend.clone(), s.current_page_id)
             };
             if let Some(pid) = page_id {
-                if let Err(e) = stroke_store::replace_stroke(db.borrow().conn(), old.id, &new, pid) {
+                if let Err(e) = db.borrow_mut().replace_stroke(old.id, &new, pid) {
                     tracing::warn!("redo ReplaceStroke: failed for {}: {}", old.id, e);
                 }
             }
@@ -1115,11 +1115,11 @@ fn apply_move(state: &SharedState, ids: &[Uuid], dx: f64, dy: f64) {
             }
         }
         let updated: Vec<Stroke> = s.strokes.iter().filter(|st| ids.contains(&st.id)).cloned().collect();
-        (s.db.clone(), s.current_page_id, updated)
+        (s.backend.clone(), s.current_page_id, updated)
     };
     if let Some(pid) = page_id {
         for st in &updated {
-            if let Err(e) = stroke_store::update_stroke(db.borrow().conn(), st, pid) {
+            if let Err(e) = db.borrow_mut().update_stroke(st, pid) {
                 tracing::warn!("apply_move update_stroke {}: {}", st.id, e);
             }
         }
@@ -1145,11 +1145,11 @@ fn apply_scale(state: &SharedState, ids: &[Uuid], anchor_x: f64, anchor_y: f64, 
             }
         }
         let updated: Vec<Stroke> = s.strokes.iter().filter(|st| ids.contains(&st.id)).cloned().collect();
-        (s.db.clone(), s.current_page_id, updated)
+        (s.backend.clone(), s.current_page_id, updated)
     };
     if let Some(pid) = page_id {
         for st in &updated {
-            if let Err(e) = stroke_store::update_stroke(db.borrow().conn(), st, pid) {
+            if let Err(e) = db.borrow_mut().update_stroke(st, pid) {
                 tracing::warn!("apply_scale update_stroke {}: {}", st.id, e);
             }
         }

@@ -23,7 +23,7 @@ use gtk4::glib;
 use gtk4::{ApplicationWindow, CssProvider};
 use gtk4::prelude::*;
 use libadwaita as adw;
-use journal_storage::Db;
+use journal_storage::{JournalBackend, SqliteBackend};
 use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use tracing_subscriber::EnvFilter;
 
@@ -259,12 +259,12 @@ fn data_dir() -> Result<PathBuf> {
     Ok(base.join("journal"))
 }
 
-fn open_db() -> Result<Db> {
+fn open_backend() -> Result<SqliteBackend> {
     let dir = data_dir()?;
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("create data dir {:?}", dir))?;
     let path = dir.join("journal.db");
-    Db::open(&path).with_context(|| format!("open db {:?}", path))
+    SqliteBackend::open(&path).with_context(|| format!("open db {:?}", path))
 }
 
 fn load_templates() -> TemplateRegistry {
@@ -297,7 +297,7 @@ fn build_ui(app: &adw::Application) -> Result<()> {
         }
     }
 
-    let db = Rc::new(RefCell::new(open_db()?));
+    let backend: Rc<RefCell<dyn JournalBackend>> = Rc::new(RefCell::new(open_backend()?));
     let templates = Rc::new(RefCell::new(load_templates()));
     let mut nb_reg = NotebookTemplateRegistry::with_builtins();
     if let Ok(dir) = data_dir() {
@@ -309,7 +309,7 @@ fn build_ui(app: &adw::Application) -> Result<()> {
         }
     }
     let notebook_templates = Rc::new(RefCell::new(nb_reg));
-    let state = state::new_shared_state(db, templates, notebook_templates);
+    let state = state::new_shared_state(backend, templates, notebook_templates);
     state::reload_placeholder(&state);
 
     let startup_cfg = config::load();

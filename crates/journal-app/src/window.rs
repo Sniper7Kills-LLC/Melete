@@ -7,7 +7,7 @@ use gtk4::{
     MenuButton, Orientation, Overlay, Popover, Stack, StackTransitionType,
 };
 use journal_core::{NotebookId, PageTemplate};
-use journal_storage::notebook_store;
+use journal_storage::NotebookStore;
 
 use crate::canvas_widget;
 use crate::input;
@@ -294,7 +294,7 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
     );
     container.append(&view.root);
 
-    let title = match notebook_store::get_notebook(state.borrow().db.borrow().conn(), notebook_id) {
+    let title = match state.borrow().backend.borrow_mut().get_notebook(notebook_id) {
         Ok(nb) => nb.name,
         Err(_) => "Notebook".to_string(),
     };
@@ -313,7 +313,7 @@ fn build_home_into(win: &SharedWindow) {
 
     let parent = win.borrow().parent.clone();
     let state = win.borrow().state.clone();
-    let db = state.borrow().db.clone();
+    let backend = state.borrow().backend.clone();
     let win_for_open = win.clone();
     let on_open: Rc<dyn Fn(NotebookId)> = Rc::new(move |id| {
         show_notebook(&win_for_open, id);
@@ -323,7 +323,7 @@ fn build_home_into(win: &SharedWindow) {
         show_template_editor(&win_for_editor, edit);
     });
 
-    let home = home::build_home(&parent, state, db, on_open, on_open_template_editor);
+    let home = home::build_home(&parent, state, backend, on_open, on_open_template_editor);
     container.append(&home);
 }
 

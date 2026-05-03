@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use gtk4::cairo;
 use journal_canvas::{paint_with_widgets, BackgroundConfig, ViewportTransform};
 use journal_core::{PageId, PageTemplate, Rect, Stroke, TemplateWidget, Viewport};
-use journal_storage::stroke_store;
+use journal_storage::StrokeStore;
 
 use crate::state::SharedState;
 
@@ -61,8 +61,8 @@ pub fn get_or_generate_thumbnail(
         (crate::state::default_background(), crate::state::default_page_rect(), Vec::new())
     };
 
-    let db = state.borrow().db.clone();
-    let strokes = match stroke_store::list_strokes_for_page(db.borrow().conn(), page_id) {
+    let backend = state.borrow().backend.clone();
+    let strokes = match backend.borrow_mut().list_strokes_for_page(page_id) {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!("thumbnail: {:?}: {}", page_id, e);
