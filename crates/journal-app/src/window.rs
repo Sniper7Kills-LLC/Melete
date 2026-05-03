@@ -7,7 +7,7 @@ use gtk4::{
     MenuButton, Orientation, Overlay, Popover, Stack, StackTransitionType,
 };
 use journal_core::{NotebookId, PageTemplate};
-use journal_storage::NotebookStore;
+// NotebookStore methods reached via dyn JournalBackend.
 
 use crate::canvas_widget;
 use crate::input;

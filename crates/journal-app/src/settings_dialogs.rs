@@ -7,7 +7,7 @@ use gtk4::{
     Window,
 };
 use journal_core::{NotebookId, PageTemplate, SectionId, TemplateId};
-use journal_storage::{notebook_store, section_store};
+// {Notebook,Section}Store methods reached via dyn JournalBackend.
 
 use crate::state::SharedState;
 

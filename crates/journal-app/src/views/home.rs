@@ -106,7 +106,7 @@ fn prompt_notebook_kind(
 
     win.present();
 }
-use journal_storage::{JournalBackend, NotebookStore};
+use journal_storage::JournalBackend;
 use uuid::Uuid;
 
 use crate::dialogs;

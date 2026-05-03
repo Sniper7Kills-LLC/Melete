@@ -17,7 +17,7 @@ use journal_core::{
     DailySlot, NotebookId, NotebookKind, NotebookTemplate, Page, PageId, PlannerGrouping,
     PlannerPageAddress, SectionId, TemplateId,
 };
-use journal_storage::{JournalBackend, PageStore, SectionStore};
+use journal_storage::JournalBackend;
 use journal_templates::{render_title, TitleContext};
 
 use crate::state::{self, SharedState};

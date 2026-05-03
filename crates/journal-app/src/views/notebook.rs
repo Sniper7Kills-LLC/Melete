@@ -12,7 +12,7 @@ use gtk4::{
     GestureClick, Label, Orientation, Overlay, Paned, PopoverMenu, ScrolledWindow, Stack, Window,
 };
 use journal_core::{NotebookId, Page, PageId, Section, SectionId};
-use journal_storage::{JournalBackend, NotebookStore, PageStore, SectionStore, StrokeStore};
+use journal_storage::JournalBackend;
 use uuid::Uuid;
 
 use crate::dialogs;

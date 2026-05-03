@@ -5,7 +5,7 @@ use gtk4::cairo;
 use gtk4::cairo::PdfSurface;
 use journal_canvas::{paint, ViewportTransform};
 use journal_core::{Viewport};
-use journal_storage::StrokeStore;
+// StrokeStore methods reached via dyn JournalBackend.
 
 use crate::state::SharedState;
 

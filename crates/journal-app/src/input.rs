@@ -11,7 +11,7 @@ use gtk4::{
 };
 use journal_canvas::{hit_test_handle, selection_combined_bbox};
 use journal_core::{Rect, Stroke, StrokePoint};
-use journal_storage::StrokeStore;
+// StrokeStore methods are reached via the dyn JournalBackend in state — no import needed.
 use uuid::Uuid;
 
 use crate::history::Op;

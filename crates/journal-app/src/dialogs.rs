@@ -11,7 +11,7 @@ use gtk4::{
 use journal_core::{
     NotebookId, NotebookTemplate, PageTemplate, PlannerGrouping, SectionId, TemplateId,
 };
-use journal_storage::{NotebookStore, SectionStore};
+// {Notebook,Section}Store methods reached via dyn JournalBackend.
 use uuid::Uuid;
 
 use crate::state::SharedState;

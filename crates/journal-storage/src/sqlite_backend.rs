@@ -27,11 +27,6 @@ impl SqliteBackend {
         Ok(Self { db: Db::open_in_memory()? })
     }
 
-    /// Escape hatch — only used by code that hasn't been migrated to traits
-    /// yet. Will be removed in a follow-up commit.
-    pub fn db_mut(&mut self) -> &mut Db {
-        &mut self.db
-    }
 }
 
 impl NotebookStore for SqliteBackend {

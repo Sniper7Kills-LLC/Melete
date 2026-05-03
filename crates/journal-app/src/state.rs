@@ -5,7 +5,7 @@ use std::rc::Rc;
 use gtk4::cairo;
 use journal_canvas::{BackgroundConfig, GridSettings, ViewportTransform};
 use journal_core::{Color, PageId, PageTemplate, PenSettings, Point, Rect, Stroke, TilingMode, Viewport};
-use journal_storage::{JournalBackend, StrokeStore};
+use journal_storage::JournalBackend;
 use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use uuid::Uuid;
 

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use gtk4::cairo;
 use journal_canvas::{paint_with_widgets, BackgroundConfig, ViewportTransform};
 use journal_core::{PageId, PageTemplate, Rect, Stroke, TemplateWidget, Viewport};
-use journal_storage::StrokeStore;
+// StrokeStore methods reached via dyn JournalBackend.
 
 use crate::state::SharedState;
 
