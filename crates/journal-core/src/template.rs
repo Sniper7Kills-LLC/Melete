@@ -2,6 +2,7 @@ use chrono::Weekday;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::pen::Color;
 use crate::viewport::Viewport;
 
 /// Unique identifier for a template (page or notebook).
@@ -26,6 +27,60 @@ pub enum TilingMode {
     Repeat,
 }
 
+/// Position and size of a widget on the template canvas, in mm.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WidgetRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Stroke/fill style for a template widget.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WidgetStyle {
+    pub stroke_color: Color,
+    #[serde(default)]
+    pub fill_color: Option<Color>,
+    pub stroke_width_mm: f64,
+}
+
+impl Default for WidgetStyle {
+    fn default() -> Self {
+        Self {
+            stroke_color: Color { r: 60, g: 60, b: 80, a: 200 },
+            fill_color: None,
+            stroke_width_mm: 0.3,
+        }
+    }
+}
+
+/// What kind of element a template widget represents.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WidgetKind {
+    TextBlock { text: String, font_size_mm: f64 },
+    Rectangle,
+    Ellipse,
+    Line { thickness_mm: f64 },
+    GridRegion { spacing_mm: f64 },
+    LinesRegion { spacing_mm: f64 },
+    DotsRegion { spacing_mm: f64 },
+    CalendarMonth,
+    Timeline { start_hour: u8, end_hour: u8, slot_minutes: u32 },
+    Checklist { items: Vec<String> },
+}
+
+/// A widget placed on a template canvas.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TemplateWidget {
+    pub id: Uuid,
+    pub kind: WidgetKind,
+    pub rect: WidgetRect,
+    #[serde(default)]
+    pub style: WidgetStyle,
+}
+
 /// A template that defines the layout and background of a page.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PageTemplate {
@@ -37,6 +92,8 @@ pub struct PageTemplate {
     pub size_mm: (f64, f64),
     pub tiling: TilingMode,
     pub default_viewport: Option<Viewport>,
+    #[serde(default)]
+    pub widgets: Vec<TemplateWidget>,
 }
 
 impl Default for PageTemplate {
@@ -49,6 +106,7 @@ impl Default for PageTemplate {
             size_mm: (215.9, 279.4),
             tiling: TilingMode::None,
             default_viewport: None,
+            widgets: Vec::new(),
         }
     }
 }

@@ -1,6 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::DrawingArea;
-use journal_canvas::{draw_lasso_overlay, paint};
+use journal_canvas::{draw_lasso_overlay, paint_with_widgets};
 
 use crate::state::SharedState;
 
@@ -31,15 +31,20 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
             let dark_mode = s.dark_mode;
             let selected_ids = s.selected_stroke_ids.clone();
             let lasso_points = s.lasso_points.clone();
+            let widgets: Vec<journal_core::TemplateWidget> = s
+                .current_template
+                .as_ref()
+                .map(|t| t.widgets.clone())
+                .unwrap_or_default();
 
             if let Some(cs) = s.current_stroke.clone() {
                 let mut frame: Vec<journal_core::Stroke> =
                     Vec::with_capacity(s.strokes.len() + 1);
                 frame.extend_from_slice(&s.strokes);
                 frame.push(cs);
-                paint(ctx, &s.transform, &s.background, s.page_rect, &frame, &selected_ids, dark_mode);
+                paint_with_widgets(ctx, &s.transform, &s.background, s.page_rect, &widgets, &frame, &selected_ids, dark_mode);
             } else {
-                paint(ctx, &s.transform, &s.background, s.page_rect, &s.strokes, &selected_ids, dark_mode);
+                paint_with_widgets(ctx, &s.transform, &s.background, s.page_rect, &widgets, &s.strokes, &selected_ids, dark_mode);
             }
 
             if !lasso_points.is_empty() {

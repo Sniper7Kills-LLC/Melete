@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 
 use gtk4::cairo;
-use journal_core::{Rect, Stroke};
+use journal_core::{Rect, Stroke, TemplateWidget};
 use uuid::Uuid;
 
 use crate::background_renderer::{draw_background, BackgroundConfig};
 use crate::stroke_renderer::draw_stroke;
 use crate::viewport_transform::ViewportTransform;
+use crate::widget_renderer::draw_widgets;
 
 /// Paint a frame to the supplied Cairo context. The context is left in canvas
 /// space (transform applied) on return; callers that share the context with
@@ -16,6 +17,20 @@ pub fn paint(
     transform: &ViewportTransform,
     background: &BackgroundConfig,
     page_rect: Rect,
+    strokes: &[Stroke],
+    selected_ids: &HashSet<Uuid>,
+    dark_mode: bool,
+) {
+    paint_with_widgets(ctx, transform, background, page_rect, &[], strokes, selected_ids, dark_mode);
+}
+
+/// Paint a frame including template widgets between background and strokes.
+pub fn paint_with_widgets(
+    ctx: &cairo::Context,
+    transform: &ViewportTransform,
+    background: &BackgroundConfig,
+    page_rect: Rect,
+    widgets: &[TemplateWidget],
     strokes: &[Stroke],
     selected_ids: &HashSet<Uuid>,
     dark_mode: bool,
@@ -36,6 +51,9 @@ pub fn paint(
     ctx.translate(-center.x, -center.y);
 
     draw_background(ctx, transform, background, page_rect);
+    if !widgets.is_empty() {
+        draw_widgets(ctx, transform, widgets, page_rect);
+    }
     for stroke in strokes {
         draw_stroke(ctx, transform, stroke);
         if selected_ids.contains(&stroke.id) {

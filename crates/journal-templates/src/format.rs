@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use journal_core::{
-    BackgroundType, PageTemplate, Point, TemplateId, TilingMode, Viewport,
+    BackgroundType, PageTemplate, Point, TemplateId, TemplateWidget, TilingMode, Viewport,
 };
 
 use crate::error::TemplateError;
@@ -24,6 +24,8 @@ pub struct TemplateFile {
     pub background: BackgroundFile,
     #[serde(default)]
     pub default_viewport: Option<ViewportFile>,
+    #[serde(default)]
+    pub widgets: Vec<TemplateWidget>,
 }
 
 fn default_size_mm() -> [f64; 2] {
@@ -148,6 +150,7 @@ pub fn template_file_to_page_template(f: TemplateFile) -> PageTemplate {
         size_mm: (f.size_mm[0], f.size_mm[1]),
         tiling: f.tiling.into(),
         default_viewport: f.default_viewport.map(Into::into),
+        widgets: f.widgets,
     }
 }
 
@@ -161,6 +164,7 @@ pub fn template_file_from_page_template(t: &PageTemplate) -> TemplateFile {
         tiling: t.tiling.into(),
         background: (&t.background).into(),
         default_viewport: t.default_viewport.map(Into::into),
+        widgets: t.widgets.clone(),
     }
 }
 

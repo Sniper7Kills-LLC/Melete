@@ -7,6 +7,7 @@ mod pdf_export;
 mod settings_dialogs;
 mod shortcuts;
 mod state;
+mod template_creator;
 mod template_manager;
 mod thumbnail;
 mod toolbar;

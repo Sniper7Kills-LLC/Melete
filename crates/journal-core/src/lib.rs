@@ -14,6 +14,7 @@ pub use notebook::{Notebook, NotebookId, NotebookKind, Section, SectionId};
 pub use template::{
     PageTemplate, TemplateId, BackgroundType, TilingMode,
     NotebookTemplate, DailySlot, PlannerGrouping, SectionTitleFormats,
+    TemplateWidget, WidgetKind, WidgetRect, WidgetStyle,
 };
 pub use calendar::{CalendarPageAddress, PlannerPageAddress};
 
