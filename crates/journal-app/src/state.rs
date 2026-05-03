@@ -14,6 +14,13 @@ use crate::history::History;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EraserMode {
     Stroke,
+    Partial,
+}
+
+/// Which of the 8 resize handles the user grabbed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandlePos {
+    TL, T, TR, R, BR, B, BL, L,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +51,11 @@ pub struct CanvasState {
     pub lasso_active: bool,
     pub selection_drag_start: Option<(f64, f64)>,
     pub selection_drag_total_canvas: (f64, f64),
+    pub selection_resize_handle: Option<HandlePos>,
+    pub selection_resize_start: Option<(f64, f64)>,
+    pub selection_resize_bbox_orig: Option<journal_core::Rect>,
+    pub selection_resize_cumulative: (f64, f64),
+    pub selection_resize_anchor: (f64, f64),
     pub dark_mode: bool,
     pub thumbnail_cache: HashMap<PageId, cairo::ImageSurface>,
 
@@ -114,6 +126,11 @@ pub fn new_shared_state(
         lasso_active: false,
         selection_drag_start: None,
         selection_drag_total_canvas: (0.0, 0.0),
+        selection_resize_handle: None,
+        selection_resize_start: None,
+        selection_resize_bbox_orig: None,
+        selection_resize_cumulative: (1.0, 1.0),
+        selection_resize_anchor: (0.0, 0.0),
         dark_mode: false,
         thumbnail_cache: HashMap::new(),
         saved_pen_color: Color { r: 20, g: 20, b: 20, a: 255 },
@@ -178,6 +195,11 @@ pub fn set_current_page(state: &SharedState, page_id: PageId) {
     s.selected_stroke_ids.clear();
     s.lasso_points.clear();
     s.lasso_active = false;
+    s.selection_resize_handle = None;
+    s.selection_resize_start = None;
+    s.selection_resize_bbox_orig = None;
+    s.selection_resize_cumulative = (1.0, 1.0);
+    s.selection_resize_anchor = (0.0, 0.0);
 }
 
 /// Apply a template to current canvas state (or clear back to defaults if None).
@@ -262,4 +284,9 @@ pub fn clear_selection(state: &SharedState) {
     s.lasso_points.clear();
     s.lasso_active = false;
     s.selection_drag_start = None;
+    s.selection_resize_handle = None;
+    s.selection_resize_start = None;
+    s.selection_resize_bbox_orig = None;
+    s.selection_resize_cumulative = (1.0, 1.0);
+    s.selection_resize_anchor = (0.0, 0.0);
 }

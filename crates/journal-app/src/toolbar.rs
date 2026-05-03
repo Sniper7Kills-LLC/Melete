@@ -32,7 +32,13 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
 
     let eraser_btn = ToggleButton::builder()
         .icon_name("edit-clear-symbolic")
-        .tooltip_text("Eraser (Ctrl+E)")
+        .tooltip_text("Eraser — stroke (Ctrl+E)")
+        .group(&pen_btn)
+        .build();
+
+    let partial_eraser_btn = ToggleButton::builder()
+        .icon_name("edit-cut-symbolic")
+        .tooltip_text("Partial Eraser — splits strokes")
         .group(&pen_btn)
         .build();
 
@@ -71,6 +77,15 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
     }
     {
         let state = state.clone();
+        partial_eraser_btn.connect_toggled(move |btn| {
+            if btn.is_active() {
+                let mut s = state.borrow_mut();
+                s.tool = Tool::Eraser(crate::state::EraserMode::Partial);
+            }
+        });
+    }
+    {
+        let state = state.clone();
         selection_btn.connect_toggled(move |btn| {
             if btn.is_active() {
                 crate::state::set_tool_selection(&state);
@@ -81,6 +96,7 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
     bar.append(&pen_btn);
     bar.append(&highlighter_btn);
     bar.append(&eraser_btn);
+    bar.append(&partial_eraser_btn);
     bar.append(&selection_btn);
 
     bar.append(&Separator::new(Orientation::Vertical));

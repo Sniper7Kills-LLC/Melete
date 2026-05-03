@@ -131,7 +131,6 @@ fn run_pdf_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListB
     dialog.set_default_filter(Some(&filter));
 
     let parent_for_cb = parent.clone();
-    let parent_for_ref = parent.clone();
     dialog.open(Some(parent), None::<&gtk4::gio::Cancellable>, move |result| {
         let file = match result {
             Ok(f) => f,

@@ -100,6 +100,20 @@ pub fn update_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Res
     Ok(())
 }
 
+/// Delete one stroke and insert N children in a single transaction.
+pub fn replace_stroke(
+    conn: &Connection,
+    old_id: uuid::Uuid,
+    new_strokes: &[Stroke],
+    page_id: PageId,
+) -> Result<()> {
+    delete_stroke(conn, old_id)?;
+    for s in new_strokes {
+        insert_stroke(conn, s, page_id)?;
+    }
+    Ok(())
+}
+
 pub fn delete_strokes_batch(conn: &Connection, ids: &[uuid::Uuid]) -> Result<()> {
     for id in ids {
         let _ = delete_stroke(conn, *id);
