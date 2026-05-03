@@ -4,9 +4,108 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use gtk4::{
     Align, ApplicationWindow, Box as GtkBox, Button, FlowBox, Image, Label, Orientation,
-    ScrolledWindow, SelectionMode, Separator,
+    ScrolledWindow, SelectionMode, Separator, Window,
 };
 use journal_core::{Notebook, NotebookId, NotebookKind, PageTemplate};
+
+#[derive(Debug, Clone, Copy)]
+pub enum NotebookKindChoice {
+    Standard,
+    Planner,
+}
+
+/// Small modal that asks the user whether their new notebook should be a
+/// free-form notebook or a calendar-based planner. Replaces the old pair of
+/// header buttons ("New notebook" / "New planner") with a single CTA + this
+/// chooser.
+fn prompt_notebook_kind(
+    parent: &ApplicationWindow,
+    on_pick: Box<dyn Fn(NotebookKindChoice) + 'static>,
+) {
+    let win = Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .title("New notebook")
+        .default_width(420)
+        .build();
+
+    let body = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(12)
+        .margin_top(20)
+        .margin_bottom(20)
+        .margin_start(20)
+        .margin_end(20)
+        .build();
+
+    let prompt = Label::builder()
+        .label("What kind of notebook?")
+        .halign(Align::Start)
+        .build();
+    prompt.add_css_class("title-3");
+    body.append(&prompt);
+
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .build();
+
+    let make_card = |icon: &str, title: &str, subtitle: &str| -> Button {
+        let btn = Button::new();
+        btn.add_css_class("notebook-card");
+        btn.add_css_class("flat");
+        btn.set_hexpand(true);
+        let v = GtkBox::builder().orientation(Orientation::Vertical).spacing(6).build();
+        let icon_w = Image::from_icon_name(icon);
+        icon_w.set_pixel_size(40);
+        icon_w.set_halign(Align::Start);
+        v.append(&icon_w);
+        let t = Label::builder().label(title).halign(Align::Start).build();
+        t.add_css_class("card-title");
+        v.append(&t);
+        let s = Label::builder().label(subtitle).halign(Align::Start).wrap(true).build();
+        s.add_css_class("card-subtitle");
+        v.append(&s);
+        btn.set_child(Some(&v));
+        btn
+    };
+
+    let standard_card = make_card(
+        "x-office-address-book-symbolic",
+        "Notebook",
+        "Free-form sections and pages — like a paper notebook.",
+    );
+    let planner_card = make_card(
+        "x-office-calendar-symbolic",
+        "Planner",
+        "Calendar-based pages auto-generated from a notebook template.",
+    );
+    row.append(&standard_card);
+    row.append(&planner_card);
+    body.append(&row);
+
+    win.set_child(Some(&body));
+
+    let on_pick = Rc::new(on_pick);
+    {
+        let on_pick = on_pick.clone();
+        let win = win.clone();
+        standard_card.connect_clicked(move |_| {
+            win.close();
+            (on_pick)(NotebookKindChoice::Standard);
+        });
+    }
+    {
+        let on_pick = on_pick.clone();
+        let win = win.clone();
+        planner_card.connect_clicked(move |_| {
+            win.close();
+            (on_pick)(NotebookKindChoice::Planner);
+        });
+    }
+
+    win.present();
+}
 use journal_storage::{notebook_store, Db};
 use uuid::Uuid;
 
@@ -54,9 +153,8 @@ pub fn build_home(
     let nb_template_btn = Button::with_label("New notebook template");
     header.append(&nb_template_btn);
 
-    let new_planner_btn = Button::with_label("New planner");
-    header.append(&new_planner_btn);
-
+    // Single "New notebook" button — picks Standard or Planner via a small
+    // chooser dialog. Replaces the old separate "New planner" button.
     let new_btn = Button::with_label("New notebook");
     new_btn.add_css_class("suggested-action");
     header.append(&new_btn);
@@ -115,62 +213,71 @@ pub fn build_home(
 
     {
         let parent = parent.clone();
-        let db = db.clone();
-        let list_box = list_box_rc.clone();
-        let on_open = on_open.clone();
-        new_btn.connect_clicked(move |_| {
-            let db_inner = db.clone();
-            let list_box = list_box.clone();
-            let on_open = on_open.clone();
-            dialogs::prompt_new_notebook(
-                &parent,
-                Box::new(move |name| {
-                    let nb = Notebook {
-                        id: NotebookId(Uuid::new_v4()),
-                        name,
-                        kind: NotebookKind::Standard,
-                        assigned_templates: Vec::new(),
-                    };
-                    if let Err(e) = notebook_store::insert_notebook(db_inner.borrow().conn(), &nb) {
-                        tracing::error!("failed to insert notebook: {}", e);
-                        return;
-                    }
-                    refresh_list(&list_box, db_inner.clone(), on_open.clone());
-                }),
-            );
-        });
-    }
-
-    {
-        let parent = parent.clone();
         let state = state.clone();
         let db = db.clone();
         let list_box = list_box_rc.clone();
         let on_open = on_open.clone();
-        new_planner_btn.connect_clicked(move |_| {
+        new_btn.connect_clicked(move |_| {
+            let parent_inner = parent.clone();
+            let state_inner = state.clone();
             let db_inner = db.clone();
-            let list_box = list_box.clone();
-            let on_open = on_open.clone();
-            dialogs::prompt_new_planner(
-                &parent,
-                state.clone(),
-                Box::new(move |choice| {
-                    let nb = Notebook {
-                        id: NotebookId(Uuid::new_v4()),
-                        name: choice.name,
-                        kind: NotebookKind::Planner {
-                            template_id: choice.template_id,
-                            creation_date: choice.creation_date,
-                        },
-                        assigned_templates: Vec::new(),
-                    };
-                    if let Err(e) = notebook_store::insert_notebook(db_inner.borrow().conn(), &nb) {
-                        tracing::error!("failed to insert planner notebook: {}", e);
-                        return;
+            let list_box_inner = list_box.clone();
+            let on_open_inner = on_open.clone();
+
+            // Step 1: ask the user which kind of notebook they want.
+            prompt_notebook_kind(&parent, Box::new(move |kind| {
+                let parent2 = parent_inner.clone();
+                let state2 = state_inner.clone();
+                let db2 = db_inner.clone();
+                let list_box2 = list_box_inner.clone();
+                let on_open2 = on_open_inner.clone();
+                match kind {
+                    NotebookKindChoice::Standard => {
+                        dialogs::prompt_new_notebook(
+                            &parent2,
+                            Box::new(move |name| {
+                                let nb = Notebook {
+                                    id: NotebookId(Uuid::new_v4()),
+                                    name,
+                                    kind: NotebookKind::Standard,
+                                    assigned_templates: Vec::new(),
+                                };
+                                if let Err(e) =
+                                    notebook_store::insert_notebook(db2.borrow().conn(), &nb)
+                                {
+                                    tracing::error!("failed to insert notebook: {}", e);
+                                    return;
+                                }
+                                refresh_list(&list_box2, db2.clone(), on_open2.clone());
+                            }),
+                        );
                     }
-                    refresh_list(&list_box, db_inner.clone(), on_open.clone());
-                }),
-            );
+                    NotebookKindChoice::Planner => {
+                        dialogs::prompt_new_planner(
+                            &parent2,
+                            state2,
+                            Box::new(move |choice| {
+                                let nb = Notebook {
+                                    id: NotebookId(Uuid::new_v4()),
+                                    name: choice.name,
+                                    kind: NotebookKind::Planner {
+                                        template_id: choice.template_id,
+                                        creation_date: choice.creation_date,
+                                    },
+                                    assigned_templates: Vec::new(),
+                                };
+                                if let Err(e) =
+                                    notebook_store::insert_notebook(db2.borrow().conn(), &nb)
+                                {
+                                    tracing::error!("failed to insert planner: {}", e);
+                                    return;
+                                }
+                                refresh_list(&list_box2, db2.clone(), on_open2.clone());
+                            }),
+                        );
+                    }
+                }
+            }));
         });
     }
 

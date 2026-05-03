@@ -2,14 +2,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use chrono::Utc;
-use gtk4::gdk::{ContentProvider, DragAction, Rectangle};
-use gtk4::gio;
+use gtk4::gdk::{ContentProvider, DragAction};
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, DrawingArea as GtkDrawingArea, DragSource,
-    DrawingArea, DropTarget, Expander, GestureClick, GestureLongPress, Image, Label, Orientation,
-    Overlay, Paned, PopoverMenu, ScrolledWindow,
+    DrawingArea, DropTarget, Entry, EventControllerFocus, EventControllerKey, Expander,
+    GestureClick, Label, Orientation, Overlay, Paned, ScrolledWindow, Stack,
 };
 use journal_core::{NotebookId, Page, PageId, Section, SectionId};
 use journal_storage::{page_store, section_store, Db};
@@ -305,16 +304,31 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
 
     let header = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(4)
+        .spacing(6)
         .hexpand(true)
         .build();
-    let section_handle = drag_handle_box();
+    header.add_css_class("section-row");
+
+    // Inline-rename Stack (Label / Entry) for the section name. No popup.
+    let name_stack = Stack::new();
+    name_stack.set_hexpand(true);
+    name_stack.set_valign(gtk4::Align::Center);
     let section_label = Label::builder()
         .label(&section.name)
         .halign(gtk4::Align::Start)
         .hexpand(true)
+        .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
     section_label.add_css_class("section-header-label");
+    let entry = Entry::builder()
+        .text(&section.name)
+        .hexpand(true)
+        .build();
+    entry.add_css_class("inline-rename");
+    name_stack.add_named(&section_label, Some("label"));
+    name_stack.add_named(&entry, Some("edit"));
+    name_stack.set_visible_child_name("label");
+
     let gear = Button::from_icon_name("emblem-system-symbolic");
     gear.set_tooltip_text(Some("Section settings"));
     gear.add_css_class("flat");
@@ -331,16 +345,88 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
             );
         });
     }
-    header.append(&section_handle);
-    header.append(&section_label);
+    header.append(&name_stack);
     header.append(&gear);
     expander.set_label_widget(Some(&header));
+
+    // Double-click section label → enter inline-rename. Single-click is
+    // claimed by the Expander itself (toggles expansion).
+    {
+        let click = GestureClick::new();
+        click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        let name_stack_dbl = name_stack.clone();
+        let entry_dbl = entry.clone();
+        let label_dbl = section_label.clone();
+        click.connect_pressed(move |g, n, _x, _y| {
+            if n == 2 {
+                entry_dbl.set_text(&label_dbl.text());
+                name_stack_dbl.set_visible_child_name("edit");
+                entry_dbl.grab_focus();
+                entry_dbl.select_region(0, -1);
+                g.set_state(gtk4::EventSequenceState::Claimed);
+            }
+        });
+        section_label.add_controller(click);
+    }
+
+    let section_id_local = section.id;
+    let commit: Rc<dyn Fn(bool)> = {
+        let entry = entry.clone();
+        let label = section_label.clone();
+        let name_stack = name_stack.clone();
+        let ctx = ctx.clone();
+        Rc::new(move |save: bool| {
+            if name_stack.visible_child_name().as_deref() != Some("edit") {
+                return;
+            }
+            let new_text = entry.text().to_string();
+            let trimmed = new_text.trim();
+            if save && !trimmed.is_empty() && trimmed != label.text() {
+                let current = match section_store::get_section(ctx.db.borrow().conn(), section_id_local) {
+                    Ok(s) => s,
+                    Err(e) => { tracing::error!("rename section: {}", e); return; }
+                };
+                let mut updated = current;
+                updated.name = trimmed.to_string();
+                if let Err(e) = section_store::update_section(ctx.db.borrow().conn(), &updated) {
+                    tracing::error!("rename section: {}", e);
+                } else {
+                    label.set_text(trimmed);
+                }
+            } else {
+                entry.set_text(&label.text());
+            }
+            name_stack.set_visible_child_name("label");
+        })
+    };
+    {
+        let key = EventControllerKey::new();
+        let commit = commit.clone();
+        key.connect_key_pressed(move |_c, kv, _, _| {
+            if kv == gtk4::gdk::Key::Return || kv == gtk4::gdk::Key::KP_Enter {
+                (commit)(true);
+                return glib::Propagation::Stop;
+            }
+            if kv == gtk4::gdk::Key::Escape {
+                (commit)(false);
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+        entry.add_controller(key);
+    }
+    {
+        let focus = EventControllerFocus::new();
+        let commit = commit.clone();
+        focus.connect_leave(move |_| (commit)(true));
+        entry.add_controller(focus);
+    }
 
     expander.set_child(Some(&inner));
     wrapper.append(&expander);
 
-    attach_section_context_menu(ctx, &section_label, &section);
-    attach_section_drag_source(&section_handle, section.id);
+    // Section is draggable from anywhere on its header (no separate handle).
+    attach_section_drag_source(&header, section.id);
     attach_section_drop_target(ctx, &wrapper, section.id, section.parent_section_id);
 
     wrapper
@@ -355,43 +441,132 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .hexpand(true)
-        .spacing(4)
+        .spacing(8)
         .build();
     row.add_css_class("page-row");
-
-    let handle = drag_handle_box();
-    row.append(&handle);
+    row.set_cursor_from_name(Some("pointer"));
 
     let thumb = build_page_thumbnail(ctx, page);
+    thumb.set_margin_top(2);
+    thumb.set_margin_bottom(2);
     row.append(&thumb);
 
+    // Inline-rename: a Stack that swaps between a Label (default) and an
+    // Entry (double-click activates it). No modal popup.
+    let name_stack = Stack::new();
+    name_stack.set_hexpand(true);
+    name_stack.set_valign(gtk4::Align::Center);
     let label = Label::builder()
         .label(&label_text)
         .halign(gtk4::Align::Start)
         .hexpand(true)
-        .margin_top(4)
-        .margin_bottom(4)
-        .margin_end(8)
+        .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
-    row.append(&label);
+    let entry = Entry::builder()
+        .text(&label_text)
+        .hexpand(true)
+        .build();
+    entry.add_css_class("inline-rename");
+    name_stack.add_named(&label, Some("label"));
+    name_stack.add_named(&entry, Some("edit"));
+    name_stack.set_visible_child_name("label");
+    row.append(&name_stack);
 
+    // Single click → load page; double-click → enter inline-rename mode.
     {
         let state = ctx.state.clone();
         let canvas = ctx.canvas.clone();
-        let page = page.clone();
+        let page_for_load = page.clone();
+        let name_stack_dbl = name_stack.clone();
+        let entry_dbl = entry.clone();
+        let label_dbl = label.clone();
         let click = GestureClick::new();
         click.set_button(gtk4::gdk::BUTTON_PRIMARY);
         click.connect_released(move |_g, n, _x, _y| {
-            if n == 1 {
-                load_page(&state, &page, &canvas);
+            if n == 2 {
+                entry_dbl.set_text(&label_dbl.text());
+                name_stack_dbl.set_visible_child_name("edit");
+                entry_dbl.grab_focus();
+                entry_dbl.select_region(0, -1);
+            } else if n == 1 {
+                load_page(&state, &page_for_load, &canvas);
             }
         });
         row.add_controller(click);
     }
 
-    attach_page_context_menu(ctx, &label, page);
-    attach_page_drag_source(&handle, page.id, page.section_id);
+    // Commit/cancel inline rename: Enter commits, Esc cancels, focus-leave
+    // commits whatever is currently in the entry.
+    let commit: Rc<dyn Fn(bool)> = {
+        let entry = entry.clone();
+        let label = label.clone();
+        let name_stack = name_stack.clone();
+        let ctx = ctx.clone();
+        let page = page.clone();
+        Rc::new(move |save: bool| {
+            if name_stack.visible_child_name().as_deref() != Some("edit") {
+                return;
+            }
+            let new_text = entry.text().to_string();
+            let trimmed = new_text.trim();
+            if save && !trimmed.is_empty() && trimmed != label.text() {
+                let mut updated = page.clone();
+                updated.name = trimmed.to_string();
+                updated.modified_at = Utc::now();
+                if let Err(e) = page_store::update_page(ctx.db.borrow().conn(), &updated) {
+                    tracing::error!("rename page: {}", e);
+                } else {
+                    label.set_text(trimmed);
+                }
+            } else {
+                entry.set_text(&label.text());
+            }
+            name_stack.set_visible_child_name("label");
+        })
+    };
+
+    {
+        let key = EventControllerKey::new();
+        let commit = commit.clone();
+        key.connect_key_pressed(move |_c, kv, _, _| {
+            if kv == gtk4::gdk::Key::Return || kv == gtk4::gdk::Key::KP_Enter {
+                (commit)(true);
+                return glib::Propagation::Stop;
+            }
+            if kv == gtk4::gdk::Key::Escape {
+                (commit)(false);
+                return glib::Propagation::Stop;
+            }
+            glib::Propagation::Proceed
+        });
+        entry.add_controller(key);
+    }
+    {
+        let focus = EventControllerFocus::new();
+        let commit = commit.clone();
+        focus.connect_leave(move |_| (commit)(true));
+        entry.add_controller(focus);
+    }
+
+    // Drag the entire row — no separate handle.
+    attach_page_drag_source(&row, page.id, page.section_id);
     attach_page_drop_target(ctx, &row, page.id, page.section_id, list_index);
+
+    // Highlight the currently-loaded page so users see context at a glance.
+    {
+        let state = ctx.state.clone();
+        let row_for_tick = row.clone();
+        let page_id = page.id;
+        row.add_tick_callback(move |_, _| {
+            let active = state.borrow().current_page_id == Some(page_id);
+            if active {
+                row_for_tick.add_css_class("current");
+            } else {
+                row_for_tick.remove_css_class("current");
+            }
+            glib::ControlFlow::Continue
+        });
+    }
 
     row
 }
@@ -451,147 +626,6 @@ fn build_page_thumbnail(ctx: &SidebarCtx, page: &Page) -> GtkDrawingArea {
     }
 
     thumb_area
-}
-
-fn drag_handle_box() -> GtkBox {
-    // Touch-friendly hit area (≥44px tall, 36px wide) so a finger or stylus
-    // can grab it reliably; the visible icon stays compact via centring.
-    let wrap = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .width_request(36)
-        .height_request(44)
-        .halign(gtk4::Align::Center)
-        .valign(gtk4::Align::Center)
-        .build();
-    wrap.add_css_class("drag-handle");
-    let img = Image::from_icon_name("list-drag-handle-symbolic");
-    img.set_icon_size(gtk4::IconSize::Normal);
-    img.set_halign(gtk4::Align::Center);
-    img.set_valign(gtk4::Align::Center);
-    img.add_css_class("dim-label");
-    wrap.append(&img);
-    wrap.set_tooltip_text(Some("Drag to reorder"));
-    wrap.set_cursor_from_name(Some("grab"));
-    wrap
-}
-
-fn make_rename_menu() -> gio::Menu {
-    let menu = gio::Menu::new();
-    menu.append(Some("Rename"), Some("row.rename"));
-    menu
-}
-
-fn show_popover_at<W: IsA<gtk4::Widget>>(parent: &W, x: f64, y: f64) {
-    let popover = PopoverMenu::from_model(Some(&make_rename_menu()));
-    popover.set_parent(parent);
-    popover.set_has_arrow(false);
-    let rect = Rectangle::new(x as i32, y as i32, 1, 1);
-    popover.set_pointing_to(Some(&rect));
-    popover.connect_closed(|p| p.unparent());
-    popover.popup();
-}
-
-fn attach_page_context_menu(ctx: &SidebarCtx, row: &Label, page: &Page) {
-    let ctx_outer = ctx.clone();
-    let page_outer = page.clone();
-    let open_rename = move || {
-        let ctx_inner = ctx_outer.clone();
-        let page_inner = page_outer.clone();
-        dialogs::prompt_rename(
-            &ctx_outer.parent,
-            "Rename Page",
-            &page_outer.name,
-            Box::new(move |new_name| {
-                let mut updated = page_inner.clone();
-                updated.name = new_name;
-                updated.modified_at = Utc::now();
-                if let Err(e) = page_store::update_page(ctx_inner.db.borrow().conn(), &updated)
-                {
-                    tracing::error!("failed to rename page: {}", e);
-                    return;
-                }
-                ctx_inner.refresh();
-            }),
-        );
-    };
-    let open_rename = Rc::new(open_rename);
-
-    let long_press = GestureLongPress::new();
-    long_press.set_touch_only(false);
-    long_press.set_delay_factor(0.6);
-    {
-        let open = open_rename.clone();
-        long_press.connect_pressed(move |_g, _x, _y| (open)());
-    }
-    row.add_controller(long_press);
-
-    let dbl = GestureClick::new();
-    dbl.set_button(gtk4::gdk::BUTTON_PRIMARY);
-    {
-        let open = open_rename.clone();
-        dbl.connect_pressed(move |_g, n, _x, _y| {
-            if n == 2 {
-                (open)();
-            }
-        });
-    }
-    row.add_controller(dbl);
-}
-
-fn attach_section_context_menu(ctx: &SidebarCtx, wrapper: &Label, section: &Section) {
-    let action_group = gio::SimpleActionGroup::new();
-    let rename_action = gio::SimpleAction::new("rename", None);
-    {
-        let ctx = ctx.clone();
-        let section = section.clone();
-        rename_action.connect_activate(move |_, _| {
-            let ctx_inner = ctx.clone();
-            let section_inner = section.clone();
-            dialogs::prompt_rename(
-                &ctx.parent,
-                "Rename Section",
-                &section.name,
-                Box::new(move |new_name| {
-                    if new_name.trim().is_empty() {
-                        return;
-                    }
-                    let mut updated = section_inner.clone();
-                    updated.name = new_name;
-                    if let Err(e) =
-                        section_store::update_section(ctx_inner.db.borrow().conn(), &updated)
-                    {
-                        tracing::error!("failed to rename section: {}", e);
-                        return;
-                    }
-                    ctx_inner.refresh();
-                }),
-            );
-        });
-    }
-    action_group.add_action(&rename_action);
-    wrapper.insert_action_group("row", Some(&action_group));
-
-    let click = GestureClick::new();
-    click.set_button(gtk4::gdk::BUTTON_SECONDARY);
-    click.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    {
-        let wrapper = wrapper.clone();
-        click.connect_pressed(move |_g, _n, x, y| {
-            show_popover_at(&wrapper, x, y);
-        });
-    }
-    wrapper.add_controller(click);
-
-    let long_press = GestureLongPress::new();
-    long_press.set_touch_only(false);
-    long_press.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    {
-        let wrapper = wrapper.clone();
-        long_press.connect_pressed(move |_g, x, y| {
-            show_popover_at(&wrapper, x, y);
-        });
-    }
-    wrapper.add_controller(long_press);
 }
 
 const PAGE_DRAG_PREFIX: &str = "page:";

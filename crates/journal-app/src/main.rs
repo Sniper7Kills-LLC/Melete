@@ -79,12 +79,37 @@ const APP_CSS: &str = r#"
 
 .page-row {
     border-radius: 6px;
-    padding: 4px 6px;
-    min-height: 48px;
+    padding: 2px 6px;
+    min-height: 36px;
     transition: background-color 120ms ease;
 }
-.page-row:hover  { background-color: alpha(@accent_color, 0.15); }
-.page-row:active { background-color: alpha(@accent_color, 0.30); }
+.page-row:hover   { background-color: alpha(@accent_color, 0.15); }
+.page-row:active  { background-color: alpha(@accent_color, 0.30); }
+.page-row.current {
+    background-color: alpha(@amber_accent, 0.18);
+    box-shadow: inset 3px 0 0 @amber_accent;
+}
+
+/* Section row: same hover, looks live ──────────────────────────────── */
+.section-row {
+    border-radius: 6px;
+    padding: 2px 4px;
+    transition: background-color 120ms ease;
+}
+.section-row:hover { background-color: alpha(@accent_color, 0.10); }
+
+/* Inline-rename Entry sits flush in the row, no chrome ─────────────── */
+.inline-rename {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0 2px;
+    min-height: 0;
+}
+.inline-rename:focus {
+    outline: 1px solid alpha(@accent_color, 0.6);
+    background: alpha(@card_bg_color, 0.8);
+}
 
 .drag-handle {
     min-width: 36px;
@@ -98,12 +123,30 @@ const APP_CSS: &str = r#"
     background-color: alpha(@amber_accent, 0.40);
     box-shadow: inset 0 -2px 0 @amber_accent;
 }
-.tool-mnemonic {
-    font-size: 0.62em;
-    font-weight: 700;
-    opacity: 0.7;
-    letter-spacing: 0.05em;
-    margin-top: -2px;
+
+/* ── Compact floating toolbar — single row, ~36px tall ──────────────── */
+.floating-toolbar {
+    padding: 4px 6px;
+    border-radius: 10px;
+}
+.floating-toolbar .compact-tool {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 2px;
+}
+.floating-toolbar .compact-tool image { -gtk-icon-size: 16px; }
+.floating-toolbar .compact-scale { min-height: 22px; }
+.floating-toolbar .compact-scale trough { min-height: 4px; }
+.floating-toolbar separator { margin: 4px 2px; }
+
+.drag-handle-compact {
+    border-radius: 6px;
+    opacity: 0.55;
+    transition: opacity 120ms, background-color 120ms;
+}
+.drag-handle-compact:hover {
+    opacity: 1.0;
+    background-color: alpha(@accent_color, 0.18);
 }
 
 .notebook-card {

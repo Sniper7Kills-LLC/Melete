@@ -7,8 +7,8 @@ use journal_storage::stroke_store;
 
 use crate::state::SharedState;
 
-pub const THUMB_W: i32 = 60;
-pub const THUMB_H: i32 = 78;
+pub const THUMB_W: i32 = 36;
+pub const THUMB_H: i32 = 48;
 
 pub fn render_thumbnail(
     background: &BackgroundConfig,

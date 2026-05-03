@@ -11,22 +11,6 @@ use gtk4::{
 
 use crate::state::{SharedState, Tool};
 
-/// Wrap a tool button in a vertical stack with a tiny mnemonic letter
-/// underneath, so users learn the keyboard shortcut without hovering for a
-/// tooltip.
-fn with_mnemonic(btn: &ToggleButton, letter: &str) -> GtkBox {
-    let v = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .halign(gtk4::Align::Center)
-        .spacing(0)
-        .build();
-    v.append(btn);
-    let lbl = Label::new(Some(letter));
-    lbl.add_css_class("tool-mnemonic");
-    v.append(&lbl);
-    v
-}
-
 /// Build the floating pen toolbar.
 ///
 /// The returned widget is a `GtkBox` positioned via `margin_start` / `margin_top`
@@ -39,20 +23,19 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
 
     let bar = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(8)
+        .spacing(4)
         .halign(gtk4::Align::Start)
         .valign(gtk4::Align::Start)
         .build();
     bar.add_css_class("osd");
     bar.add_css_class("toolbar");
+    bar.add_css_class("floating-toolbar");
 
-    // ── Drag handle (touch-friendly hit area) ─────────────────────────────
-    let handle = Image::from_icon_name("open-menu-symbolic");
+    // ── Drag handle — compact (vertical grip dots) ────────────────────────
+    let handle = Image::from_icon_name("view-more-symbolic");
     handle.set_tooltip_text(Some("Drag to move toolbar"));
-    handle.add_css_class("drag-handle");
-    handle.set_size_request(36, 44);
-    handle.set_margin_start(4);
-    handle.set_margin_end(4);
+    handle.add_css_class("drag-handle-compact");
+    handle.set_size_request(20, 32);
     handle.set_cursor_from_name(Some("grab"));
     bar.append(&handle);
 
@@ -132,11 +115,10 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
         });
     }
 
-    bar.append(&with_mnemonic(&pen_btn, "B"));
-    bar.append(&with_mnemonic(&highlighter_btn, "H"));
-    bar.append(&with_mnemonic(&eraser_btn, "E"));
-    bar.append(&with_mnemonic(&partial_eraser_btn, "e"));
-    bar.append(&with_mnemonic(&selection_btn, "V"));
+    for b in [&pen_btn, &highlighter_btn, &eraser_btn, &partial_eraser_btn, &selection_btn] {
+        b.add_css_class("compact-tool");
+        bar.append(b);
+    }
 
     bar.append(&Separator::new(Orientation::Vertical));
 
@@ -169,13 +151,14 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
     }
     bar.append(&color_btn);
 
-    bar.append(&Label::new(Some("Width")));
-
-    // ── Width scale ───────────────────────────────────────────────────────
+    // ── Width scale (compact, no leading "Width" label) ──────────────────
     let scale = Scale::with_range(Orientation::Horizontal, 0.5, 12.0, 0.5);
     scale.set_value(state.borrow().pen.base_width);
-    scale.set_width_request(160);
+    scale.set_width_request(120);
     scale.set_draw_value(true);
+    scale.set_value_pos(gtk4::PositionType::Right);
+    scale.set_tooltip_text(Some("Pen width (mm)"));
+    scale.add_css_class("compact-scale");
     {
         let state = state.clone();
         scale.connect_value_changed(move |s| {

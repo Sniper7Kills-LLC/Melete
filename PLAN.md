@@ -234,6 +234,11 @@ Home screen (no notebook open) shows notebook grid/list.
 - [x] Sidebar page thumbnails bumped 40×52 → 60×78 (`crate::thumbnail::THUMB_W/THUMB_H` reused as the single source of truth)
 - [x] Header `?` button → keyboard cheat-sheet popover with `<kbd>`-styled shortcuts pulled from `shortcuts.rs`
 - [x] Template editor: Ctrl+S to save, "Saved ✓" inline indicator, friendlier palette labels ("Grid Area", "Ruled Lines", "Dot Grid", "Calendar Month"), variable popover gains live "Today → …" preview row + grouped header
+- [x] Floating toolbar shrunk to a single ~36px-tall row — mnemonic letter labels removed (tooltips still carry the shortcut), tool buttons compact (28px), width slider trimmed (120px), grip handle compact (20×32 vertical-dots icon)
+- [x] Sidebar page rows: dropped the dedicated drag handle (entire row is now a drag source), reduced row height (36px min), thumbnails shrunk to 36×48; current page indicated by an amber left-edge accent + tinted background
+- [x] Inline rename for sections AND pages — double-click the label, an `Entry` swaps in via a `Stack`, Enter commits, Esc cancels, focus-leave commits. No more modal `prompt_rename` popup
+- [x] Section row: dropped its drag handle too; the entire header is the drag source; double-click the section label to rename inline
+- [x] Home screen has one "New notebook" button — clicking it pops a small chooser dialog with two cards (Notebook / Planner) instead of two separate header buttons
 
 ## Phase 4.5 finish ✅ (PDF import deferred)
 
