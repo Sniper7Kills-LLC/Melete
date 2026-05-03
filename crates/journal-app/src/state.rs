@@ -47,6 +47,10 @@ pub struct CanvasState {
     /// expand `{date}/{weekday}/...` placeholders in template `TextBlock`s.
     /// `None` when the current page is not a planner page.
     pub current_page_date: Option<chrono::NaiveDate>,
+    /// Installed by the planner navigation strip; called from `load_page`
+    /// when the user clicks a Day-addressed planner page so prev/next walk
+    /// from that date instead of from "today".
+    pub planner_nav_sync_date: Option<Rc<dyn Fn(chrono::NaiveDate)>>,
 
     pub tool: Tool,
     pub history: History,
@@ -124,6 +128,7 @@ pub fn new_shared_state(
         current_page_id: None,
         current_template: None,
         current_page_date: None,
+        planner_nav_sync_date: None,
         tool: Tool::Pen,
         history: History::new(),
         selected_stroke_ids: HashSet::new(),

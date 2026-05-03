@@ -265,9 +265,13 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
         s.strokes.clear();
         s.current_stroke = None;
         s.current_page_id = None;
+        s.current_page_date = None;
         s.current_template = None;
         s.background = crate::state::default_background();
         s.page_rect = crate::state::default_page_rect();
+        // Drop any callback installed by the previous notebook's planner
+        // nav strip; the new notebook will install its own.
+        s.planner_nav_sync_date = None;
     }
     win.borrow().canvas.queue_draw();
 

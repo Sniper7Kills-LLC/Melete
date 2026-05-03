@@ -422,14 +422,17 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
             name_stack.set_visible_child_name("label");
         })
     };
+    // Enter on the Entry → commit (see page-row note for why connect_activate).
+    {
+        let commit = commit.clone();
+        entry.connect_activate(move |_| (commit)(true));
+    }
+    // Esc → cancel.
     {
         let key = EventControllerKey::new();
+        key.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let commit = commit.clone();
         key.connect_key_pressed(move |_c, kv, _, _| {
-            if kv == gtk4::gdk::Key::Return || kv == gtk4::gdk::Key::KP_Enter {
-                (commit)(true);
-                return glib::Propagation::Stop;
-            }
             if kv == gtk4::gdk::Key::Escape {
                 (commit)(false);
                 return glib::Propagation::Stop;
@@ -548,14 +551,20 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
         })
     };
 
+    // Enter on the Entry → commit. Use the canonical `activate` signal
+    // because GtkEntry consumes Return at the widget level before bubbling
+    // it to an EventControllerKey, so connect_key_pressed never sees it.
+    {
+        let commit = commit.clone();
+        entry.connect_activate(move |_| (commit)(true));
+    }
+    // Esc → cancel. Use Capture phase so the Entry's own handler doesn't
+    // swallow it first.
     {
         let key = EventControllerKey::new();
+        key.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let commit = commit.clone();
         key.connect_key_pressed(move |_c, kv, _, _| {
-            if kv == gtk4::gdk::Key::Return || kv == gtk4::gdk::Key::KP_Enter {
-                (commit)(true);
-                return glib::Propagation::Stop;
-            }
             if kv == gtk4::gdk::Key::Escape {
                 (commit)(false);
                 return glib::Propagation::Stop;
@@ -851,5 +860,15 @@ fn load_page(state: &SharedState, page: &Page, canvas: &DrawingArea) {
     };
     state::set_current_template(state, template);
     state::set_current_page(state, page.id);
+
+    // If this is a planner Day page and the planner nav strip is installed,
+    // sync the strip's "current date" so prev/next walk from this page.
+    if let Some(journal_core::CalendarPageAddress::Day { date, .. }) = page.planner_address {
+        let sync = state.borrow().planner_nav_sync_date.clone();
+        if let Some(sync) = sync {
+            (sync)(date);
+        }
+    }
+
     canvas.queue_draw();
 }

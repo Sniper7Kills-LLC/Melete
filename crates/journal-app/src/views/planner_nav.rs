@@ -60,6 +60,11 @@ fn template_for_address<'a>(
 
 /// Ensure pages exist in `section_id` for each `(address, template_id, title)`
 /// triple, in the given order. Returns the resolved pages in the same order.
+///
+/// Newly-inserted Day-addressed pages are slotted into chronological order
+/// within the section — so if the user jumps to a future date and creates a
+/// page, then later "today" rolls around, the new today page lands BEFORE
+/// the future page rather than appended after it.
 pub fn ensure_planner_pages(
     db: &mut Db,
     section_id: SectionId,
@@ -70,14 +75,16 @@ pub fn ensure_planner_pages(
         match page_store::find_page_by_address(db.conn(), section_id, addr) {
             Ok(Some(page)) => out.push(page),
             Ok(None) => {
-                let position = page_store::list_pages(db.conn(), section_id)
+                // Insert at end first; we'll reorder to the correct
+                // chronological slot below for Day-addressed pages.
+                let end_position = page_store::list_pages(db.conn(), section_id)
                     .map(|v| v.len() as u32)
                     .unwrap_or(0);
                 let now = chrono::Utc::now();
                 let page = Page {
                     id: PageId(Uuid::new_v4()),
                     section_id,
-                    position,
+                    position: end_position,
                     template_id: *tid,
                     planner_address: Some(*addr),
                     created_at: now,
@@ -88,12 +95,71 @@ pub fn ensure_planner_pages(
                     tracing::error!("failed to insert planner page: {}", e);
                     continue;
                 }
+
+                if let PlannerPageAddress::Day { date: new_date, template_index } = addr {
+                    let target = chronological_target_position(
+                        db,
+                        section_id,
+                        *new_date,
+                        *template_index,
+                        page.id,
+                    );
+                    if target != end_position {
+                        if let Err(e) =
+                            page_store::reorder_page(db.conn_mut(), page.id, target)
+                        {
+                            tracing::warn!("reorder planner page chronologically: {}", e);
+                        }
+                    }
+                }
+
                 out.push(page);
             }
             Err(e) => tracing::error!("find_page_by_address failed: {}", e),
         }
     }
     out
+}
+
+/// Compute the position the new Day-addressed page should sit at within
+/// `section_id` so that all Day pages stay in (date, template_index) order.
+/// Non-Day pages keep their relative order at the front.
+fn chronological_target_position(
+    db: &Db,
+    section_id: SectionId,
+    new_date: NaiveDate,
+    new_template_index: u32,
+    new_page_id: PageId,
+) -> u32 {
+    let pages = match page_store::list_pages(db.conn(), section_id) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("list_pages for chronological insert: {}", e);
+            return u32::MAX;
+        }
+    };
+    // Pages are returned in `position` order. Walk in order and find the
+    // index of the first existing Day page whose (date, idx) sorts AFTER us.
+    // Skip ourselves.
+    let mut idx: u32 = 0;
+    for p in &pages {
+        if p.id == new_page_id {
+            continue;
+        }
+        match p.planner_address {
+            Some(PlannerPageAddress::Day { date, template_index }) => {
+                if (date, template_index) > (new_date, new_template_index) {
+                    return idx;
+                }
+            }
+            _ => {
+                // Non-Day pages (e.g. before-month wrappers if any) keep
+                // their leading slot — our new Day page goes after them.
+            }
+        }
+        idx += 1;
+    }
+    idx
 }
 
 /// Navigate the planner notebook to `date`: build any missing year/month/week
@@ -296,6 +362,26 @@ pub fn build_nav_strip(
                 popover.popdown();
             }
         });
+    }
+
+    // Install a "sync date" callback so that clicking a planner page in the
+    // sidebar updates this strip's notion of "current date" — making prev /
+    // next walk from the clicked page instead of from today.
+    {
+        let current = current.clone();
+        let label = date_label.clone();
+        let cal = cal.clone();
+        let sync: Rc<dyn Fn(NaiveDate)> = Rc::new(move |d: NaiveDate| {
+            if current.get() == d {
+                return;
+            }
+            current.set(d);
+            label.set_text(&fmt_date(d));
+            cal.set_year(d.year());
+            cal.set_month(d.month0() as i32);
+            cal.set_day(d.day() as i32);
+        });
+        state.borrow_mut().planner_nav_sync_date = Some(sync);
     }
 
     // Auto-load today on open.
