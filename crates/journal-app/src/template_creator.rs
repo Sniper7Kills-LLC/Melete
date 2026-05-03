@@ -214,6 +214,12 @@ struct CreatorState {
     snap_grid_mm: Option<f64>,
     /// Whether smart-guide alignment hints are rendered during a drag.
     smart_guides_active: bool,
+
+    /// Cursor canvas-space position while hovering. Used to render a
+    /// translucent ghost of the default-size widget when a placement tool
+    /// is active, so the user sees where it'll land before clicking.
+    /// `None` when the cursor is outside the canvas area.
+    hover_canvas: Option<(f64, f64)>,
 }
 
 impl CreatorState {
@@ -231,6 +237,7 @@ impl CreatorState {
             history: EditorHistory::new(),
             snap_grid_mm: None,
             smart_guides_active: true,
+            hover_canvas: None,
         }
     }
 
@@ -727,6 +734,41 @@ fn build_canvas_area(
         }
     });
 
+    // Hover ghost: when a placement tool is active, follow the cursor and
+    // render a translucent preview of the default-size widget so the user
+    // can see where their click will land.
+    {
+        let motion = gtk4::EventControllerMotion::new();
+        let cs2 = cs.clone();
+        let area2 = area.clone();
+        motion.connect_motion(move |_c, x, y| {
+            let size = get_area_size(&area2);
+            let pt = screen_to_template(x, y, size, &cs2.borrow().template);
+            let mut s = cs2.borrow_mut();
+            let new_hover = if s.tool != PlaceTool::None {
+                Some(pt)
+            } else {
+                None
+            };
+            if s.hover_canvas != new_hover {
+                s.hover_canvas = new_hover;
+                drop(s);
+                area2.queue_draw();
+            }
+        });
+        let cs3 = cs.clone();
+        let area3 = area.clone();
+        motion.connect_leave(move |_c| {
+            let mut s = cs3.borrow_mut();
+            if s.hover_canvas.is_some() {
+                s.hover_canvas = None;
+                drop(s);
+                area3.queue_draw();
+            }
+        });
+        area.add_controller(motion);
+    }
+
     // We also need a GestureClick to detect Ctrl/Shift modifiers on mouse-down.
     // GestureDrag fires drag_begin which doesn't expose modifier state easily,
     // so we use an additional GestureClick to handle modifier-click selection.
@@ -936,11 +978,27 @@ fn build_canvas_area(
             {
                 let mut s = cs.borrow_mut();
                 if s.tool != PlaceTool::None && s.drag_active {
-                    // Place a new widget — snap coordinates.
-                    let rx = s.snap(start.0.min(end.0));
-                    let ry = s.snap(start.1.min(end.1));
-                    let rw = s.snap((end.0 - start.0).abs()).max(2.0);
-                    let rh = s.snap((end.1 - start.1).abs()).max(2.0);
+                    // Place a new widget. If the user only clicked (drag
+                    // delta < 3mm in both axes) drop the tool's default
+                    // size centred on the click point — saves having to
+                    // rubber-band a rectangle for every placement.
+                    let dragged_w = (end.0 - start.0).abs();
+                    let dragged_h = (end.1 - start.1).abs();
+                    let click_only = dragged_w < 3.0 && dragged_h < 3.0;
+                    let (rx, ry, rw, rh) = if click_only {
+                        let (dw, dh) = default_size_for(s.tool);
+                        let cx = start.0 - dw * 0.5;
+                        let cy = start.1 - dh * 0.5;
+                        let cx = cx.max(0.0).min(s.template.size_mm.0 - dw).max(0.0);
+                        let cy = cy.max(0.0).min(s.template.size_mm.1 - dh).max(0.0);
+                        (s.snap(cx), s.snap(cy), dw, dh)
+                    } else {
+                        let rx = s.snap(start.0.min(end.0));
+                        let ry = s.snap(start.1.min(end.1));
+                        let rw = s.snap(dragged_w).max(2.0);
+                        let rh = s.snap(dragged_h).max(2.0);
+                        (rx, ry, rw, rh)
+                    };
                     let kind = default_kind_for(s.tool);
                     let widget = TemplateWidget {
                         id: Uuid::new_v4(),
@@ -948,6 +1006,7 @@ fn build_canvas_area(
                         rect: WidgetRect { x: rx, y: ry, width: rw, height: rh },
                         style: WidgetStyle::default(),
                     };
+                    let _ = (rx, ry, rw, rh); // values consumed by `widget.rect`
                     let insert_idx = s.template.widgets.len();
                     s.template.widgets.push(widget.clone());
                     s.history.push(EditOp::Insert { idx: insert_idx, widget });
@@ -1632,6 +1691,29 @@ fn resize_handle_hit(r: &WidgetRect, pt: (f64, f64)) -> Handle {
     }
 }
 
+/// Default placement size in mm (width, height) per tool, used when the
+/// user clicks-without-dragging to drop a widget at a sensible size, and
+/// for the hover-ghost preview that previews where the widget will land.
+fn default_size_for(tool: PlaceTool) -> (f64, f64) {
+    match tool {
+        PlaceTool::TextBlock => (90.0, 12.0),
+        PlaceTool::Rectangle => (60.0, 35.0),
+        PlaceTool::Ellipse => (60.0, 35.0),
+        PlaceTool::Line => (90.0, 4.0),
+        PlaceTool::GridRegion => (110.0, 90.0),
+        PlaceTool::LinesRegion => (110.0, 90.0),
+        PlaceTool::DotsRegion => (110.0, 90.0),
+        PlaceTool::CalendarMonth => (95.0, 95.0),
+        PlaceTool::Timeline => (75.0, 130.0),
+        PlaceTool::Checklist => (90.0, 80.0),
+        PlaceTool::BigThree => (95.0, 95.0),
+        PlaceTool::PriorityList => (90.0, 130.0),
+        PlaceTool::DailyAppointments => (90.0, 150.0),
+        PlaceTool::WeeklyCompass => (110.0, 130.0),
+        PlaceTool::None => (40.0, 40.0),
+    }
+}
+
 fn default_kind_for(tool: PlaceTool) -> WidgetKind {
     match tool {
         PlaceTool::TextBlock => WidgetKind::TextBlock { text: "Text".into(), font_size_mm: 5.0 },
@@ -1717,6 +1799,27 @@ fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) 
             if let Some(cur) = cs.template.widgets.get(idx) {
                 draw_smart_guides(ctx, &cs.template.widgets, idx, cur, scale, tw, th);
             }
+        }
+    }
+
+    // Hover ghost: when a placement tool is active, render a translucent
+    // amber rectangle at the cursor showing the default size of whatever
+    // the user is about to place. Disappears once the user starts dragging
+    // (drag_active branch above already paints the live placement rect).
+    if cs.tool != PlaceTool::None && !cs.drag_active {
+        if let Some((cx, cy)) = cs.hover_canvas {
+            let (dw, dh) = default_size_for(cs.tool);
+            let rx = (cx - dw * 0.5).max(0.0).min(tw - dw).max(0.0);
+            let ry = (cy - dh * 0.5).max(0.0).min(th - dh).max(0.0);
+            ctx.save().ok();
+            ctx.set_source_rgba(0.84, 0.66, 0.23, 0.18);
+            ctx.rectangle(rx, ry, dw, dh);
+            let _ = ctx.fill_preserve();
+            ctx.set_source_rgba(0.84, 0.66, 0.23, 0.85);
+            ctx.set_line_width(0.4);
+            ctx.set_dash(&[1.5, 1.5], 0.0);
+            let _ = ctx.stroke();
+            ctx.restore().ok();
         }
     }
 

@@ -132,6 +132,14 @@ pub fn prompt_new_section(parent: &ApplicationWindow, on_ok: Box<dyn Fn(String)>
 /// Prompt for new page template choice. The dropdown shows "Blank (no template)"
 /// at the top, followed by the templates allowed for `section_id`.
 ///
+/// If the chosen template contains widgets that have configurable knobs
+/// (CalendarMonth → which month/year, Timeline / DailyAppointments → hour
+/// range, PriorityList → row count, Checklist → items), a second
+/// "Configure widgets" dialog appears so the user can pin per-page values
+/// before the page is created. These persist as `Page.widget_overrides`
+/// so dropping a "Monthly Planner" template onto a freeform page can show
+/// October 2026 even when today is May 2026.
+///
 /// Filtering rule:
 /// - If the section has `allowed_templates = Some(list)`, that list is used.
 /// - Else if the notebook has a non-empty `assigned_templates`, use that.
@@ -141,7 +149,7 @@ pub fn prompt_new_page(
     state: SharedState,
     notebook_id: NotebookId,
     section_id: SectionId,
-    on_ok: Box<dyn Fn(Option<TemplateId>)>,
+    on_ok: Box<dyn Fn(Option<TemplateId>, std::collections::HashMap<Uuid, journal_core::WidgetOverride>)>,
 ) {
     let templates = available_templates_for_section(&state, notebook_id, section_id);
 
@@ -168,19 +176,239 @@ pub fn prompt_new_page(
     let templates_rc: Rc<RefCell<Vec<PageTemplate>>> = Rc::new(RefCell::new(templates));
     let dropdown_for_ok = dropdown.clone();
     let templates_for_ok = templates_rc.clone();
+    let on_ok_rc: Rc<dyn Fn(Option<TemplateId>, std::collections::HashMap<Uuid, journal_core::WidgetOverride>)> = Rc::from(on_ok);
+    let parent_rc = parent.clone();
     let row = build_button_row(&win, move || {
         let idx = dropdown_for_ok.selected() as usize;
-        let template_id = if idx == 0 {
-            None
-        } else {
-            templates_for_ok.borrow().get(idx - 1).map(|t| t.id)
+        if idx == 0 {
+            (on_ok_rc)(None, std::collections::HashMap::new());
+            return;
+        }
+        let templates_borrow = templates_for_ok.borrow();
+        let template = match templates_borrow.get(idx - 1).cloned() {
+            Some(t) => t,
+            None => {
+                (on_ok_rc)(None, std::collections::HashMap::new());
+                return;
+            }
         };
-        on_ok(template_id);
+        drop(templates_borrow);
+        let configurable: Vec<journal_core::TemplateWidget> = template
+            .widgets
+            .iter()
+            .filter(|w| widget_is_configurable(&w.kind))
+            .cloned()
+            .collect();
+        if configurable.is_empty() {
+            (on_ok_rc)(Some(template.id), std::collections::HashMap::new());
+            return;
+        }
+        let on_ok_inner = on_ok_rc.clone();
+        let template_id = template.id;
+        prompt_widget_overrides(&parent_rc, configurable, Box::new(move |overrides| {
+            (on_ok_inner)(Some(template_id), overrides);
+        }));
     });
     body.append(&row);
 
     win.set_child(Some(&body));
     win.present();
+}
+
+fn widget_is_configurable(kind: &journal_core::WidgetKind) -> bool {
+    use journal_core::WidgetKind as K;
+    matches!(
+        kind,
+        K::CalendarMonth
+            | K::Timeline { .. }
+            | K::DailyAppointments { .. }
+            | K::PriorityList { .. }
+            | K::Checklist { .. }
+    )
+}
+
+/// Modal that lets the user pin per-page values for any configurable
+/// widgets in the chosen template before the page is created.
+fn prompt_widget_overrides(
+    parent: &ApplicationWindow,
+    widgets: Vec<journal_core::TemplateWidget>,
+    on_ok: Box<dyn Fn(std::collections::HashMap<Uuid, journal_core::WidgetOverride>)>,
+) {
+    use gtk4::{Adjustment, ScrolledWindow, SpinButton};
+    use journal_core::{WidgetKind as K, WidgetOverride as WO};
+
+    let win = Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .title("Configure widgets")
+        .default_width(420)
+        .default_height(520)
+        .build();
+
+    let body = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+
+    let scroll = ScrolledWindow::builder().vexpand(true).build();
+    let list = GtkBox::builder().orientation(Orientation::Vertical).spacing(12).build();
+    scroll.set_child(Some(&list));
+    body.append(&scroll);
+
+    // Each row's "read current value" closure pushed into this Vec; called
+    // when the user clicks OK to assemble the final overrides map.
+    let mut readers: Vec<(Uuid, Rc<dyn Fn() -> Option<WO>>)> = Vec::new();
+
+    for w in &widgets {
+        let row = GtkBox::builder().orientation(Orientation::Vertical).spacing(4).build();
+        let header = Label::builder()
+            .label(widget_kind_label(&w.kind))
+            .halign(gtk4::Align::Start)
+            .build();
+        header.add_css_class("heading");
+        row.append(&header);
+
+        match &w.kind {
+            K::CalendarMonth => {
+                let cal = Calendar::new();
+                let today = chrono::Local::now().date_naive();
+                use chrono::Datelike;
+                cal.set_year(today.year());
+                cal.set_month(today.month0() as i32);
+                cal.set_day(1);
+                row.append(&cal);
+                let cal_clone = cal.clone();
+                readers.push((
+                    w.id,
+                    Rc::new(move || {
+                        Some(WO::CalendarMonth {
+                            year: cal_clone.year(),
+                            month: (cal_clone.month() + 1) as u32,
+                        })
+                    }),
+                ));
+            }
+            K::Timeline { start_hour, end_hour, slot_minutes } => {
+                let s_adj = Adjustment::new(*start_hour as f64, 0.0, 23.0, 1.0, 1.0, 0.0);
+                let e_adj = Adjustment::new(*end_hour as f64, 1.0, 24.0, 1.0, 1.0, 0.0);
+                let s_spin = SpinButton::new(Some(&s_adj), 1.0, 0);
+                let e_spin = SpinButton::new(Some(&e_adj), 1.0, 0);
+                let inline = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
+                inline.append(&Label::new(Some("Start")));
+                inline.append(&s_spin);
+                inline.append(&Label::new(Some("End")));
+                inline.append(&e_spin);
+                row.append(&inline);
+                let s2 = s_spin.clone();
+                let e2 = e_spin.clone();
+                let slot = *slot_minutes;
+                readers.push((
+                    w.id,
+                    Rc::new(move || {
+                        Some(WO::Timeline {
+                            start_hour: s2.value() as u8,
+                            end_hour: e2.value() as u8,
+                            slot_minutes: slot,
+                        })
+                    }),
+                ));
+            }
+            K::DailyAppointments { start_hour, end_hour } => {
+                let s_adj = Adjustment::new(*start_hour as f64, 0.0, 23.0, 1.0, 1.0, 0.0);
+                let e_adj = Adjustment::new(*end_hour as f64, 1.0, 24.0, 1.0, 1.0, 0.0);
+                let s_spin = SpinButton::new(Some(&s_adj), 1.0, 0);
+                let e_spin = SpinButton::new(Some(&e_adj), 1.0, 0);
+                let inline = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
+                inline.append(&Label::new(Some("Start")));
+                inline.append(&s_spin);
+                inline.append(&Label::new(Some("End")));
+                inline.append(&e_spin);
+                row.append(&inline);
+                let s2 = s_spin.clone();
+                let e2 = e_spin.clone();
+                readers.push((
+                    w.id,
+                    Rc::new(move || {
+                        Some(WO::DailyAppointments {
+                            start_hour: s2.value() as u8,
+                            end_hour: e2.value() as u8,
+                        })
+                    }),
+                ));
+            }
+            K::PriorityList { count } => {
+                let adj = Adjustment::new(*count as f64, 1.0, 60.0, 1.0, 5.0, 0.0);
+                let spin = SpinButton::new(Some(&adj), 1.0, 0);
+                let inline = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
+                inline.append(&Label::new(Some("Rows")));
+                inline.append(&spin);
+                row.append(&inline);
+                let spin2 = spin.clone();
+                readers.push((
+                    w.id,
+                    Rc::new(move || Some(WO::PriorityList { count: spin2.value() as u32 })),
+                ));
+            }
+            K::Checklist { items } => {
+                let entry = Entry::builder().text(&items.join(" | ")).build();
+                entry.set_tooltip_text(Some("Items separated by ' | '"));
+                row.append(&entry);
+                let entry2 = entry.clone();
+                readers.push((
+                    w.id,
+                    Rc::new(move || {
+                        let parts: Vec<String> = entry2
+                            .text()
+                            .split('|')
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        if parts.is_empty() {
+                            None
+                        } else {
+                            Some(WO::Checklist { items: parts })
+                        }
+                    }),
+                ));
+            }
+            _ => {}
+        }
+
+        list.append(&row);
+    }
+
+    let on_ok_rc: Rc<dyn Fn(std::collections::HashMap<Uuid, WO>)> = Rc::from(on_ok);
+    let win_for_ok = win.clone();
+    let row = build_button_row(&win, move || {
+        let mut overrides = std::collections::HashMap::new();
+        for (id, reader) in &readers {
+            if let Some(v) = reader() {
+                overrides.insert(*id, v);
+            }
+        }
+        (on_ok_rc)(overrides);
+        win_for_ok.close();
+    });
+    body.append(&row);
+
+    win.set_child(Some(&body));
+    win.present();
+}
+
+fn widget_kind_label(kind: &journal_core::WidgetKind) -> &'static str {
+    use journal_core::WidgetKind as K;
+    match kind {
+        K::CalendarMonth => "Calendar month",
+        K::Timeline { .. } => "Timeline (hours)",
+        K::DailyAppointments { .. } => "Day schedule (hours)",
+        K::PriorityList { .. } => "Priority list (rows)",
+        K::Checklist { .. } => "Checklist items",
+        _ => "Widget",
+    }
 }
 
 fn available_templates_for_section(

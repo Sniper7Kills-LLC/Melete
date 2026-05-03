@@ -329,7 +329,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
                 ctx_outer.state.clone(),
                 notebook_id,
                 section_id,
-                Box::new(move |template_id| {
+                Box::new(move |template_id, widget_overrides| {
                     let position = match ctx_inner.db.borrow_mut().list_pages(section_id) {
                         Ok(v) => v.len() as u32,
                         Err(_) => 0,
@@ -344,7 +344,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
                         created_at: now,
                         modified_at: now,
                         name: String::new(),
-                        widget_overrides: Default::default(),
+                        widget_overrides,
                     };
                     if let Err(e) =
                         ctx_inner.db.borrow_mut().insert_page(&page)

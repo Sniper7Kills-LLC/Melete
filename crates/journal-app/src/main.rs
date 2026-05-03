@@ -275,6 +275,16 @@ const APP_CSS: &str = r#"
     font-size: 0.88em;
     opacity: 0.85;
 }
+.nbtc-palette-chip {
+    border: 1px solid alpha(@borders, 0.45);
+    border-radius: 6px;
+    padding: 4px 8px;
+    transition: background-color 120ms ease, border-color 120ms ease;
+}
+.nbtc-palette-chip:hover {
+    border-color: @accent_color;
+    background-color: alpha(@accent_color, 0.08);
+}
 "#;
 
 fn load_css() {

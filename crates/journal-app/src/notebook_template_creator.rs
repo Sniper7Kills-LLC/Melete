@@ -626,27 +626,34 @@ fn build_palette(page_templates: &Rc<Vec<PageTemplate>>) -> ScrolledWindow {
 fn build_palette_chip(t: &PageTemplate) -> GtkBox {
     let chip = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(6)
-        .margin_top(2)
-        .margin_bottom(2)
+        .spacing(8)
+        .margin_top(1)
+        .margin_bottom(1)
         .margin_start(2)
         .margin_end(2)
         .build();
-    chip.add_css_class("notebook-card");
+    // Use the dedicated nbtc-palette-chip class instead of the bulky
+    // .notebook-card (which adds 130px min-height for the home grid).
+    chip.add_css_class("nbtc-palette-chip");
 
-    // Colour swatch
+    // Colour swatch — slightly bigger so it reads at a glance, but the
+    // overall chip stays compact (~28px tall).
+    let swatch_size: i32 = 22;
     let swatch = gtk4::DrawingArea::builder()
-        .width_request(14)
-        .height_request(14)
+        .width_request(swatch_size)
+        .height_request(swatch_size)
         .valign(Align::Center)
         .build();
     let bg = t.background.clone();
-    swatch.set_draw_func(move |_, ctx, _w, _h| {
-        // A simple coloured rectangle as a tiny swatch.
+    swatch.set_draw_func(move |_, ctx, w, h| {
         let (r, g, b) = swatch_color(&bg);
         ctx.set_source_rgb(r, g, b);
-        ctx.rectangle(0.0, 0.0, 14.0, 14.0);
+        ctx.rectangle(0.0, 0.0, w as f64, h as f64);
         let _ = ctx.fill();
+        ctx.set_source_rgba(0.0, 0.0, 0.0, 0.18);
+        ctx.set_line_width(1.0);
+        ctx.rectangle(0.5, 0.5, (w - 1) as f64, (h - 1) as f64);
+        let _ = ctx.stroke();
     });
     chip.append(&swatch);
 
