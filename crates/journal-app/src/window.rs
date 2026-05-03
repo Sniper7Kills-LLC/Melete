@@ -69,10 +69,9 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     canvas_overlay.set_child(Some(&canvas));
     canvas_overlay.add_overlay(&bar);
 
-    // Zoom-percentage badge — bottom-right corner of the canvas. Click to
-    // fit the current page.
-    let zoom_badge = build_zoom_badge(state.clone(), canvas.clone());
-    canvas_overlay.add_overlay(&zoom_badge);
+    // Zoom indicator + fit-page button — bottom-right corner of the canvas.
+    let zoom_corner = build_zoom_corner(state.clone(), canvas.clone());
+    canvas_overlay.add_overlay(&zoom_corner);
 
     let home_container = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -368,24 +367,46 @@ pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
     w.stack.set_visible_child_name(TEMPLATE_EDITOR_NAME);
 }
 
-/// Build the floating zoom badge that sits in the bottom-right corner of the
-/// canvas overlay. Shows the current zoom as a percentage; clicking it
-/// re-fits the current page to the viewport.
-fn build_zoom_badge(state: SharedState, canvas: DrawingArea) -> Button {
-    let btn = Button::with_label("100%");
-    btn.add_css_class("zoom-badge");
-    btn.add_css_class("osd");
-    btn.set_halign(gtk4::Align::End);
-    btn.set_valign(gtk4::Align::End);
-    btn.set_margin_end(16);
-    btn.set_margin_bottom(16);
-    btn.set_tooltip_text(Some("Zoom — click to fit page"));
+/// Compute the zoom value at which the page would exactly fit the viewport
+/// (matches `state::fit_viewport_to_page`'s `* 0.9` margin). Returns `None`
+/// when we can't compute it yet (zero-sized canvas or page).
+fn natural_fit_zoom(state: &SharedState) -> Option<f64> {
+    let s = state.borrow();
+    let (sw, sh) = s.transform.screen_size();
+    let pr = s.page_rect;
+    if sw <= 0.0 || sh <= 0.0 || pr.width <= 0.0 || pr.height <= 0.0 {
+        return None;
+    }
+    Some((sw / pr.width).min(sh / pr.height) * 0.9)
+}
 
-    // Click → fit page (same as Ctrl+0).
+/// Build the floating zoom indicator + "fit page" button cluster that sits
+/// in the bottom-right corner of the canvas overlay.
+///
+/// The displayed percentage is relative to the page's *natural* fit zoom
+/// (i.e. the zoom that makes the page fill the viewport). 100% therefore
+/// means "page fits the screen" — what users expect — instead of the raw
+/// internal `transform.zoom()` value, which is in canvas-units-per-screen-px
+/// and produces visually misleading numbers.
+fn build_zoom_corner(state: SharedState, canvas: DrawingArea) -> GtkBox {
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .halign(gtk4::Align::End)
+        .valign(gtk4::Align::End)
+        .margin_end(16)
+        .margin_bottom(16)
+        .build();
+
+    // Fit-to-page button — explicit, discoverable.
+    let fit_btn = Button::from_icon_name("zoom-fit-best-symbolic");
+    fit_btn.add_css_class("zoom-badge");
+    fit_btn.add_css_class("osd");
+    fit_btn.set_tooltip_text(Some("Fit page (Ctrl+0)"));
     {
         let state = state.clone();
         let canvas = canvas.clone();
-        btn.connect_clicked(move |_| {
+        fit_btn.connect_clicked(move |_| {
             let page_rect = state.borrow().page_rect;
             {
                 let mut s = state.borrow_mut();
@@ -394,25 +415,50 @@ fn build_zoom_badge(state: SharedState, canvas: DrawingArea) -> Button {
             canvas.queue_draw();
         });
     }
+    row.append(&fit_btn);
 
-    // Tick: update the label whenever zoom changes. Cheap — string compare
-    // first, only set_label on change.
+    // Zoom-percentage label — also clickable as a redundant fit shortcut.
+    let badge = Button::with_label("100%");
+    badge.add_css_class("zoom-badge");
+    badge.add_css_class("osd");
+    badge.set_tooltip_text(Some("Zoom — click to fit page"));
     {
         let state = state.clone();
-        let btn_for_tick = btn.clone();
+        let canvas = canvas.clone();
+        badge.connect_clicked(move |_| {
+            let page_rect = state.borrow().page_rect;
+            {
+                let mut s = state.borrow_mut();
+                crate::state::fit_viewport_to_page_pub(&mut s.transform, page_rect);
+            }
+            canvas.queue_draw();
+        });
+    }
+    row.append(&badge);
+
+    // Tick: update the label whenever the zoom (relative to fit-zoom)
+    // changes. Cheap — int compare first, only set_label on change.
+    {
+        let state = state.clone();
+        let badge_for_tick = badge.clone();
         let last: std::rc::Rc<std::cell::Cell<i32>> = std::rc::Rc::new(std::cell::Cell::new(-1));
-        btn.add_tick_callback(move |_, _| {
-            let z = state.borrow().transform.zoom();
-            let pct = (z * 100.0).round() as i32;
+        badge.add_tick_callback(move |_, _| {
+            let pct = match natural_fit_zoom(&state) {
+                Some(fit) if fit > 1e-9 => {
+                    let z = state.borrow().transform.zoom();
+                    ((z / fit) * 100.0).round() as i32
+                }
+                _ => 100,
+            };
             if last.get() != pct {
                 last.set(pct);
-                btn_for_tick.set_label(&format!("{}%", pct));
+                badge_for_tick.set_label(&format!("{}%", pct));
             }
             gtk4::glib::ControlFlow::Continue
         });
     }
 
-    btn
+    row
 }
 
 fn build_cheatsheet_button() -> MenuButton {
