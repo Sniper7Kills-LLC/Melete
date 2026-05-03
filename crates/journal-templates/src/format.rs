@@ -67,6 +67,8 @@ pub enum BackgroundFile {
     Dots { spacing: f64 },
     Lines { spacing: f64 },
     Grid { spacing: f64 },
+    Isometric { spacing: f64 },
+    Hexagonal { spacing: f64 },
     Image { path: String },
     Pdf { path: String, page: u32 },
 }
@@ -78,6 +80,8 @@ impl From<BackgroundFile> for BackgroundType {
             BackgroundFile::Dots { spacing } => BackgroundType::Dots { spacing },
             BackgroundFile::Lines { spacing } => BackgroundType::Lines { spacing },
             BackgroundFile::Grid { spacing } => BackgroundType::Grid { spacing },
+            BackgroundFile::Isometric { spacing } => BackgroundType::Isometric { spacing },
+            BackgroundFile::Hexagonal { spacing } => BackgroundType::Hexagonal { spacing },
             BackgroundFile::Image { path } => BackgroundType::Image { path },
             BackgroundFile::Pdf { path, page } => BackgroundType::Pdf { path, page },
         }
@@ -91,6 +95,8 @@ impl From<&BackgroundType> for BackgroundFile {
             BackgroundType::Dots { spacing } => BackgroundFile::Dots { spacing: *spacing },
             BackgroundType::Lines { spacing } => BackgroundFile::Lines { spacing: *spacing },
             BackgroundType::Grid { spacing } => BackgroundFile::Grid { spacing: *spacing },
+            BackgroundType::Isometric { spacing } => BackgroundFile::Isometric { spacing: *spacing },
+            BackgroundType::Hexagonal { spacing } => BackgroundFile::Hexagonal { spacing: *spacing },
             BackgroundType::Image { path } => BackgroundFile::Image { path: path.clone() },
             BackgroundType::Pdf { path, page } => BackgroundFile::Pdf {
                 path: path.clone(),

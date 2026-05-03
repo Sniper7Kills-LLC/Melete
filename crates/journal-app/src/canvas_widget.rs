@@ -2,7 +2,7 @@ use gtk4::prelude::*;
 use gtk4::DrawingArea;
 use journal_canvas::{
     draw_lasso_overlay, draw_page_bounds_outline, draw_selection_handles,
-    paint_with_widgets_ctx, selection_combined_bbox, WidgetRenderContext,
+    paint_with_widgets_ctx, scale_background, selection_combined_bbox, WidgetRenderContext,
 };
 
 use crate::state::SharedState;
@@ -42,7 +42,7 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
 
             let show_bounds = s.show_page_bounds;
             let page_rect = s.page_rect;
-            let background = s.background.clone();
+            let background = scale_background(&s.background, s.bg_scale);
             let transform = s.transform;
             let render_ctx = WidgetRenderContext {
                 date: s.current_page_date,
@@ -54,9 +54,9 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
                     Vec::with_capacity(s.strokes.len() + 1);
                 frame.extend_from_slice(&s.strokes);
                 frame.push(cs);
-                paint_with_widgets_ctx(ctx, &s.transform, &s.background, page_rect, &widgets, &frame, &selected_ids, dark_mode, &render_ctx);
+                paint_with_widgets_ctx(ctx, &s.transform, &background, page_rect, &widgets, &frame, &selected_ids, dark_mode, &render_ctx);
             } else {
-                paint_with_widgets_ctx(ctx, &s.transform, &s.background, page_rect, &widgets, &s.strokes, &selected_ids, dark_mode, &render_ctx);
+                paint_with_widgets_ctx(ctx, &s.transform, &background, page_rect, &widgets, &s.strokes, &selected_ids, dark_mode, &render_ctx);
             }
 
             if show_bounds {

@@ -349,6 +349,15 @@ const APP_CSS: &str = r#"
     border-color: @accent_color;
     background-color: alpha(@accent_color, 0.08);
 }
+.nbtc-palette-cat {
+    font-size: 0.72em;
+    font-weight: 700;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin-top: 8px;
+    margin-bottom: 2px;
+}
 "#;
 
 fn load_css() {

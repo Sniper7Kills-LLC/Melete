@@ -906,6 +906,8 @@ fn describe(bg: &BackgroundType) -> String {
         BackgroundType::Dots { spacing } => format!("Dots ({}mm)", spacing),
         BackgroundType::Lines { spacing } => format!("Lines ({}mm)", spacing),
         BackgroundType::Grid { spacing } => format!("Grid ({}mm)", spacing),
+        BackgroundType::Isometric { spacing } => format!("Isometric ({}mm)", spacing),
+        BackgroundType::Hexagonal { spacing } => format!("Hexagonal ({}mm)", spacing),
         BackgroundType::Image { .. } => "Image background".into(),
         BackgroundType::Pdf { page, .. } => format!("PDF page {}", page),
     }

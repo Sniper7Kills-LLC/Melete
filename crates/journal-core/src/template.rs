@@ -16,6 +16,13 @@ pub enum BackgroundType {
     Dots { spacing: f64 },
     Lines { spacing: f64 },
     Grid { spacing: f64 },
+    /// Three sets of parallel lines at 30°, 90°, 150° forming a triangle
+    /// lattice. Tiles infinitely; great for technical drawing, board games,
+    /// and 3D sketches.
+    Isometric { spacing: f64 },
+    /// Pointy-top hexagonal grid. Tiles infinitely; useful for tabletop
+    /// games and hex-based note layouts.
+    Hexagonal { spacing: f64 },
     Image { path: String },
     Pdf { path: String, page: u32 },
 }

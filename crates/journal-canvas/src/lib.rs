@@ -11,5 +11,5 @@ pub use renderer::{
 };
 pub use viewport_transform::ViewportTransform;
 pub use grid_renderer::GridSettings;
-pub use background_renderer::{BackgroundConfig, draw_page_bounds_outline};
+pub use background_renderer::{scale_background, BackgroundConfig, draw_page_bounds_outline};
 pub use widget_renderer::{draw_widgets, draw_widgets_with_context, WidgetRenderContext};

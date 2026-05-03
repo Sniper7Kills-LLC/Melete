@@ -37,6 +37,13 @@ pub struct CanvasState {
     pub current_stroke: Option<Stroke>,
     pub pen: PenSettings,
     pub background: BackgroundConfig,
+    /// User-tunable grid spacing multiplier applied to `background` at paint
+    /// time. `1.0` (default) renders the template's spacing as-is. The
+    /// "Reset Grid" toolbar action sets this to `1.0 / current_zoom` so the
+    /// grid's on-screen size matches what it looked like at zoom 1.0,
+    /// letting the user lock the grid scale to whatever zoom level they're
+    /// drawing at. Reset to 1.0 on page change.
+    pub bg_scale: f64,
     pub page_rect: Rect,
     pub backend: Rc<RefCell<dyn JournalBackend>>,
     pub templates: Rc<RefCell<TemplateRegistry>>,
@@ -129,6 +136,7 @@ pub fn new_shared_state(
         current_stroke: None,
         pen,
         background: default_background(),
+        bg_scale: 1.0,
         page_rect: DEFAULT_PAGE_RECT,
         backend,
         templates,
@@ -241,6 +249,7 @@ pub fn set_current_page(state: &SharedState, page_id: PageId) {
 /// Apply a template to current canvas state (or clear back to defaults if None).
 pub fn set_current_template(state: &SharedState, template: Option<PageTemplate>) {
     let mut s = state.borrow_mut();
+    s.bg_scale = 1.0;
     match &template {
         Some(t) => {
             s.background = journal_templates::page_template_to_background_config(t);

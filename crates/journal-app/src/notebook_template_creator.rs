@@ -933,9 +933,37 @@ fn build_palette(page_templates: &Rc<Vec<PageTemplate>>) -> ScrolledWindow {
 
     inner.append(&Separator::new(Orientation::Horizontal));
 
+    // Group page templates by category, alphabetical by category then by
+    // template name within each group. Empty category folds into
+    // "Uncategorized" at the bottom.
+    let mut by_cat: std::collections::BTreeMap<String, Vec<&PageTemplate>> =
+        std::collections::BTreeMap::new();
     for t in page_templates.iter() {
-        let chip = build_palette_chip(t);
-        inner.append(&chip);
+        let key = if t.category.trim().is_empty() {
+            "Uncategorized".to_string()
+        } else {
+            t.category.trim().to_string()
+        };
+        by_cat.entry(key).or_default().push(t);
+    }
+    let mut cats: Vec<String> = by_cat.keys().cloned().collect();
+    // Force "Uncategorized" to the very end regardless of alphabetical order.
+    cats.sort_by(|a, b| match (a.as_str(), b.as_str()) {
+        ("Uncategorized", "Uncategorized") => std::cmp::Ordering::Equal,
+        ("Uncategorized", _) => std::cmp::Ordering::Greater,
+        (_, "Uncategorized") => std::cmp::Ordering::Less,
+        _ => a.to_lowercase().cmp(&b.to_lowercase()),
+    });
+    for cat in cats {
+        let header = Label::builder().label(&cat).halign(Align::Start).build();
+        header.add_css_class("nbtc-palette-cat");
+        inner.append(&header);
+
+        let mut group = by_cat.remove(&cat).unwrap_or_default();
+        group.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        for t in group {
+            inner.append(&build_palette_chip(t));
+        }
     }
 
     scroll.set_child(Some(&inner));
@@ -1004,6 +1032,8 @@ fn swatch_color(bg: &journal_core::BackgroundType) -> (f64, f64, f64) {
         BT::Dots { .. } => (0.80, 0.85, 0.95),
         BT::Lines { .. } => (0.75, 0.80, 0.90),
         BT::Grid { .. } => (0.65, 0.75, 0.88),
+        BT::Isometric { .. } => (0.70, 0.80, 0.78),
+        BT::Hexagonal { .. } => (0.78, 0.82, 0.70),
         BT::Image { .. } => (0.88, 0.78, 0.65),
         BT::Pdf { .. } => (0.75, 0.65, 0.85),
     }

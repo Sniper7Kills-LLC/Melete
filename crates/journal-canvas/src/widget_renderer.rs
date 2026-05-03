@@ -129,8 +129,11 @@ fn draw_widget(
             };
             set_color(ctx, style.stroke_color);
             ctx.set_line_width(thickness);
-            ctx.move_to(r.x, r.y + r.height * 0.5);
-            ctx.line_to(r.x + r.width, r.y + r.height * 0.5);
+            // Render corner-to-corner so the rect's bounding box can express
+            // horizontal lines (height = 0), vertical lines (width = 0), and
+            // diagonal lines drawn between two points.
+            ctx.move_to(r.x, r.y);
+            ctx.line_to(r.x + r.width, r.y + r.height);
             let _ = ctx.stroke();
         }
         WidgetKind::TextBlock { text, font_size_mm } => {

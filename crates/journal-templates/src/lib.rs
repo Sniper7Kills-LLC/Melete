@@ -9,9 +9,11 @@ pub mod registry;
 pub mod title_format;
 
 pub use builtin::{
-    builtin_templates, BUILTIN_BLANK_ID, BUILTIN_DAILY_PLANNER_ID, BUILTIN_DOTTED_ID,
+    builtin_templates, BUILTIN_BLANK_ID, BUILTIN_COLLEGE_RULED_ID, BUILTIN_CORNELL_NOTES_ID,
+    BUILTIN_DAILY_PLANNER_ID, BUILTIN_DOTTED_ID, BUILTIN_ENGINEERING_GRAPH_ID,
     BUILTIN_FRANKLIN_DAILY_ID, BUILTIN_FRANKLIN_WEEKLY_ID, BUILTIN_FULLFOCUS_DAILY_ID,
-    BUILTIN_GRID_ID, BUILTIN_MONTHLY_GOALS_ID, BUILTIN_QUARTERLY_REVIEW_ID, BUILTIN_RULED_ID,
+    BUILTIN_GRID_ID, BUILTIN_HEX_ID, BUILTIN_ISOMETRIC_ID, BUILTIN_MONTHLY_GOALS_ID,
+    BUILTIN_MUSIC_STAFF_ID, BUILTIN_QUARTERLY_REVIEW_ID, BUILTIN_RULED_ID, BUILTIN_WIDE_RULED_ID,
 };
 pub use notebook_template_builtin::{
     builtin_notebook_templates, builtin_yearly_planner, BUILTIN_YEARLY_PLANNER_ID,
@@ -26,6 +28,13 @@ pub fn is_builtin(id: journal_core::TemplateId) -> bool {
             | BUILTIN_DOTTED_ID
             | BUILTIN_RULED_ID
             | BUILTIN_GRID_ID
+            | BUILTIN_WIDE_RULED_ID
+            | BUILTIN_COLLEGE_RULED_ID
+            | BUILTIN_CORNELL_NOTES_ID
+            | BUILTIN_ISOMETRIC_ID
+            | BUILTIN_HEX_ID
+            | BUILTIN_ENGINEERING_GRAPH_ID
+            | BUILTIN_MUSIC_STAFF_ID
             | BUILTIN_DAILY_PLANNER_ID
             | BUILTIN_FULLFOCUS_DAILY_ID
             | BUILTIN_FRANKLIN_DAILY_ID
@@ -217,14 +226,26 @@ type = "blank"
             let cfg = page_template_to_background_config(&t);
             match (&t.background, cfg) {
                 (BackgroundType::Blank, BackgroundConfig::Blank) => {}
-                (BackgroundType::Dots { spacing }, BackgroundConfig::Dots { spacing: s }) => {
+                (BackgroundType::Dots { spacing }, BackgroundConfig::Dots { spacing: s, .. }) => {
                     assert_eq!(*spacing, s);
                 }
-                (BackgroundType::Lines { spacing }, BackgroundConfig::Lines { spacing: s }) => {
+                (BackgroundType::Lines { spacing }, BackgroundConfig::Lines { spacing: s, .. }) => {
                     assert_eq!(*spacing, s);
                 }
                 (BackgroundType::Grid { spacing }, BackgroundConfig::Grid(g)) => {
                     assert_eq!(*spacing, g.base_spacing);
+                }
+                (
+                    BackgroundType::Isometric { spacing },
+                    BackgroundConfig::Isometric { spacing: s },
+                ) => {
+                    assert_eq!(*spacing, s);
+                }
+                (
+                    BackgroundType::Hexagonal { spacing },
+                    BackgroundConfig::Hexagonal { spacing: s },
+                ) => {
+                    assert_eq!(*spacing, s);
                 }
                 _ => panic!("unexpected mapping for {:?}", t.background),
             }

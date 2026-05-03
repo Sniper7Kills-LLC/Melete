@@ -515,8 +515,7 @@ pub fn show_notebook_template_editor(win: &SharedWindow, edit: Option<NotebookTe
 /// Compute the zoom value at which the page would exactly fit the viewport
 /// (matches `state::fit_viewport_to_page`'s `* 0.9` margin). Returns `None`
 /// when we can't compute it yet (zero-sized canvas or page).
-fn natural_fit_zoom(state: &SharedState) -> Option<f64> {
-    let s = state.borrow();
+fn natural_fit_zoom_inner(s: &crate::state::CanvasState) -> Option<f64> {
     let (sw, sh) = s.transform.screen_size();
     let pr = s.page_rect;
     if sw <= 0.0 || sh <= 0.0 || pr.width <= 0.0 || pr.height <= 0.0 {
@@ -543,6 +542,30 @@ fn build_zoom_corner(state: SharedState, canvas: DrawingArea) -> GtkBox {
         .margin_bottom(16)
         .build();
 
+    // Reset-grid button — re-anchors the grid spacing to the current zoom
+    // so the on-screen grid pitch matches what the user sees right now.
+    // Hidden unless the page actually has a grid-style background.
+    let reset_grid_btn = Button::from_icon_name("view-grid-symbolic");
+    reset_grid_btn.add_css_class("zoom-badge");
+    reset_grid_btn.add_css_class("osd");
+    reset_grid_btn.set_tooltip_text(Some(
+        "Reset grid to current zoom — re-anchors the template grid \
+         so it stays at this on-screen size",
+    ));
+    {
+        let state = state.clone();
+        let canvas = canvas.clone();
+        reset_grid_btn.connect_clicked(move |_| {
+            {
+                let mut s = state.borrow_mut();
+                let z = s.transform.zoom().max(1e-6);
+                s.bg_scale = (1.0 / z).clamp(1e-4, 1e4);
+            }
+            canvas.queue_draw();
+        });
+    }
+    row.append(&reset_grid_btn);
+
     // Fit-to-page button — explicit, discoverable.
     let fit_btn = Button::from_icon_name("zoom-fit-best-symbolic");
     fit_btn.add_css_class("zoom-badge");
@@ -556,6 +579,7 @@ fn build_zoom_corner(state: SharedState, canvas: DrawingArea) -> GtkBox {
             {
                 let mut s = state.borrow_mut();
                 crate::state::fit_viewport_to_page_pub(&mut s.transform, page_rect);
+                s.bg_scale = 1.0;
             }
             canvas.queue_draw();
         });
@@ -575,6 +599,7 @@ fn build_zoom_corner(state: SharedState, canvas: DrawingArea) -> GtkBox {
             {
                 let mut s = state.borrow_mut();
                 crate::state::fit_viewport_to_page_pub(&mut s.transform, page_rect);
+                s.bg_scale = 1.0;
             }
             canvas.queue_draw();
         });
@@ -586,24 +611,35 @@ fn build_zoom_corner(state: SharedState, canvas: DrawingArea) -> GtkBox {
     {
         let state = state.clone();
         let badge_for_tick = badge.clone();
+        let reset_btn = reset_grid_btn.clone();
         let last: std::rc::Rc<std::cell::Cell<i32>> = std::rc::Rc::new(std::cell::Cell::new(-1));
         badge.add_tick_callback(move |_, _| {
-            let pct = match natural_fit_zoom(&state) {
-                Some(fit) if fit > 1e-9 => {
-                    let z = state.borrow().transform.zoom();
-                    ((z / fit) * 100.0).round() as i32
-                }
-                _ => 100,
+            let (pct, has_grid) = {
+                let s = state.borrow();
+                let pct = match natural_fit_zoom_inner(&s) {
+                    Some(fit) if fit > 1e-9 => ((s.transform.zoom() / fit) * 100.0).round() as i32,
+                    _ => 100,
+                };
+                (pct, background_is_grid(&s.background))
             };
             if last.get() != pct {
                 last.set(pct);
                 badge_for_tick.set_label(&format!("{}%", pct));
             }
+            reset_btn.set_visible(has_grid);
             gtk4::glib::ControlFlow::Continue
         });
     }
 
     row
+}
+
+fn background_is_grid(bg: &journal_canvas::BackgroundConfig) -> bool {
+    use journal_canvas::BackgroundConfig as B;
+    matches!(
+        bg,
+        B::Grid(_) | B::Lines { .. } | B::Dots { .. } | B::Isometric { .. } | B::Hexagonal { .. }
+    )
 }
 
 fn build_cheatsheet_button() -> MenuButton {

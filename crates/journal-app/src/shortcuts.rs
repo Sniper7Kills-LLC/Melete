@@ -55,6 +55,7 @@ pub fn attach_keyboard_shortcuts(
                     let page_rect = state.borrow().page_rect;
                     let mut s = state.borrow_mut();
                     crate::state::fit_viewport_to_page_pub(&mut s.transform, page_rect);
+                    s.bg_scale = 1.0;
                     drop(s);
                     canvas.queue_draw();
                     return glib::Propagation::Stop;

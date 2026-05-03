@@ -151,7 +151,11 @@ pub fn prompt_new_page(
     section_id: SectionId,
     on_ok: Box<dyn Fn(Option<TemplateId>, std::collections::HashMap<Uuid, journal_core::WidgetOverride>)>,
 ) {
-    let templates = available_templates_for_section(&state, notebook_id, section_id);
+    let templates = sorted_grouped_templates(available_templates_for_section(
+        &state,
+        notebook_id,
+        section_id,
+    ));
 
     let win = modal(parent, "New Page");
     let body = GtkBox::builder()
@@ -166,7 +170,7 @@ pub fn prompt_new_page(
     body.append(&Label::new(Some("Template")));
 
     let names: Vec<String> = std::iter::once("Blank (no template)".to_string())
-        .chain(templates.iter().map(|t| t.name.clone()))
+        .chain(templates.iter().map(|t| display_label_for(t)))
         .collect();
     let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
     let model = StringList::new(&name_refs);
@@ -408,6 +412,33 @@ fn widget_kind_label(kind: &journal_core::WidgetKind) -> &'static str {
         K::PriorityList { .. } => "Priority list (rows)",
         K::Checklist { .. } => "Checklist items",
         _ => "Widget",
+    }
+}
+
+/// Sort templates by (category alphabetical, name alphabetical) with empty
+/// categories ("Uncategorized") forced to the bottom — matches the palette
+/// grouping used by the notebook-template designer.
+fn sorted_grouped_templates(templates: Vec<PageTemplate>) -> Vec<PageTemplate> {
+    let mut v = templates;
+    v.sort_by(|a, b| {
+        let cat_a = a.category.trim();
+        let cat_b = b.category.trim();
+        let key_a = (cat_a.is_empty(), cat_a.to_lowercase());
+        let key_b = (cat_b.is_empty(), cat_b.to_lowercase());
+        key_a
+            .cmp(&key_b)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    v
+}
+
+/// Render `"Category — Name"` for a template, or just `Name` if uncategorized.
+fn display_label_for(t: &PageTemplate) -> String {
+    let cat = t.category.trim();
+    if cat.is_empty() {
+        t.name.clone()
+    } else {
+        format!("{} — {}", cat, t.name)
     }
 }
 

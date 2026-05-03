@@ -1715,7 +1715,7 @@ fn default_size_for(tool: PlaceTool) -> (f64, f64) {
         PlaceTool::TextBlock => (90.0, 12.0),
         PlaceTool::Rectangle => (60.0, 35.0),
         PlaceTool::Ellipse => (60.0, 35.0),
-        PlaceTool::Line => (90.0, 4.0),
+        PlaceTool::Line => (90.0, 0.0),
         PlaceTool::GridRegion => (110.0, 90.0),
         PlaceTool::LinesRegion => (110.0, 90.0),
         PlaceTool::DotsRegion => (110.0, 90.0),
