@@ -222,6 +222,22 @@ const APP_CSS: &str = r#"
     border: 1px solid alpha(@borders, 0.7);
     box-shadow: 0 1px 2px alpha(black, 0.08);
 }
+
+/* ── Zoom badge in the canvas overlay corner ──────────────────────── */
+.zoom-badge {
+    font-family: "Source Code Pro", monospace;
+    font-size: 0.85em;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 999px;
+    min-width: 56px;
+    opacity: 0.85;
+    transition: opacity 120ms ease, background-color 120ms ease;
+}
+.zoom-badge:hover {
+    opacity: 1.0;
+    background-color: alpha(@accent_color, 0.20);
+}
 "#;
 
 fn load_css() {

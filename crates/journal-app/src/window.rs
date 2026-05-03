@@ -69,6 +69,11 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     canvas_overlay.set_child(Some(&canvas));
     canvas_overlay.add_overlay(&bar);
 
+    // Zoom-percentage badge — bottom-right corner of the canvas. Click to
+    // fit the current page.
+    let zoom_badge = build_zoom_badge(state.clone(), canvas.clone());
+    canvas_overlay.add_overlay(&zoom_badge);
+
     let home_container = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .hexpand(true)
@@ -361,6 +366,53 @@ pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
     w.back_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
     w.stack.set_visible_child_name(TEMPLATE_EDITOR_NAME);
+}
+
+/// Build the floating zoom badge that sits in the bottom-right corner of the
+/// canvas overlay. Shows the current zoom as a percentage; clicking it
+/// re-fits the current page to the viewport.
+fn build_zoom_badge(state: SharedState, canvas: DrawingArea) -> Button {
+    let btn = Button::with_label("100%");
+    btn.add_css_class("zoom-badge");
+    btn.add_css_class("osd");
+    btn.set_halign(gtk4::Align::End);
+    btn.set_valign(gtk4::Align::End);
+    btn.set_margin_end(16);
+    btn.set_margin_bottom(16);
+    btn.set_tooltip_text(Some("Zoom — click to fit page"));
+
+    // Click → fit page (same as Ctrl+0).
+    {
+        let state = state.clone();
+        let canvas = canvas.clone();
+        btn.connect_clicked(move |_| {
+            let page_rect = state.borrow().page_rect;
+            {
+                let mut s = state.borrow_mut();
+                crate::state::fit_viewport_to_page_pub(&mut s.transform, page_rect);
+            }
+            canvas.queue_draw();
+        });
+    }
+
+    // Tick: update the label whenever zoom changes. Cheap — string compare
+    // first, only set_label on change.
+    {
+        let state = state.clone();
+        let btn_for_tick = btn.clone();
+        let last: std::rc::Rc<std::cell::Cell<i32>> = std::rc::Rc::new(std::cell::Cell::new(-1));
+        btn.add_tick_callback(move |_, _| {
+            let z = state.borrow().transform.zoom();
+            let pct = (z * 100.0).round() as i32;
+            if last.get() != pct {
+                last.set(pct);
+                btn_for_tick.set_label(&format!("{}%", pct));
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
+
+    btn
 }
 
 fn build_cheatsheet_button() -> MenuButton {
