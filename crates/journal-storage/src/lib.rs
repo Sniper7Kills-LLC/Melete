@@ -13,6 +13,7 @@ mod stroke_codec;
 mod util;
 
 pub mod backend;
+pub mod multi_file_backend;
 pub mod sqlite_backend;
 
 // SQLite-specific store modules. Crate-internal: only `SqliteBackend`
@@ -26,5 +27,6 @@ pub use backend::{
     JournalBackend, NotebookStore, PageStore, PlannerQueries, SectionStore, StrokeStore,
 };
 pub use error::{Result, StorageError};
+pub use multi_file_backend::MultiFileSqliteBackend;
 pub use sqlite_backend::SqliteBackend;
 pub use stroke_codec::{pack_points, unpack_points};

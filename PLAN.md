@@ -300,9 +300,10 @@ the optional template-sharing portal, not for the journal app.
 - [x] `journal-app` holds `Rc<RefCell<dyn JournalBackend>>` instead of `Rc<RefCell<Db>>` (`state::CanvasState.backend`); ~50 call sites migrated from `db.borrow().conn(); store::fn(conn, ...)` to `backend.borrow_mut().fn(...)`. Planner helpers (`ensure_planner_pages`, `min_day_date_in_section`, `reorder_sections_chronologically`, `chronological_target_position`) take `&mut dyn JournalBackend`.
 - [x] `StorageError` gains `Network` / `Auth` / `Conflict` variants reserved for the future remote backend.
 
-### 6.2 Local backends
+### 6.2 Local backends ✅
 
-- [ ] **SQLite (current)** — keep as the default offline backend.
+- [x] **SQLite (single file)** — original layout, kept as the `SqliteBackend` impl in case anyone wants a one-file backup.
+- [x] **File-per-notebook `.journal`** — `MultiFileSqliteBackend`. Each notebook lives in its own self-contained SQLite file (`journals/{id}.journal`); a small `index.db` catalogues them for fast listing. Pre-existing single-file dbs migrate automatically on first boot (renamed `journal.db.legacy`). Per-process caches (`section_to_notebook`, `page_to_notebook`, `stroke_to_notebook`) route id-only operations without scanning every file. Cross-notebook page moves are explicitly rejected.
 - [ ] **File-per-notebook `.journal`** — revisit the original PLAN.md design;
   may layer over SQLite by giving each notebook its own DB file (so users can
   copy/share/back-up a single file).

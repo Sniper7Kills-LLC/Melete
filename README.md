@@ -46,7 +46,9 @@ make uninstall
 
 | Purpose | Path |
 |---------|------|
-| Notebooks (SQLite) | `~/.local/share/journal/journal.db` |
+| Notebook index | `~/.local/share/journal/index.db` |
+| Per-notebook data | `~/.local/share/journal/journals/{notebook_id}.journal` (one self-contained SQLite file each) |
+| Legacy pre-Phase-6.2 db | `~/.local/share/journal/journal.db.legacy` (auto-renamed after migration) |
 | User page templates | `~/.local/share/journal/templates/` |
 | User notebook templates | `~/.local/share/journal/notebook_templates/` |
 | App config | `~/.config/journal/config.toml` |

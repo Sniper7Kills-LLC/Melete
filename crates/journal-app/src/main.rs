@@ -23,7 +23,7 @@ use gtk4::glib;
 use gtk4::{ApplicationWindow, CssProvider};
 use gtk4::prelude::*;
 use libadwaita as adw;
-use journal_storage::{JournalBackend, SqliteBackend};
+use journal_storage::{JournalBackend, MultiFileSqliteBackend};
 use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use tracing_subscriber::EnvFilter;
 
@@ -259,12 +259,14 @@ fn data_dir() -> Result<PathBuf> {
     Ok(base.join("journal"))
 }
 
-fn open_backend() -> Result<SqliteBackend> {
+fn open_backend() -> Result<MultiFileSqliteBackend> {
     let dir = data_dir()?;
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("create data dir {:?}", dir))?;
-    let path = dir.join("journal.db");
-    SqliteBackend::open(&path).with_context(|| format!("open db {:?}", path))
+    // File-per-notebook layout: index.db at the root, journals/{id}.journal
+    // per notebook. The first call after upgrade migrates any pre-existing
+    // single-file `journal.db` automatically.
+    MultiFileSqliteBackend::open(&dir).with_context(|| format!("open multi-file backend at {:?}", dir))
 }
 
 fn load_templates() -> TemplateRegistry {
