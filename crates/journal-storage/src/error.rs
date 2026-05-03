@@ -28,6 +28,20 @@ pub enum StorageError {
 
     #[error("invalid data: {0}")]
     InvalidData(String),
+
+    /// Reserved for the future remote (AWS Amplify) backend.
+    #[error("network error: {0}")]
+    Network(String),
+
+    /// Reserved for the future remote backend — auth token expired,
+    /// missing, or rejected.
+    #[error("auth error: {0}")]
+    Auth(String),
+
+    /// Reserved for the future remote backend — concurrent edit
+    /// rejected by the server.
+    #[error("conflict: {0}")]
+    Conflict(String),
 }
 
 pub type Result<T> = std::result::Result<T, StorageError>;
