@@ -10,7 +10,7 @@ pub mod title_format;
 
 pub use builtin::{
     builtin_templates, BUILTIN_BLANK_ID, BUILTIN_DAILY_PLANNER_ID, BUILTIN_DOTTED_ID,
-    BUILTIN_GRID_ID, BUILTIN_RULED_ID,
+    BUILTIN_FRANKLIN_DAILY_ID, BUILTIN_FULLFOCUS_DAILY_ID, BUILTIN_GRID_ID, BUILTIN_RULED_ID,
 };
 pub use notebook_template_builtin::{
     builtin_notebook_templates, builtin_yearly_planner, BUILTIN_YEARLY_PLANNER_ID,
@@ -26,6 +26,8 @@ pub fn is_builtin(id: journal_core::TemplateId) -> bool {
             | BUILTIN_RULED_ID
             | BUILTIN_GRID_ID
             | BUILTIN_DAILY_PLANNER_ID
+            | BUILTIN_FULLFOCUS_DAILY_ID
+            | BUILTIN_FRANKLIN_DAILY_ID
     )
 }
 pub use canvas_bridge::page_template_to_background_config;

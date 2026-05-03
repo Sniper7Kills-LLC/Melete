@@ -69,6 +69,14 @@ pub enum WidgetKind {
     CalendarMonth,
     Timeline { start_hour: u8, end_hour: u8, slot_minutes: u32 },
     Checklist { items: Vec<String> },
+    /// Three numbered priority boxes stacked vertically (Full Focus daily layout).
+    BigThree,
+    /// Columnar priority list with A/B/C priority letter, sequence number, and write-on line.
+    PriorityList { count: u32 },
+    /// Two-column hourly schedule with hour labels on the left and blank lines + half-hour ticks on the right.
+    DailyAppointments { start_hour: u8, end_hour: u8 },
+    /// Grid of labeled role/goal boxes for weekly planning (Franklin Covey Weekly Compass).
+    WeeklyCompass,
 }
 
 /// A widget placed on a template canvas.

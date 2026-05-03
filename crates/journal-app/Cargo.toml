@@ -13,6 +13,7 @@ journal-canvas = { path = "../journal-canvas" }
 journal-storage = { path = "../journal-storage" }
 journal-templates = { path = "../journal-templates" }
 gtk4 = { workspace = true }
+libadwaita = { workspace = true }
 cairo-rs = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }

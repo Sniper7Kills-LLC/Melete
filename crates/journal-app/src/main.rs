@@ -19,9 +19,10 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use anyhow::{Context, Result};
-use gtk4::prelude::*;
 use gtk4::glib;
-use gtk4::{Application, ApplicationWindow, CssProvider};
+use gtk4::{ApplicationWindow, CssProvider};
+use gtk4::prelude::*;
+use libadwaita as adw;
 use journal_storage::Db;
 use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use tracing_subscriber::EnvFilter;
@@ -33,7 +34,7 @@ fn main() -> Result<()> {
         .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
         .init();
 
-    let app = Application::builder().application_id(APP_ID).build();
+    let app = adw::Application::builder().application_id(APP_ID).build();
     app.connect_activate(|app| {
         if let Err(e) = build_ui(app) {
             tracing::error!("failed to build UI: {:#}", e);
@@ -86,7 +87,7 @@ fn load_templates() -> TemplateRegistry {
     reg
 }
 
-fn build_ui(app: &Application) -> Result<()> {
+fn build_ui(app: &adw::Application) -> Result<()> {
     load_css();
 
     gtk4::Window::set_default_icon_name(APP_ID);
@@ -155,20 +156,23 @@ fn build_ui(app: &Application) -> Result<()> {
 }
 
 fn bind_system_dark_mode(state: state::SharedState, canvas: gtk4::DrawingArea) {
-    let Some(settings) = gtk4::Settings::default() else { return; };
+    let style_manager = adw::StyleManager::default();
+    // Follow the system color scheme; do not force light or dark.
+    style_manager.set_color_scheme(adw::ColorScheme::Default);
+
     let apply = {
         let state = state.clone();
         let canvas = canvas.clone();
-        let settings = settings.clone();
+        let style_manager = style_manager.clone();
         move || {
-            let dark = settings.is_gtk_application_prefer_dark_theme();
+            let dark = style_manager.is_dark();
             state.borrow_mut().dark_mode = dark;
             canvas.queue_draw();
         }
     };
     apply();
-    settings.connect_gtk_application_prefer_dark_theme_notify(move |s| {
-        let dark = s.is_gtk_application_prefer_dark_theme();
+    style_manager.connect_dark_notify(move |sm| {
+        let dark = sm.is_dark();
         state.borrow_mut().dark_mode = dark;
         canvas.queue_draw();
     });

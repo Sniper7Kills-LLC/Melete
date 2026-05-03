@@ -78,19 +78,17 @@ Built-in tool to:
 │ Header Bar (notebook name, tools, navigation)       │
 ├──────────┬──────────────────────────────────────────┤
 │ Sidebar  │                                          │
-│ (collaps)│                                          │
-│          │                                          │
-│ ┌Section │        Infinite Canvas                   │
-│ │ Page 1 │        (GLArea + Skia)                   │
-│ │ Page 2 │                                          │
+│ (collaps)│                ╔══════════════════╗      │
+│          │                ║ ≡ | B H E e V |● Width ║ │
+│ ┌Section │                ╚══════════════════╝      │
+│ │ Page 1 │        Infinite Canvas                   │
+│ │ Page 2 │        (DrawingArea + Cairo)             │
 │ │ Page 3 │                                          │
-│ └        │                                          │
-│ ┌Section │                                          │
-│ └(closed)│                                          │
+│ └        │   ← Floating pen toolbar: drag the ≡    │
+│ ┌Section │     grip handle to reposition anywhere. │
+│ └(closed)│     Position persisted across restarts. │
 │          │                                          │
-├──────────┴──────────────────────────────────────────┤
-│ (floating pen toolbar)                              │
-└─────────────────────────────────────────────────────┘
+└──────────┴──────────────────────────────────────────┘
 ```
 
 Sections in sidebar are collapsible — pages only shown when section expanded.
@@ -183,6 +181,21 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ---
 
+## Phase 3.6: Planner Widgets ✅
+
+- [x] `journal-core`: Added 4 new `WidgetKind` variants:
+  - `BigThree` — three numbered priority boxes stacked vertically (Full Focus daily layout)
+  - `PriorityList { count: u32 }` — A/B/C priority letter column + sequence number column + checkbox/write-line rows (Franklin Planner style)
+  - `DailyAppointments { start_hour, end_hour }` — two-column hourly schedule with hour labels and half-hour tick marks (Franklin/Full Focus standard)
+  - `WeeklyCompass` — 4×2 grid of labeled role/goal boxes for weekly planning (Franklin Covey concept)
+- [x] `journal-canvas`: Cairo renderers for all 4 new widget kinds (`draw_big_three`, `draw_priority_list`, `draw_daily_appointments`, `draw_weekly_compass`)
+- [x] `journal-app`: Template creator palette entries: "Big Three", "Priority List", "Day Schedule", "Weekly Compass"; defaults: PriorityList{count:12}, DailyAppointments{7–19}, BigThree, WeeklyCompass
+- [x] `journal-templates`: Two new built-in page templates (IDs `…000006` and `…000007`):
+  - **Full Focus Daily**: BigThree top 30%, DailyAppointments 7–19 bottom-left 60%, Checklist (after-action review) bottom-right
+  - **Franklin Daily**: Date TextBlock header, PriorityList×14 left half, DailyAppointments 7–21 right half
+
+---
+
 ## Phase 4: Notebook Templates (Planner Auto-Generation) ✅
 
 - [x] `journal-core`: NotebookTemplate with `grouping` (Month|Week), `page_title_format`, `section_title_formats`
@@ -210,8 +223,9 @@ Home screen (no notebook open) shows notebook grid/list.
 - [x] Highlighter — opacity 0.35, base_width × 4, BlendMode::Multiply
 - [x] Page thumbnails in sidebar (40×52 cached ImageSurface per page)
 - [x] PDF export of active page (Cairo PdfSurface)
-- [x] Dark mode toggle (header menu) — Gtk theme + canvas background recolor
+- [x] Dark mode — follows system preference automatically via `adw::StyleManager` (libadwaita portal-based detection, works across GNOME/KDE/Hyprland)
 - [x] Keyboard shortcuts (B/H/V/Ctrl+E/Ctrl+Z/Delete/Esc/Ctrl+0/+/-/F11)
+- [x] Floating, draggable pen toolbar (position persisted across restarts)
 
 ## Phase 4.5 finish ✅ (PDF import deferred)
 
@@ -316,6 +330,7 @@ anyhow = "1"
 
 ## Resolved Decisions
 
+- **System color-scheme detection:** Uses `adw::StyleManager` (libadwaita 0.7) instead of `gtk4::Settings::is_gtk_application_prefer_dark_theme`. The `StyleManager` queries the XDG desktop portal so it reflects the user's OS-level dark/light preference and fires `notify::dark` when it changes, regardless of DE (GNOME, KDE, Hyprland, etc.).
 - **Renderer:** Cairo via `gtk4::DrawingArea`, not Skia. Phase 1 GPU Skia integration via GLArea hit Mesa/Wayland incompatibility (`direct_contexts::make_gl` returned None despite valid GL 4.6 context and resolved entry points). Cairo CPU rendering is fast enough for Phase 1 stroke counts; migrate to GSK paths (GTK 4.14+) if perf becomes a bottleneck.
 - **Touch gesture mode-lock:** A two-finger gesture is locked to either pan or zoom on the first frame that crosses a threshold (12px centroid drift → pan; 8% scale change → zoom). Avoids GestureZoom's tendency to interpret minor finger-distance jitter as zoom during a pure pan.
 - **Template backgrounds:** Fixed size. Canvas extends as blank beyond. Grid templates tile infinitely.

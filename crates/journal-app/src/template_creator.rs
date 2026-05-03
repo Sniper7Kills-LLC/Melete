@@ -30,6 +30,10 @@ enum PlaceTool {
     CalendarMonth,
     Timeline,
     Checklist,
+    BigThree,
+    PriorityList,
+    DailyAppointments,
+    WeeklyCompass,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -217,6 +221,10 @@ fn build_palette(cs: &Rc<RefCell<CreatorState>>) -> ScrolledWindow {
         ("Calendar", PlaceTool::CalendarMonth),
         ("Timeline", PlaceTool::Timeline),
         ("Checklist", PlaceTool::Checklist),
+        ("Big Three", PlaceTool::BigThree),
+        ("Priority List", PlaceTool::PriorityList),
+        ("Day Schedule", PlaceTool::DailyAppointments),
+        ("Weekly Compass", PlaceTool::WeeklyCompass),
     ];
 
     for (label_text, tool) in tools {
@@ -481,6 +489,10 @@ fn default_kind_for(tool: PlaceTool) -> WidgetKind {
         PlaceTool::CalendarMonth => WidgetKind::CalendarMonth,
         PlaceTool::Timeline => WidgetKind::Timeline { start_hour: 8, end_hour: 20, slot_minutes: 30 },
         PlaceTool::Checklist => WidgetKind::Checklist { items: vec!["Item 1".into(), "Item 2".into(), "Item 3".into()] },
+        PlaceTool::BigThree => WidgetKind::BigThree,
+        PlaceTool::PriorityList => WidgetKind::PriorityList { count: 12 },
+        PlaceTool::DailyAppointments => WidgetKind::DailyAppointments { start_hour: 7, end_hour: 19 },
+        PlaceTool::WeeklyCompass => WidgetKind::WeeklyCompass,
         PlaceTool::None => WidgetKind::Rectangle,
     }
 }

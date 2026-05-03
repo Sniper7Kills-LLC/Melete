@@ -16,6 +16,10 @@ pub struct AppConfig {
     pub recent_notebook_ids: Vec<uuid::Uuid>,
     #[serde(default = "default_true")]
     pub show_page_bounds: bool,
+    #[serde(default)]
+    pub toolbar_x: Option<i32>,
+    #[serde(default)]
+    pub toolbar_y: Option<i32>,
 }
 
 impl Default for AppConfig {
@@ -27,6 +31,8 @@ impl Default for AppConfig {
             window_height: None,
             recent_notebook_ids: Vec::new(),
             show_page_bounds: true,
+            toolbar_x: None,
+            toolbar_y: None,
         }
     }
 }
