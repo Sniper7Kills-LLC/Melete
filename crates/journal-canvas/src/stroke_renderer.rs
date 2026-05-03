@@ -62,14 +62,56 @@ pub fn draw_stroke(ctx: &cairo::Context, transform: &ViewportTransform, stroke: 
         return true;
     }
 
-    for window in stroke.points.windows(2) {
-        let a = &window[0];
-        let b = &window[1];
+    let pts = &stroke.points;
+    let n = pts.len();
+
+    if n == 2 {
+        let a = &pts[0];
+        let b = &pts[1];
         let avg_pressure = ((a.pressure + b.pressure) * 0.5).max(0.05) as f64;
-        let w = canvas_width_at_full_pressure * avg_pressure;
-        ctx.set_line_width(w);
+        ctx.set_line_width(canvas_width_at_full_pressure * avg_pressure);
         ctx.move_to(a.x, a.y);
         ctx.line_to(b.x, b.y);
+        let _ = ctx.stroke();
+        ctx.restore().ok();
+        return true;
+    }
+
+    // Quadratic-through-midpoints smoothing (same approach as classic canvas apps).
+    // For each consecutive triple (prev, curr, next), the curve goes through the
+    // midpoint between prev & curr, uses curr as the control point, and ends at the
+    // midpoint between curr & next. Pressure is interpolated per segment.
+    for i in 0..n - 1 {
+        let p0 = &pts[i];
+        let p1 = &pts[i + 1];
+        let avg_pressure = ((p0.pressure + p1.pressure) * 0.5).max(0.05) as f64;
+        ctx.set_line_width(canvas_width_at_full_pressure * avg_pressure);
+
+        if i == 0 {
+            // First segment: start at p0, curve toward midpoint of (p0, p1)
+            let mid_x = (p0.x + p1.x) * 0.5;
+            let mid_y = (p0.y + p1.y) * 0.5;
+            ctx.move_to(p0.x, p0.y);
+            ctx.curve_to(p0.x, p0.y, p0.x, p0.y, mid_x, mid_y);
+        } else if i == n - 2 {
+            // Last segment: start at mid(prev, curr) and end at p1
+            let prev = &pts[i - 1];
+            let mid_x = (prev.x + p0.x) * 0.5;
+            let mid_y = (prev.y + p0.y) * 0.5;
+            ctx.move_to(mid_x, mid_y);
+            ctx.curve_to(p0.x, p0.y, p0.x, p0.y, p1.x, p1.y);
+        } else {
+            // Middle segments: prev_mid → curr → next_mid
+            let prev = &pts[i - 1];
+            let p2 = &pts[i + 2];
+            let prev_mid_x = (prev.x + p0.x) * 0.5;
+            let prev_mid_y = (prev.y + p0.y) * 0.5;
+            let next_mid_x = (p0.x + p1.x) * 0.5;
+            let next_mid_y = (p0.y + p1.y) * 0.5;
+            let _ = p2;
+            ctx.move_to(prev_mid_x, prev_mid_y);
+            ctx.curve_to(p0.x, p0.y, p0.x, p0.y, next_mid_x, next_mid_y);
+        }
         let _ = ctx.stroke();
     }
 

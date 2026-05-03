@@ -1,6 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::DrawingArea;
-use journal_canvas::{draw_lasso_overlay, paint};
+use journal_canvas::{draw_lasso_overlay, draw_selection_handles, hit_test_handle, paint, selection_combined_bbox};
 
 use crate::state::SharedState;
 
@@ -42,10 +42,19 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
                 paint(ctx, &s.transform, &s.background, s.page_rect, &s.strokes, &selected_ids, dark_mode);
             }
 
+            if !selected_ids.is_empty() {
+                if let Some(sel_bbox) = selection_combined_bbox(&s.strokes, &selected_ids) {
+                    ctx.identity_matrix();
+                    draw_selection_handles(ctx, &s.transform, sel_bbox);
+                }
+            }
+
             if !lasso_points.is_empty() {
                 ctx.identity_matrix();
                 draw_lasso_overlay(ctx, &lasso_points);
             }
+
+            let _ = hit_test_handle;
         });
     }
 

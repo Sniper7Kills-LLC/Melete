@@ -6,6 +6,10 @@ pub enum Op {
     AddStroke(Stroke),
     RemoveStroke(Stroke),
     MoveStrokes { ids: Vec<Uuid>, dx: f64, dy: f64 },
+    /// Replaces one stroke with zero or more child strokes (partial erase / lasso split).
+    ReplaceStroke { old: Stroke, new: Vec<Stroke> },
+    /// Scale transform applied to a set of strokes around an anchor in canvas space.
+    TransformStrokes { ids: Vec<Uuid>, anchor_x: f64, anchor_y: f64, sx: f64, sy: f64 },
 }
 
 pub struct History {
@@ -33,6 +37,19 @@ impl History {
             return;
         }
         self.undo.push(Op::MoveStrokes { ids, dx, dy });
+        self.redo.clear();
+    }
+
+    pub fn push_replace(&mut self, old: Stroke, new: Vec<Stroke>) {
+        self.undo.push(Op::ReplaceStroke { old, new });
+        self.redo.clear();
+    }
+
+    pub fn push_transform(&mut self, ids: Vec<Uuid>, anchor_x: f64, anchor_y: f64, sx: f64, sy: f64) {
+        if ids.is_empty() {
+            return;
+        }
+        self.undo.push(Op::TransformStrokes { ids, anchor_x, anchor_y, sx, sy });
         self.redo.clear();
     }
 

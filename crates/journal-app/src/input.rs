@@ -9,12 +9,13 @@ use gtk4::{
     DrawingArea, EventControllerScroll, EventControllerScrollFlags, GestureDrag, GestureStylus,
     GestureZoom,
 };
+use journal_canvas::{hit_test_handle, selection_combined_bbox};
 use journal_core::{Rect, Stroke, StrokePoint};
 use journal_storage::stroke_store;
 use uuid::Uuid;
 
 use crate::history::Op;
-use crate::state::{EraserMode, SharedState, Tool};
+use crate::state::{EraserMode, HandlePos, SharedState, Tool};
 
 fn now_ms() -> u64 {
     Utc::now().timestamp_millis().max(0) as u64
@@ -296,6 +297,7 @@ fn handle_motion(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, 
     match tool {
         Tool::Pen | Tool::Highlighter => extend_stroke(state, sx, sy, pressure, tx, ty),
         Tool::Eraser(EraserMode::Stroke) => erase_at(state, sx, sy, area),
+        Tool::Eraser(EraserMode::Partial) => partial_erase_at(state, sx, sy, area),
         Tool::Selection => extend_selection(state, sx, sy),
     }
 }
@@ -431,15 +433,221 @@ fn erase_at(state: &SharedState, sx: f64, sy: f64, area: &DrawingArea) {
     area.queue_draw();
 }
 
+fn compute_stroke_bbox(points: &[StrokePoint], half_width: f64) -> Rect {
+    if points.is_empty() {
+        return Rect { x: 0.0, y: 0.0, width: 0.0, height: 0.0 };
+    }
+    let mut x0 = points[0].x;
+    let mut y0 = points[0].y;
+    let mut x1 = x0;
+    let mut y1 = y0;
+    for p in points.iter().skip(1) {
+        x0 = x0.min(p.x);
+        y0 = y0.min(p.y);
+        x1 = x1.max(p.x);
+        y1 = y1.max(p.y);
+    }
+    Rect {
+        x: x0 - half_width,
+        y: y0 - half_width,
+        width: (x1 - x0) + half_width * 2.0,
+        height: (y1 - y0) + half_width * 2.0,
+    }
+}
+
+/// Split a stroke at eraser circle: returns the child sub-strokes (runs of points
+/// NOT within the eraser radius). Returns empty vec if nothing survives.
+fn split_stroke_by_eraser(stroke: &Stroke, cx: f64, cy: f64, r: f64) -> Vec<Stroke> {
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let half_w = stroke.pen.base_width / zoc * 0.5;
+    let r2 = r * r;
+    let inside = |p: &StrokePoint| (p.x - cx).powi(2) + (p.y - cy).powi(2) <= r2;
+
+    let mut children: Vec<Stroke> = Vec::new();
+    let mut run: Vec<StrokePoint> = Vec::new();
+
+    for pt in &stroke.points {
+        if inside(pt) {
+            if run.len() >= 2 {
+                let bbox = compute_stroke_bbox(&run, half_w);
+                children.push(Stroke {
+                    id: Uuid::new_v4(),
+                    points: run.clone(),
+                    pen: stroke.pen,
+                    zoom_at_creation: stroke.zoom_at_creation,
+                    bounding_box: bbox,
+                });
+            }
+            run.clear();
+        } else {
+            run.push(pt.clone());
+        }
+    }
+    if run.len() >= 2 {
+        let bbox = compute_stroke_bbox(&run, half_w);
+        children.push(Stroke {
+            id: Uuid::new_v4(),
+            points: run,
+            pen: stroke.pen,
+            zoom_at_creation: stroke.zoom_at_creation,
+            bounding_box: bbox,
+        });
+    }
+    children
+}
+
+fn partial_erase_at(state: &SharedState, sx: f64, sy: f64, area: &DrawingArea) {
+    let (page_id, canvas_pos, zoom, db) = {
+        let s = state.borrow();
+        if s.current_page_id.is_none() {
+            return;
+        }
+        let cp = s.transform.screen_to_canvas((sx, sy));
+        (s.current_page_id.unwrap(), cp, s.transform.zoom(), s.db.clone())
+    };
+
+    let radius_canvas = 10.0 / zoom.max(1e-6);
+    let cx = canvas_pos.x;
+    let cy = canvas_pos.y;
+
+    let candidates: Vec<Stroke> = {
+        let s = state.borrow();
+        s.strokes
+            .iter()
+            .filter(|st| stroke_bbox_intersects_circle(st, cx, cy, radius_canvas))
+            .cloned()
+            .collect()
+    };
+
+    if candidates.is_empty() {
+        return;
+    }
+
+    let mut did_split = false;
+
+    for stroke in &candidates {
+        let children = split_stroke_by_eraser(stroke, cx, cy, radius_canvas);
+        let all_survive = children.len() == 1 && children[0].points == stroke.points;
+        if all_survive {
+            continue;
+        }
+        did_split = true;
+
+        {
+            let mut s = state.borrow_mut();
+            s.strokes.retain(|st| st.id != stroke.id);
+            for child in &children {
+                s.strokes.push(child.clone());
+            }
+            s.history.push_replace(stroke.clone(), children.clone());
+        }
+
+        if let Err(e) = stroke_store::replace_stroke(db.borrow().conn(), stroke.id, &children, page_id) {
+            tracing::warn!("partial_erase: replace_stroke failed for {}: {}", stroke.id, e);
+        }
+    }
+
+    if did_split {
+        area.queue_draw();
+    }
+}
+
+/// Split a stroke by lasso polygon: contiguous runs of inside points → selected children,
+/// outside runs → unselected children. Returns (selected_children, unselected_children).
+fn split_stroke_by_lasso(
+    stroke: &Stroke,
+    lasso: &[(f64, f64)],
+) -> Option<(Vec<Stroke>, Vec<Stroke>)> {
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let half_w = stroke.pen.base_width / zoc * 0.5;
+
+    let inside_flags: Vec<bool> = stroke.points.iter()
+        .map(|p| point_in_polygon(p.x, p.y, lasso))
+        .collect();
+
+    let any_inside = inside_flags.iter().any(|&b| b);
+    let all_inside = inside_flags.iter().all(|&b| b);
+
+    if !any_inside {
+        return None;
+    }
+    if all_inside {
+        return None;
+    }
+
+    let mut selected_children: Vec<Stroke> = Vec::new();
+    let mut unselected_children: Vec<Stroke> = Vec::new();
+
+    let n = stroke.points.len();
+    let mut i = 0;
+    while i < n {
+        let current_inside = inside_flags[i];
+        let mut run: Vec<StrokePoint> = vec![stroke.points[i].clone()];
+        i += 1;
+        while i < n && inside_flags[i] == current_inside {
+            run.push(stroke.points[i].clone());
+            i += 1;
+        }
+        if run.len() < 2 {
+            continue;
+        }
+        let bbox = compute_stroke_bbox(&run, half_w);
+        let child = Stroke {
+            id: Uuid::new_v4(),
+            points: run,
+            pen: stroke.pen,
+            zoom_at_creation: stroke.zoom_at_creation,
+            bounding_box: bbox,
+        };
+        if current_inside {
+            selected_children.push(child);
+        } else {
+            unselected_children.push(child);
+        }
+    }
+
+    Some((selected_children, unselected_children))
+}
+
+fn handle_idx_to_pos(idx: usize) -> HandlePos {
+    match idx {
+        0 => HandlePos::TL,
+        1 => HandlePos::T,
+        2 => HandlePos::TR,
+        3 => HandlePos::R,
+        4 => HandlePos::BR,
+        5 => HandlePos::B,
+        6 => HandlePos::BL,
+        _ => HandlePos::L,
+    }
+}
+
 fn begin_selection(state: &SharedState, sx: f64, sy: f64) {
     let mut s = state.borrow_mut();
     if s.current_page_id.is_none() {
         return;
     }
 
+    // Check resize handles first (only when there's a selection).
+    if !s.selected_stroke_ids.is_empty() {
+        if let Some(bbox) = selection_combined_bbox(&s.strokes, &s.selected_stroke_ids) {
+            if let Some(idx) = hit_test_handle(&s.transform, bbox, sx, sy) {
+                let handle = handle_idx_to_pos(idx);
+                let (_dummy_sx, _dummy_sy, anchor_x, anchor_y) = compute_scale_factors(handle, bbox, 0.0, 0.0);
+                s.selection_resize_handle = Some(handle);
+                s.selection_resize_start = Some((sx, sy));
+                s.selection_resize_bbox_orig = Some(bbox);
+                s.selection_resize_cumulative = (1.0, 1.0);
+                s.selection_resize_anchor = (anchor_x, anchor_y);
+                s.selection_drag_start = None;
+                return;
+            }
+        }
+    }
+
     let canvas_pos = s.transform.screen_to_canvas((sx, sy));
 
-    let hit_selected = s.selected_stroke_ids.iter().any(|id| {
+    let hit_selected = !s.selected_stroke_ids.is_empty() && s.selected_stroke_ids.iter().any(|id| {
         s.strokes.iter().filter(|st| st.id == *id).any(|st| {
             stroke_bbox_intersects_circle(st, canvas_pos.x, canvas_pos.y, 10.0 / s.transform.zoom().max(1e-6))
         })
@@ -448,16 +656,70 @@ fn begin_selection(state: &SharedState, sx: f64, sy: f64) {
     if hit_selected {
         s.selection_drag_start = Some((sx, sy));
         s.selection_drag_total_canvas = (0.0, 0.0);
+        s.selection_resize_handle = None;
     } else {
         s.selected_stroke_ids.clear();
         s.lasso_points = vec![(sx, sy)];
         s.lasso_active = true;
         s.selection_drag_start = None;
+        s.selection_resize_handle = None;
+        s.selection_resize_start = None;
+        s.selection_resize_bbox_orig = None;
     }
 }
 
 fn extend_selection(state: &SharedState, sx: f64, sy: f64) {
     let mut s = state.borrow_mut();
+
+    if s.selection_resize_handle.is_some() {
+        let handle = s.selection_resize_handle.unwrap();
+        let (prev_sx, prev_sy) = match s.selection_resize_start {
+            Some(p) => p,
+            None => return,
+        };
+        let orig_bbox = match s.selection_resize_bbox_orig {
+            Some(b) => b,
+            None => return,
+        };
+
+        let dx_screen = sx - prev_sx;
+        let dy_screen = sy - prev_sy;
+        let zoom = s.transform.zoom().max(1e-6);
+        let dx = dx_screen / zoom;
+        let dy = dy_screen / zoom;
+
+        let (sx_factor, sy_factor, anchor_x, anchor_y) = compute_scale_factors(handle, orig_bbox, dx, dy);
+
+        if sx_factor.abs() < 1e-6 || sy_factor.abs() < 1e-6 {
+            return;
+        }
+
+        s.selection_resize_cumulative.0 *= sx_factor;
+        s.selection_resize_cumulative.1 *= sy_factor;
+        s.selection_resize_anchor = (anchor_x, anchor_y);
+
+        let selected_ids: Vec<Uuid> = s.selected_stroke_ids.iter().cloned().collect();
+        for st in s.strokes.iter_mut() {
+            if selected_ids.contains(&st.id) {
+                for pt in st.points.iter_mut() {
+                    pt.x = anchor_x + (pt.x - anchor_x) * sx_factor;
+                    pt.y = anchor_y + (pt.y - anchor_y) * sy_factor;
+                }
+                let bb = &mut st.bounding_box;
+                let new_x = anchor_x + (bb.x - anchor_x) * sx_factor;
+                let new_y = anchor_y + (bb.y - anchor_y) * sy_factor;
+                bb.width *= sx_factor.abs();
+                bb.height *= sy_factor.abs();
+                bb.x = new_x.min(new_x + bb.width);
+                bb.y = new_y.min(new_y + bb.height);
+            }
+        }
+
+        s.selection_resize_start = Some((sx, sy));
+        s.selection_resize_bbox_orig = selection_combined_bbox(&s.strokes, &s.selected_stroke_ids);
+
+        return;
+    }
 
     if let Some((ox, oy)) = s.selection_drag_start {
         let dx_screen = sx - ox;
@@ -485,8 +747,110 @@ fn extend_selection(state: &SharedState, sx: f64, sy: f64) {
     }
 }
 
+/// Given the handle being dragged, return (sx, sy, anchor_x, anchor_y) for the
+/// incremental delta (dx, dy in canvas units) applied from the original bbox.
+fn compute_scale_factors(
+    handle: HandlePos,
+    orig: Rect,
+    dx: f64,
+    dy: f64,
+) -> (f64, f64, f64, f64) {
+    let l = orig.x;
+    let r = orig.x + orig.width;
+    let t = orig.y;
+    let b = orig.y + orig.height;
+
+    match handle {
+        HandlePos::TL => {
+            let new_w = (orig.width - dx).max(1.0);
+            let new_h = (orig.height - dy).max(1.0);
+            (new_w / orig.width, new_h / orig.height, r, b)
+        }
+        HandlePos::T => {
+            let new_h = (orig.height - dy).max(1.0);
+            (1.0, new_h / orig.height, (l + r) * 0.5, b)
+        }
+        HandlePos::TR => {
+            let new_w = (orig.width + dx).max(1.0);
+            let new_h = (orig.height - dy).max(1.0);
+            (new_w / orig.width, new_h / orig.height, l, b)
+        }
+        HandlePos::R => {
+            let new_w = (orig.width + dx).max(1.0);
+            (new_w / orig.width, 1.0, l, (t + b) * 0.5)
+        }
+        HandlePos::BR => {
+            let new_w = (orig.width + dx).max(1.0);
+            let new_h = (orig.height + dy).max(1.0);
+            (new_w / orig.width, new_h / orig.height, l, t)
+        }
+        HandlePos::B => {
+            let new_h = (orig.height + dy).max(1.0);
+            (1.0, new_h / orig.height, (l + r) * 0.5, t)
+        }
+        HandlePos::BL => {
+            let new_w = (orig.width - dx).max(1.0);
+            let new_h = (orig.height + dy).max(1.0);
+            (new_w / orig.width, new_h / orig.height, r, t)
+        }
+        HandlePos::L => {
+            let new_w = (orig.width - dx).max(1.0);
+            (new_w / orig.width, 1.0, r, (t + b) * 0.5)
+        }
+    }
+}
+
 fn finish_selection(state: &SharedState) {
-    let (page_id, db, strokes_to_update, moved_ids) = {
+    // Handle resize commit.
+    let resize_ids_and_bbox = {
+        let s = state.borrow();
+        if s.selection_resize_handle.is_some() {
+            let ids: Vec<Uuid> = s.selected_stroke_ids.iter().cloned().collect();
+            let orig = s.selection_resize_bbox_orig;
+            Some((ids, orig))
+        } else {
+            None
+        }
+    };
+
+    if let Some((ids, _orig_bbox_opt)) = resize_ids_and_bbox {
+        let (db, page_id, strokes_to_update, history_args) = {
+            let mut s = state.borrow_mut();
+            s.selection_resize_handle = None;
+            s.selection_resize_start = None;
+            s.selection_resize_bbox_orig = None;
+
+            let (csx, csy) = s.selection_resize_cumulative;
+            let (ax, ay) = s.selection_resize_anchor;
+            s.selection_resize_cumulative = (1.0, 1.0);
+
+            let strokes_to_update: Vec<Stroke> = s.strokes
+                .iter()
+                .filter(|st| ids.contains(&st.id))
+                .cloned()
+                .collect();
+
+            (s.db.clone(), s.current_page_id, strokes_to_update, (ids.clone(), ax, ay, csx, csy))
+        };
+
+        if let Some(pid) = page_id {
+            for st in &strokes_to_update {
+                if let Err(e) = stroke_store::update_stroke(db.borrow().conn(), st, pid) {
+                    tracing::warn!("resize: update_stroke {}: {}", st.id, e);
+                }
+            }
+        }
+
+        let (h_ids, h_ax, h_ay, h_sx, h_sy) = history_args;
+        if h_sx != 1.0 || h_sy != 1.0 {
+            let mut s = state.borrow_mut();
+            s.history.push_transform(h_ids, h_ax, h_ay, h_sx, h_sy);
+        }
+
+        return;
+    }
+
+    let (page_id, db, strokes_to_update, moved_ids, lasso_replacements) = {
         let mut s = state.borrow_mut();
 
         let moved_ids: Vec<Uuid> = if s.selection_drag_start.is_some() {
@@ -502,6 +866,8 @@ fn finish_selection(state: &SharedState) {
             s.history.push_move(moved_ids.clone(), tx, ty);
         }
 
+        let mut lasso_replacements: Vec<(Stroke, Vec<Stroke>)> = Vec::new();
+
         if s.lasso_active && s.lasso_points.len() >= 3 {
             let lasso = s.lasso_points.clone();
             let transform = s.transform;
@@ -513,13 +879,30 @@ fn finish_selection(state: &SharedState) {
                 })
                 .collect();
 
-            let newly_selected: Vec<Uuid> = s.strokes
-                .iter()
-                .filter(|st| stroke_bbox_in_polygon(st, &lasso_canvas))
-                .map(|st| st.id)
-                .collect();
-            for id in newly_selected {
-                s.selected_stroke_ids.insert(id);
+            let all_strokes: Vec<Stroke> = s.strokes.clone();
+            for stroke in &all_strokes {
+                if let Some((selected_children, unselected_children)) =
+                    split_stroke_by_lasso(stroke, &lasso_canvas)
+                {
+                    let mut all_children = selected_children.clone();
+                    all_children.extend(unselected_children.clone());
+                    lasso_replacements.push((stroke.clone(), all_children));
+
+                    s.strokes.retain(|st| st.id != stroke.id);
+                    for child in &selected_children {
+                        s.selected_stroke_ids.insert(child.id);
+                        s.strokes.push(child.clone());
+                    }
+                    for child in &unselected_children {
+                        s.strokes.push(child.clone());
+                    }
+                } else if stroke_bbox_in_polygon(stroke, &lasso_canvas) {
+                    s.selected_stroke_ids.insert(stroke.id);
+                }
+            }
+
+            for (old, new) in &lasso_replacements {
+                s.history.push_replace(old.clone(), new.clone());
             }
         }
 
@@ -534,13 +917,18 @@ fn finish_selection(state: &SharedState) {
             Vec::new()
         };
 
-        (page_id, db, strokes_to_update, moved_ids)
+        (page_id, db, strokes_to_update, moved_ids, lasso_replacements)
     };
 
     if let Some(pid) = page_id {
         for stroke in &strokes_to_update {
             if let Err(e) = stroke_store::update_stroke(db.borrow().conn(), stroke, pid) {
                 tracing::warn!("selection move: failed to update stroke {}: {}", stroke.id, e);
+            }
+        }
+        for (old, new) in &lasso_replacements {
+            if let Err(e) = stroke_store::replace_stroke(db.borrow().conn(), old.id, new, pid) {
+                tracing::warn!("lasso split: replace_stroke failed for {}: {}", old.id, e);
             }
         }
         let _ = moved_ids;
@@ -621,6 +1009,29 @@ pub fn undo(state: &SharedState, area: &DrawingArea) {
             apply_move(state, &ids, -dx, -dy);
             state.borrow_mut().history.redo.push(Op::MoveStrokes { ids, dx, dy });
         }
+        Op::ReplaceStroke { old, new } => {
+            let (db, page_id) = {
+                let mut s = state.borrow_mut();
+                for child in &new {
+                    s.strokes.retain(|st| st.id != child.id);
+                }
+                s.strokes.push(old.clone());
+                s.history.redo.push(Op::ReplaceStroke { old: old.clone(), new: new.clone() });
+                (s.db.clone(), s.current_page_id)
+            };
+            if let Some(pid) = page_id {
+                for child in &new {
+                    let _ = stroke_store::delete_stroke(db.borrow().conn(), child.id);
+                }
+                if let Err(e) = stroke_store::insert_stroke(db.borrow().conn(), &old, pid) {
+                    tracing::warn!("undo ReplaceStroke: insert original failed for {}: {}", old.id, e);
+                }
+            }
+        }
+        Op::TransformStrokes { ids, anchor_x, anchor_y, sx, sy } => {
+            apply_scale(state, &ids, anchor_x, anchor_y, 1.0 / sx.max(1e-9), 1.0 / sy.max(1e-9));
+            state.borrow_mut().history.redo.push(Op::TransformStrokes { ids, anchor_x, anchor_y, sx, sy });
+        }
     }
 
     area.queue_draw();
@@ -665,6 +1076,26 @@ pub fn redo(state: &SharedState, area: &DrawingArea) {
             apply_move(state, &ids, dx, dy);
             state.borrow_mut().history.undo.push(Op::MoveStrokes { ids, dx, dy });
         }
+        Op::ReplaceStroke { old, new } => {
+            let (db, page_id) = {
+                let mut s = state.borrow_mut();
+                s.strokes.retain(|st| st.id != old.id);
+                for child in &new {
+                    s.strokes.push(child.clone());
+                }
+                s.history.undo.push(Op::ReplaceStroke { old: old.clone(), new: new.clone() });
+                (s.db.clone(), s.current_page_id)
+            };
+            if let Some(pid) = page_id {
+                if let Err(e) = stroke_store::replace_stroke(db.borrow().conn(), old.id, &new, pid) {
+                    tracing::warn!("redo ReplaceStroke: failed for {}: {}", old.id, e);
+                }
+            }
+        }
+        Op::TransformStrokes { ids, anchor_x, anchor_y, sx, sy } => {
+            apply_scale(state, &ids, anchor_x, anchor_y, sx, sy);
+            state.borrow_mut().history.undo.push(Op::TransformStrokes { ids, anchor_x, anchor_y, sx, sy });
+        }
     }
 
     area.queue_draw();
@@ -690,6 +1121,36 @@ fn apply_move(state: &SharedState, ids: &[Uuid], dx: f64, dy: f64) {
         for st in &updated {
             if let Err(e) = stroke_store::update_stroke(db.borrow().conn(), st, pid) {
                 tracing::warn!("apply_move update_stroke {}: {}", st.id, e);
+            }
+        }
+    }
+}
+
+fn apply_scale(state: &SharedState, ids: &[Uuid], anchor_x: f64, anchor_y: f64, sx: f64, sy: f64) {
+    let (db, page_id, updated) = {
+        let mut s = state.borrow_mut();
+        for st in s.strokes.iter_mut() {
+            if ids.contains(&st.id) {
+                for pt in st.points.iter_mut() {
+                    pt.x = anchor_x + (pt.x - anchor_x) * sx;
+                    pt.y = anchor_y + (pt.y - anchor_y) * sy;
+                }
+                let bb = &mut st.bounding_box;
+                let new_x = anchor_x + (bb.x - anchor_x) * sx;
+                let new_y = anchor_y + (bb.y - anchor_y) * sy;
+                bb.width = (bb.width * sx.abs()).max(0.0);
+                bb.height = (bb.height * sy.abs()).max(0.0);
+                bb.x = new_x.min(new_x + bb.width);
+                bb.y = new_y.min(new_y + bb.height);
+            }
+        }
+        let updated: Vec<Stroke> = s.strokes.iter().filter(|st| ids.contains(&st.id)).cloned().collect();
+        (s.db.clone(), s.current_page_id, updated)
+    };
+    if let Some(pid) = page_id {
+        for st in &updated {
+            if let Err(e) = stroke_store::update_stroke(db.borrow().conn(), st, pid) {
+                tracing::warn!("apply_scale update_stroke {}: {}", st.id, e);
             }
         }
     }
