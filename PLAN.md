@@ -320,19 +320,51 @@ backend is **AWS Amplify** (Cognito + AppSync/REST + DynamoDB + S3).
 - [ ] `journal-app`: settings pane to log in / log out / pick "sync templates"
   toggle. Template manager grows tabs for "Local", "My (synced)", "Public".
 
-### 6.4 Optional web template portal — Amplify Hosting
+### 6.4 Web template portal — Amplify Hosting
 
-A browser UI for users who want to manage, share, or browse templates
-without launching the desktop app. Hosted on **Amplify Hosting** (static
-SPA against the same AppSync API + Cognito). React/Vue is acceptable here
-because it's a **separate web property** for sharing, not the journal app.
-The "no web client for the journal" rule still holds — drawing stays
-native.
+A browser UI for users to **design, manage, share, and browse** both page
+templates and notebook templates without launching the desktop app. Hosted
+on **Amplify Hosting** (static SPA against the same AppSync API + Cognito).
+React/Vue is acceptable here because it's a **separate web property** for
+template authoring/sharing, not the journal app itself. The "no web client
+for the journal" rule still holds — **drawing on a page** stays native;
+**designing the empty layout** is fair game in the browser.
 
-- [ ] Read-mostly: list public templates, preview the Lambda-rendered PNG,
-  fork to "my templates". Authenticated users can rename / set visibility /
-  delete their own.
-- [ ] Out of scope: a web canvas. Drawing remains the native client.
+- [ ] **Browse/share** — list public templates with Lambda-rendered PNG
+  previews, fork to "my templates". Authenticated users can rename /
+  set visibility / delete their own.
+- [ ] **Page template designer** — drag-and-drop editor mirroring the
+  native template editor: a widget palette (TextBlock, Rectangle, Ellipse,
+  Line, Grid/Lines/Dots Region, CalendarMonth, Timeline, Checklist,
+  BigThree, PriorityList, DailyAppointments, WeeklyCompass), canvas with
+  page outline + drag-place / drag-move / drag-resize, properties panel
+  (stroke/fill colour, width, per-kind controls, text-variable insertion).
+  Output is the **same TOML schema** consumed by the native client
+  (`schema_version = 1`, `widgets = [...]`) so a template designed on the
+  web loads unchanged on the desktop.
+- [ ] **Notebook template designer** — drag-and-drop editor for planner
+  structure: define `year_start`, `before_quarter`, `before_month`,
+  `before_week` slots (each takes an ordered list of page templates,
+  picked from the user's library by drag-and-drop); define `daily_slots`
+  (day-of-week multi-select chips + ordered page-template list); pick
+  `grouping = Month | Week`; edit `page_title_format` +
+  `section_title_formats` with a live preview that uses tomorrow's date.
+  Output matches the native notebook-template TOML at
+  `~/.local/share/journal/notebook_templates/`.
+- [ ] **Schema parity guarantee** — page-template + notebook-template
+  schemas live in `journal-core` (already true for page templates via
+  `journal_core::template`). The web SPA fetches a versioned JSON schema
+  from a Lambda endpoint to render its forms, so adding a new
+  `WidgetKind` variant on the desktop automatically becomes available
+  in the web designer's palette without a separate web release.
+- [ ] **Render preview** — the web designer renders previews client-side
+  via a small TypeScript port of `widget_renderer` against an HTML5
+  `<canvas>`. Same coord system, same default sizes, same `title_format`
+  expansion (port of `journal_core::title_format`). Lambda-rendered PNG
+  remains the source of truth for thumbnails (server side, headless
+  Cairo) so browse-list previews match the native client byte-for-byte.
+- [ ] **Out of scope:** drawing on a page (strokes, stylus input, ink) —
+  that stays on the native client, full stop.
 
 ### 6.5 Remote notebook/stroke backend (later, gated on 6.3)
 
