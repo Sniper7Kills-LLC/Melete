@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::state::SharedState;
 
-fn persist_notebook_template(t: &journal_core::NotebookTemplate) {
+pub(crate) fn persist_notebook_template(t: &journal_core::NotebookTemplate) {
     let dir = match dirs::data_dir() {
         Some(d) => d.join("journal").join("notebook_templates"),
         None => return,
@@ -689,6 +689,7 @@ pub fn prompt_notebook_template_editor(
                     month: month_entry.text().to_string(),
                     week: week_entry.text().to_string(),
                 },
+                entry_options: edit.as_ref().map(|e| e.entry_options.clone()).unwrap_or_default(),
             };
             persist_notebook_template(&nt);
             state.borrow().notebook_templates.borrow_mut().insert(nt);
@@ -702,6 +703,9 @@ pub fn prompt_notebook_template_editor(
 }
 
 /// Create a new notebook template. Thin wrapper around `prompt_notebook_template_editor`.
+/// Kept for back-compat; the canonical entry point is now the full-screen
+/// stack-page editor in `notebook_template_creator`.
+#[allow(dead_code)]
 pub fn prompt_new_notebook_template(
     parent: &ApplicationWindow,
     state: SharedState,

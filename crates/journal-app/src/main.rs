@@ -3,6 +3,7 @@ mod config;
 mod dialogs;
 mod history;
 mod input;
+mod notebook_template_creator;
 mod pdf_export;
 mod settings_dialogs;
 mod shortcuts;

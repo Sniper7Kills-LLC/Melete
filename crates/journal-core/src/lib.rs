@@ -16,6 +16,7 @@ pub use template::{
     PageTemplate, TemplateId, BackgroundType, TilingMode,
     NotebookTemplate, DailySlot, PlannerGrouping, SectionTitleFormats,
     TemplateWidget, WidgetKind, WidgetRect, WidgetStyle,
+    EntryFlags,
 };
 pub use calendar::{CalendarPageAddress, PlannerPageAddress};
 pub use title_format::{render as render_title, TitleContext};

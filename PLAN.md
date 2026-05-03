@@ -285,6 +285,22 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ---
 
+## Phase 5.7: Drag-drop notebook-template editor ✅
+
+- [x] **`EntryFlags` data model** — `journal_core::EntryFlags { bridge_previous: bool, bridge_next: bool }` added to `journal_core::template`. New `entry_options: HashMap<String, EntryFlags>` field on `NotebookTemplate` with `#[serde(default)]` so existing TOML files load unchanged. Keys are `"year_start:N"`, `"before_quarter:N"`, `"before_month:N"`, `"before_week:N"`, `"daily:S:N"`. Planner runtime does not yet act on these flags — they are persisted and surfaced in the editor; bridge-rendering is a future phase.
+- [x] **Full-screen stack-page editor** (`crates/journal-app/src/notebook_template_creator.rs`) — mirrors `template_creator::build_editor_view`. Outer `GtkBox` (vertical) with: top action row (Back + title + Saved ✓ indicator + Save), meta row (Name / Description / Grouping / Page title format / Year-Month-Week section formats), three-pane `Paned`.
+- [x] **Palette pane** (left, ~200px) — `ScrolledWindow` listing every available `PageTemplate` as a chip with a coloured swatch and template name. Each chip is a `gtk4::DragSource` (COPY) whose payload is `"page-template:{uuid}"`.
+- [x] **Slots pane** (middle, flex) — `ScrolledWindow` with sections for Year start / Before each quarter / Before each month / Before each week (each a `FlowBox` drop target), then a "Daily slots" section with an "+ Add daily slot" button. Each daily slot has weekday `ToggleButton` chips (Mon–Sun), a `FlowBox` drop target for page-template chips, and a "Remove slot" button.
+- [x] **Options panel** (right, ~260px) — when a chip is clicked, shows slot label, "Bridge to previous period" `Switch`, "Bridge to next period" `Switch`, and a hint that bridge-rendering is deferred. Shows placeholder text when no chip is selected.
+- [x] **Drag-and-drop wiring** — `DropTarget::new(Type::STRING, DragAction::COPY)`; `connect_drop` parses `"page-template:{uuid}"`, pushes `TemplateId` into the slot vec, rebuilds the `FlowBox`. `connect_enter`/`connect_leave` toggle `.drag-target` CSS class for visual feedback. `DragSource::connect_prepare` returns `ContentProvider::for_value`.
+- [x] **Per-entry options** — clicking a slot chip sets `EditorState::selected_key` and rebuilds the options panel. Bridge switches write to `template.entry_options` via `HashMap::entry(...).or_default()`. On chip removal, `renumber_flat_keys` / `renumber_daily_keys` keep keys aligned with Vec indices.
+- [x] **Save / Back** — Save calls `dialogs::persist_notebook_template` (made `pub(crate)`) + `notebook_templates.borrow_mut().insert(...)`, shows "Saved ✓" for 450 ms, then returns via `on_done`. Back returns immediately.
+- [x] **Window integration** — `window.rs` gains `NOTEBOOK_TEMPLATE_EDITOR_NAME` constant, `notebook_template_editor_container: GtkBox`, and `show_notebook_template_editor(win, edit)` function (mirrors `show_template_editor`). `build_home_into` registers `show_notebook_template_editor` as the opener via `template_manager::set_nb_editor_opener` (thread-local slot). The template manager's notebook-template Edit and New buttons route through the stack-page editor if an opener is registered, falling back to the modal (`prompt_notebook_template_editor`) otherwise.
+- [x] **Back-compat** — `dialogs::prompt_new_notebook_template` and `dialogs::prompt_notebook_template_editor` are kept unchanged and still working.
+- [x] **Unit tests** — 3 new tests for `EntryFlags` serde round-trip, default-all-false, and empty-TOML default deserialization.
+
+---
+
 ## Future (Not Now)
 
 - [ ] Calendar integration (Google Calendar, iCal) — display events on template areas

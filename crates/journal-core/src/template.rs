@@ -198,6 +198,12 @@ pub struct NotebookTemplate {
     /// Title formats for the year and month/week wrapper sections.
     #[serde(default)]
     pub section_title_formats: SectionTitleFormats,
+    /// Per-entry bridge flags. Keys are `"year_start:N"`, `"before_quarter:N"`,
+    /// `"before_month:N"`, `"before_week:N"`, or `"daily:S:N"`.
+    /// Planner runtime does not yet act on these — persisted for the editor,
+    /// bridge-rendering is a future phase.
+    #[serde(default)]
+    pub entry_options: std::collections::HashMap<String, EntryFlags>,
 }
 
 /// Specifies which page templates to use on which days of the week.
@@ -207,4 +213,48 @@ pub struct DailySlot {
     pub days: Vec<Weekday>,
     /// Templates to insert for each matching day.
     pub templates: Vec<TemplateId>,
+}
+
+/// Per-entry bridge flags persisted inside a `NotebookTemplate`.
+///
+/// Keys in `NotebookTemplate::entry_options` are formatted as:
+///   `"year_start:N"` / `"before_quarter:N"` / `"before_month:N"` /
+///   `"before_week:N"` / `"daily:S:N"` (S = daily-slot index, N = template
+///   index inside that slot).
+///
+/// The planner runtime does not yet act on these flags — they are persisted
+/// and surfaced in the editor; bridge-rendering will be wired in a later phase.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EntryFlags {
+    #[serde(default)]
+    pub bridge_previous: bool,
+    #[serde(default)]
+    pub bridge_next: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn entry_flags_serde_round_trip() {
+        let flags = EntryFlags { bridge_previous: true, bridge_next: false };
+        let serialized = toml::to_string(&flags).expect("serialize EntryFlags");
+        let deserialized: EntryFlags = toml::from_str(&serialized).expect("deserialize EntryFlags");
+        assert_eq!(flags, deserialized);
+    }
+
+    #[test]
+    fn entry_flags_default_is_all_false() {
+        let flags = EntryFlags::default();
+        assert!(!flags.bridge_previous);
+        assert!(!flags.bridge_next);
+    }
+
+    #[test]
+    fn entry_flags_serde_defaults_on_empty() {
+        // An empty TOML table should deserialize to all-false defaults.
+        let flags: EntryFlags = toml::from_str("").expect("deserialize empty EntryFlags");
+        assert_eq!(flags, EntryFlags::default());
+    }
 }

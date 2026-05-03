@@ -23,6 +23,66 @@ use crate::state::SharedState;
 /// `Some(template)` edits an existing template; `None` creates a new one.
 pub type OpenEditorFn = Rc<dyn Fn(Option<PageTemplate>)>;
 
+/// Callback type used to open the full-screen notebook template editor.
+pub type OpenNbEditorFn = Rc<dyn Fn(Option<journal_core::NotebookTemplate>)>;
+
+// Thread-local slot: set by `window::build_home_into` so that the template
+// manager's notebook-template edit button routes through the stack-page editor
+// rather than the modal fallback.
+std::thread_local! {
+    static NB_EDITOR_OPENER: std::cell::RefCell<Option<OpenNbEditorFn>> =
+        std::cell::RefCell::new(None);
+}
+
+/// Register the stack-page notebook template editor opener.
+/// Called once from `window::build_home_into`.
+pub fn set_nb_editor_opener(opener: OpenNbEditorFn) {
+    NB_EDITOR_OPENER.with(|cell| {
+        *cell.borrow_mut() = Some(opener);
+    });
+}
+
+/// Invoke the registered notebook template editor opener (if set), otherwise
+/// fall back to the modal `prompt_notebook_template_editor`.
+fn open_nb_editor(
+    parent: &ApplicationWindow,
+    state: SharedState,
+    edit: Option<journal_core::NotebookTemplate>,
+    list: Rc<ListBox>,
+    parent_for_refresh: ApplicationWindow,
+    close_manager: Rc<dyn Fn()>,
+) {
+    let has_opener = NB_EDITOR_OPENER.with(|cell| cell.borrow().is_some());
+    if has_opener {
+        // Close the template manager window, then open the stack-page editor.
+        (close_manager)();
+        NB_EDITOR_OPENER.with(|cell| {
+            if let Some(ref opener) = *cell.borrow() {
+                (opener)(edit);
+            }
+        });
+    } else {
+        // Fallback: modal editor (back-compat path when no stack-page opener is registered).
+        let state_inner = state.clone();
+        let list_inner = list.clone();
+        let parent_inner = parent_for_refresh.clone();
+        let close_inner = close_manager.clone();
+        crate::dialogs::prompt_notebook_template_editor(
+            parent,
+            state,
+            edit,
+            Box::new(move |_id| {
+                refresh_notebook_template_list(
+                    &list_inner,
+                    state_inner.clone(),
+                    &parent_inner,
+                    close_inner.clone(),
+                );
+            }),
+        );
+    }
+}
+
 pub fn open(parent: &ApplicationWindow, state: SharedState, open_editor: OpenEditorFn) {
     let win = Window::builder()
         .transient_for(parent)
@@ -63,7 +123,7 @@ pub fn open(parent: &ApplicationWindow, state: SharedState, open_editor: OpenEdi
     );
     stack.add_titled(&pages_tab, Some("pages"), "Page Templates");
 
-    let nb_tab = build_notebook_templates_tab(parent, state.clone());
+    let nb_tab = build_notebook_templates_tab(parent, state.clone(), close_manager.clone());
     stack.add_titled(&nb_tab, Some("notebooks"), "Notebook Templates");
 
     let close_row = GtkBox::builder()
@@ -182,6 +242,7 @@ fn build_page_templates_tab(
 fn build_notebook_templates_tab(
     parent: &ApplicationWindow,
     state: SharedState,
+    close_manager: Rc<dyn Fn()>,
 ) -> GtkBox {
     let root = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -214,22 +275,25 @@ fn build_notebook_templates_tab(
     root.append(&scroller);
 
     let list_rc = Rc::new(list);
-    refresh_notebook_template_list(&list_rc, state.clone(), parent);
+    refresh_notebook_template_list(&list_rc, state.clone(), parent, close_manager.clone());
 
     {
         let parent = parent.clone();
         let state = state.clone();
         let list = list_rc.clone();
+        let close_mgr = close_manager.clone();
         new_btn.connect_clicked(move |_| {
             let list_inner = list.clone();
-            let state_inner = state.clone();
             let parent_inner = parent.clone();
-            crate::dialogs::prompt_new_notebook_template(
+            let close_inner = close_mgr.clone();
+            // Use the stack-page editor if registered, otherwise fall back to modal.
+            open_nb_editor(
                 &parent,
                 state.clone(),
-                Box::new(move |_id| {
-                    refresh_notebook_template_list(&list_inner, state_inner.clone(), &parent_inner)
-                }),
+                None,
+                list_inner,
+                parent_inner,
+                close_inner,
             );
         });
     }
@@ -241,6 +305,7 @@ fn refresh_notebook_template_list(
     list: &Rc<ListBox>,
     state: SharedState,
     parent: &ApplicationWindow,
+    close_manager: Rc<dyn Fn()>,
 ) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
@@ -265,7 +330,7 @@ fn refresh_notebook_template_list(
     }
 
     for t in templates {
-        let row = build_notebook_template_row(&t, state.clone(), list.clone(), parent);
+        let row = build_notebook_template_row(&t, state.clone(), list.clone(), parent, close_manager.clone());
         list.append(&row);
     }
 }
@@ -275,6 +340,7 @@ fn build_notebook_template_row(
     state: SharedState,
     list: Rc<ListBox>,
     parent: &ApplicationWindow,
+    close_manager: Rc<dyn Fn()>,
 ) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
@@ -312,24 +378,23 @@ fn build_notebook_template_row(
     row.append(&text_col);
 
     if !is_builtin_notebook_template(t.id) {
-        // Edit button — opens the full template editor pre-populated.
+        // Edit button — opens the stack-page editor (falling back to modal if
+        // the opener hasn't been registered yet).
         let edit_btn = Button::from_icon_name("document-edit-symbolic");
         edit_btn.set_tooltip_text(Some("Edit template"));
         let template_for_edit = t.clone();
         let state_for_edit = state.clone();
         let list_for_edit = list.clone();
         let parent_for_edit = parent.clone();
+        let close_for_edit = close_manager.clone();
         edit_btn.connect_clicked(move |_| {
-            let list_inner = list_for_edit.clone();
-            let state_inner = state_for_edit.clone();
-            let parent_inner = parent_for_edit.clone();
-            crate::dialogs::prompt_notebook_template_editor(
+            open_nb_editor(
                 &parent_for_edit,
                 state_for_edit.clone(),
                 Some(template_for_edit.clone()),
-                Box::new(move |_id| {
-                    refresh_notebook_template_list(&list_inner, state_inner.clone(), &parent_inner)
-                }),
+                list_for_edit.clone(),
+                parent_for_edit.clone(),
+                close_for_edit.clone(),
             );
         });
         row.append(&edit_btn);
@@ -341,9 +406,15 @@ fn build_notebook_template_row(
         let state_for_del = state.clone();
         let list_for_del = list.clone();
         let parent_for_del = parent.clone();
+        let close_for_del = close_manager.clone();
         del.connect_clicked(move |_| {
             delete_notebook_template(tid, state_for_del.clone());
-            refresh_notebook_template_list(&list_for_del, state_for_del.clone(), &parent_for_del);
+            refresh_notebook_template_list(
+                &list_for_del,
+                state_for_del.clone(),
+                &parent_for_del,
+                close_for_del.clone(),
+            );
         });
         row.append(&del);
     } else {

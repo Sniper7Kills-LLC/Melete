@@ -38,6 +38,7 @@ pub fn builtin_yearly_planner() -> NotebookTemplate {
         grouping: PlannerGrouping::Month,
         page_title_format: "{weekday} {month_name} {day}".into(),
         section_title_formats: SectionTitleFormats::default(),
+        entry_options: std::collections::HashMap::new(),
     }
 }
 
