@@ -271,6 +271,11 @@ pub fn build_nav_strip(
         .build();
 
     let current: Rc<Cell<NaiveDate>> = Rc::new(Cell::new(Utc::now().date_naive()));
+    // Set true while we update the GtkCalendar programmatically so the
+    // intermediate set_year/set_month/set_day don't fire day_selected with
+    // a half-applied date (which clobbers `current` and prevents month
+    // rollover at end-of-month / end-of-year boundaries).
+    let suppress_day_selected: Rc<Cell<bool>> = Rc::new(Cell::new(false));
 
     let prev_btn = Button::from_icon_name("go-previous-symbolic");
     prev_btn.set_tooltip_text(Some("Previous day"));
@@ -295,12 +300,27 @@ pub fn build_nav_strip(
     strip.append(&date_btn);
     strip.append(&next_btn);
 
-    let nav = |state: &SharedState, canvas: &DrawingArea, template: &NotebookTemplate, current: &Rc<Cell<NaiveDate>>, label: &Label, cal: &Calendar, date: NaiveDate, notebook_id: NotebookId, on_refresh: &Rc<dyn Fn()>| {
+    let nav = |state: &SharedState,
+               canvas: &DrawingArea,
+               template: &NotebookTemplate,
+               current: &Rc<Cell<NaiveDate>>,
+               label: &Label,
+               cal: &Calendar,
+               date: NaiveDate,
+               notebook_id: NotebookId,
+               on_refresh: &Rc<dyn Fn()>,
+               suppress: &Rc<Cell<bool>>| {
         current.set(date);
         label.set_text(&fmt_date(date));
+        // Guard against day-selected reentrancy: GtkCalendar fires that
+        // signal on each of set_year/set_month/set_day, and the
+        // intermediate states (e.g. day=31 while month=Feb) cause the
+        // handler to navigate to the wrong date.
+        suppress.set(true);
         cal.set_year(date.year());
         cal.set_month(date.month0() as i32);
         cal.set_day(date.day() as i32);
+        suppress.set(false);
         goto_date(state, canvas, notebook_id, template, date);
         (on_refresh)();
     };
@@ -313,9 +333,10 @@ pub fn build_nav_strip(
         let label = date_label.clone();
         let cal = cal.clone();
         let on_refresh_clone = on_refresh.clone();
+        let suppress = suppress_day_selected.clone();
         prev_btn.connect_clicked(move |_| {
             let d = current.get() - Duration::days(1);
-            nav(&state, &canvas, &template, &current, &label, &cal, d, notebook_id, &on_refresh_clone);
+            nav(&state, &canvas, &template, &current, &label, &cal, d, notebook_id, &on_refresh_clone, &suppress);
         });
     }
     {
@@ -326,9 +347,10 @@ pub fn build_nav_strip(
         let label = date_label.clone();
         let cal = cal.clone();
         let on_refresh_clone = on_refresh.clone();
+        let suppress = suppress_day_selected.clone();
         next_btn.connect_clicked(move |_| {
             let d = current.get() + Duration::days(1);
-            nav(&state, &canvas, &template, &current, &label, &cal, d, notebook_id, &on_refresh_clone);
+            nav(&state, &canvas, &template, &current, &label, &cal, d, notebook_id, &on_refresh_clone, &suppress);
         });
     }
     {
@@ -339,9 +361,10 @@ pub fn build_nav_strip(
         let label = date_label.clone();
         let cal_clone = cal.clone();
         let on_refresh_clone = on_refresh.clone();
+        let suppress = suppress_day_selected.clone();
         today_btn.connect_clicked(move |_| {
             let d = Utc::now().date_naive();
-            nav(&state, &canvas, &template, &current, &label, &cal_clone, d, notebook_id, &on_refresh_clone);
+            nav(&state, &canvas, &template, &current, &label, &cal_clone, d, notebook_id, &on_refresh_clone, &suppress);
         });
     }
     {
@@ -352,7 +375,13 @@ pub fn build_nav_strip(
         let label = date_label.clone();
         let popover = popover.clone();
         let on_refresh_clone = on_refresh.clone();
+        let suppress = suppress_day_selected.clone();
         cal.connect_day_selected(move |c| {
+            // Ignore the volley of day_selected signals fired while we
+            // programmatically reposition the calendar from a button click.
+            if suppress.get() {
+                return;
+            }
             let d = NaiveDate::from_ymd_opt(c.year(), (c.month() + 1) as u32, c.day() as u32);
             if let Some(d) = d {
                 current.set(d);
@@ -371,15 +400,18 @@ pub fn build_nav_strip(
         let current = current.clone();
         let label = date_label.clone();
         let cal = cal.clone();
+        let suppress = suppress_day_selected.clone();
         let sync: Rc<dyn Fn(NaiveDate)> = Rc::new(move |d: NaiveDate| {
             if current.get() == d {
                 return;
             }
             current.set(d);
             label.set_text(&fmt_date(d));
+            suppress.set(true);
             cal.set_year(d.year());
             cal.set_month(d.month0() as i32);
             cal.set_day(d.day() as i32);
+            suppress.set(false);
         });
         state.borrow_mut().planner_nav_sync_date = Some(sync);
     }
