@@ -143,42 +143,44 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ---
 
-## Phase 2: Persistence + Notebook Structure
+## Phase 2: Persistence + Notebook Structure ✅
 
 **Goal:** Save/load, notebook → section → page hierarchy.
 
-- [ ] `journal-storage`: SQLite schema (notebooks, sections, pages, strokes)
-- [ ] `journal-storage`: Binary stroke point packing
-- [ ] `journal-storage`: R-tree spatial index for viewport culling
-- [ ] `journal-storage`: Page ordering within sections
-- [ ] `journal-app`: Notebook list view (home screen)
-- [ ] `journal-app`: Section sidebar within notebook
-- [ ] `journal-app`: Page list within section
-- [ ] `journal-app`: Create notebook / section / page dialogs
-- [ ] `journal-app`: Drag-reorder pages and sections
-- [ ] `journal-app`: Auto-save on stroke completion
+- [x] `journal-storage`: SQLite schema (notebooks, sections, pages, strokes, page_templates) with `PRAGMA user_version` migration
+- [x] `journal-storage`: Binary stroke point packing (versioned bincode blob)
+- [x] `journal-storage`: R-tree spatial index for viewport culling (strokes_rtree virtual table)
+- [x] `journal-storage`: Page ordering within sections + cross-section move
+- [x] `journal-app`: Notebook list view (home screen)
+- [x] `journal-app`: Section sidebar within notebook
+- [x] `journal-app`: Page list within section
+- [x] `journal-app`: Create notebook / section / page dialogs
+- [x] `journal-app`: Drag-reorder pages and sections (dedicated drag-handle icons; cross-section page move appends to destination)
+- [x] `journal-app`: Page + section rename (long-press OR double-click on label)
+- [x] `journal-app`: Auto-save on stroke completion
 
-**Milestone:** Create notebooks with sections and pages. Data persists.
+**Milestone:** Create notebooks with sections and pages. Data persists. ✅
 
 ---
 
-## Phase 3: Page Templates
+## Phase 3: Page Templates ✅ (image/PDF import deferred)
 
 **Goal:** Apply templates as page backgrounds, template management.
 
-- [ ] `journal-templates`: Template data model (background type, metadata)
-- [ ] `journal-templates`: Built-in templates (blank, dotted, ruled, daily, weekly)
-- [ ] `journal-templates`: TOML/JSON template definition format
-- [ ] `journal-canvas`: Render template backgrounds behind strokes
-- [ ] `journal-app`: Template picker when creating new page
-- [ ] `journal-app`: Notebook settings — assign available templates
-- [ ] `journal-app`: Section settings — further limit templates
-- [ ] `journal-app`: Template management area (list, preview)
-- [ ] `journal-app`: Import image as template background
-- [ ] `journal-app`: Import PDF page as template background
-- [ ] `journal-app`: Basic template creator (grid/lines/background color)
+- [x] `journal-templates`: Template data model (background type, metadata)
+- [x] `journal-templates`: Built-in templates (blank, dotted, ruled, grid, daily-planner placeholder)
+- [x] `journal-templates`: TOML template definition format with schema_version + load_dir registry
+- [x] `journal-canvas`: Render template backgrounds behind strokes (Cairo-based)
+- [x] `journal-app`: Template picker when creating new page
+- [x] `journal-app`: Auto-fit viewport to page on template load (when `tiling = None`)
+- [ ] `journal-app`: Notebook settings — assign available templates (deferred)
+- [ ] `journal-app`: Section settings — further limit templates (deferred)
+- [ ] `journal-app`: Template management area (list, preview) (deferred)
+- [ ] `journal-app`: Import image as template background (deferred — needs `image` crate + Cairo surface)
+- [ ] `journal-app`: Import PDF page as template background (deferred — needs poppler bindings)
+- [ ] `journal-app`: Basic template creator (deferred)
 
-**Milestone:** Create pages with template backgrounds. Import custom backgrounds.
+**Milestone:** Create pages with template backgrounds. ✅ (Custom background import deferred to Phase 3.5.)
 
 ---
 

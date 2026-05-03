@@ -10,6 +10,7 @@ use gtk4::{
     GestureZoom,
 };
 use journal_core::{Rect, Stroke, StrokePoint};
+use journal_storage::stroke_store;
 use uuid::Uuid;
 
 use crate::state::SharedState;
@@ -281,12 +282,26 @@ fn extend_stroke(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, 
 }
 
 fn finish_stroke(state: &SharedState) {
-    let mut s = state.borrow_mut();
-    if let Some(mut stroke) = s.current_stroke.take() {
-        if stroke.points.len() >= 2 {
-            let half_width = stroke.pen.base_width / stroke.zoom_at_creation.max(1e-6);
-            pad_bbox(&mut stroke.bounding_box, half_width);
-            s.strokes.push(stroke);
+    let (saved, db_opt, page_opt) = {
+        let mut s = state.borrow_mut();
+        if let Some(mut stroke) = s.current_stroke.take() {
+            if stroke.points.len() >= 2 {
+                let half_width = stroke.pen.base_width / stroke.zoom_at_creation.max(1e-6);
+                pad_bbox(&mut stroke.bounding_box, half_width);
+                let saved = stroke.clone();
+                s.strokes.push(stroke);
+                (Some(saved), Some(s.db.clone()), s.current_page_id)
+            } else {
+                (None, None, None)
+            }
+        } else {
+            (None, None, None)
+        }
+    };
+
+    if let (Some(stroke), Some(db), Some(page_id)) = (saved, db_opt, page_opt) {
+        if let Err(e) = stroke_store::insert_stroke(db.borrow().conn(), &stroke, page_id) {
+            tracing::error!("failed to persist stroke for {:?}: {}", page_id, e);
         }
     }
 }

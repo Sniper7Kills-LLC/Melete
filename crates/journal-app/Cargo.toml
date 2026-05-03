@@ -10,9 +10,12 @@ path = "src/main.rs"
 [dependencies]
 journal-core = { path = "../journal-core" }
 journal-canvas = { path = "../journal-canvas" }
+journal-storage = { path = "../journal-storage" }
+journal-templates = { path = "../journal-templates" }
 gtk4 = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 chrono = { workspace = true }
 uuid = { workspace = true }
+dirs = { workspace = true }

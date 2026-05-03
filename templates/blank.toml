@@ -1,0 +1,9 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000001"
+name = "Blank"
+description = "Plain page with no background pattern."
+size_mm = [215.9, 279.4]
+tiling = "none"
+
+[background]
+type = "blank"

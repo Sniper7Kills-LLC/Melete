@@ -1,0 +1,10 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000004"
+name = "Grid"
+description = "Tiling grid that repeats infinitely (5mm base spacing)."
+size_mm = [215.9, 279.4]
+tiling = "repeat"
+
+[background]
+type = "grid"
+spacing = 5.0

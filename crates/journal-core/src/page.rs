@@ -17,6 +17,8 @@ pub struct Page {
     pub template_id: Option<TemplateId>,
     pub section_id: SectionId,
     pub position: u32,
+    #[serde(default)]
+    pub name: String,
     pub planner_address: Option<PlannerPageAddress>,
     pub created_at: DateTime<Utc>,
     pub modified_at: DateTime<Utc>,

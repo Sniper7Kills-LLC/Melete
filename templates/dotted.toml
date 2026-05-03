@@ -1,0 +1,10 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000002"
+name = "Dotted Grid"
+description = "Light dotted grid for general note-taking (5mm spacing)."
+size_mm = [215.9, 279.4]
+tiling = "none"
+
+[background]
+type = "dots"
+spacing = 5.0
