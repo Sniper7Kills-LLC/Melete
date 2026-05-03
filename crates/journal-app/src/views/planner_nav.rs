@@ -121,6 +121,67 @@ pub fn ensure_planner_pages(
     out
 }
 
+/// Find the earliest `Day`-address date among all pages in `section_id` and
+/// (recursively) its descendant sections. Returns `None` for sections that
+/// contain no dated pages — they sort to the bottom in chronological reorder.
+fn min_day_date_in_section(db: &Db, section_id: SectionId) -> Option<NaiveDate> {
+    let mut min_d: Option<NaiveDate> = None;
+    if let Ok(pages) = page_store::list_pages(db.conn(), section_id) {
+        for p in &pages {
+            if let Some(PlannerPageAddress::Day { date, .. }) = p.planner_address {
+                min_d = Some(min_d.map_or(date, |m| m.min(date)));
+            }
+        }
+    }
+    if let Ok(children) = section_store::list_child_sections(db.conn(), section_id) {
+        for c in children {
+            if let Some(d) = min_day_date_in_section(db, c.id) {
+                min_d = Some(min_d.map_or(d, |m| m.min(d)));
+            }
+        }
+    }
+    min_d
+}
+
+/// Reorder the sibling sections under `parent` (or all root sections of the
+/// notebook when `parent` is `None`) so they appear in chronological order
+/// by the earliest Day-addressed page they contain. Sections with no dated
+/// pages keep relative order at the bottom.
+fn reorder_sections_chronologically(
+    db: &mut Db,
+    notebook_id: NotebookId,
+    parent: Option<SectionId>,
+) {
+    let siblings = match parent {
+        None => section_store::list_root_sections(db.conn(), notebook_id),
+        Some(pid) => section_store::list_child_sections(db.conn(), pid),
+    };
+    let siblings = match siblings {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("list siblings for chrono reorder: {}", e);
+            return;
+        }
+    };
+
+    let mut keyed: Vec<(SectionId, u32, Option<NaiveDate>)> = siblings
+        .iter()
+        .map(|s| (s.id, s.position, min_day_date_in_section(db, s.id)))
+        .collect();
+    keyed.sort_by(|a, b| match (a.2, b.2) {
+        (Some(x), Some(y)) => x.cmp(&y).then_with(|| a.1.cmp(&b.1)),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.1.cmp(&b.1),
+    });
+
+    for (i, (id, _, _)) in keyed.iter().enumerate() {
+        if let Err(e) = section_store::reorder_section(db.conn_mut(), *id, i as u32) {
+            tracing::warn!("reorder_section {:?}: {}", id, e);
+        }
+    }
+}
+
 /// Compute the position the new Day-addressed page should sit at within
 /// `section_id` so that all Day pages stay in (date, template_index) order.
 /// Non-Day pages keep their relative order at the front.
@@ -225,6 +286,14 @@ pub fn goto_date(
         .collect();
 
     let pages = ensure_planner_pages(&mut db, wrapper_section.id, &entries);
+
+    // Keep year sections (root) and wrapper sections (children of the year)
+    // sorted chronologically. ensure_section appends to the end, so jumping
+    // back to a past month/year leaves it stranded at the bottom; this fixes
+    // it idempotently after every navigation.
+    reorder_sections_chronologically(&mut db, notebook_id, None);
+    reorder_sections_chronologically(&mut db, notebook_id, Some(year_section.id));
+
     drop(db);
 
     // Land on first daily page; fall back to wrapper section's first existing
