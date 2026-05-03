@@ -82,6 +82,14 @@ pub fn attach_keyboard_shortcuts(
                     canvas.queue_draw();
                     return glib::Propagation::Stop;
                 }
+                gtk4::gdk::Key::c | gtk4::gdk::Key::C if ctrl => {
+                    crate::input::copy_selection(&state);
+                    return glib::Propagation::Stop;
+                }
+                gtk4::gdk::Key::v | gtk4::gdk::Key::V if ctrl => {
+                    crate::input::paste_clipboard(&state, &canvas);
+                    return glib::Propagation::Stop;
+                }
                 gtk4::gdk::Key::Delete => {
                     crate::input::delete_selection(&state, &canvas);
                     return glib::Propagation::Stop;

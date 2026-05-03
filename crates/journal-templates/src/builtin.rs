@@ -9,6 +9,9 @@ pub const BUILTIN_GRID_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000004");
 pub const BUILTIN_DAILY_PLANNER_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000005");
 pub const BUILTIN_FULLFOCUS_DAILY_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000006");
 pub const BUILTIN_FRANKLIN_DAILY_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000007");
+pub const BUILTIN_FRANKLIN_WEEKLY_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000008");
+pub const BUILTIN_MONTHLY_GOALS_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000009");
+pub const BUILTIN_QUARTERLY_REVIEW_ID: Uuid = uuid!("00000000-0000-0000-0000-00000000000a");
 
 const US_LETTER: (f64, f64) = (215.9, 279.4);
 
@@ -220,6 +223,266 @@ pub fn builtin_franklin_daily() -> PageTemplate {
     }
 }
 
+/// Franklin Weekly — US Letter, blank background.
+/// Layout (within 215.9 × 279.4 mm):
+///   - TextBlock header at top: "Week {week} — {month_name} {year}" (12mm)
+///   - WeeklyCompass on the left half of the body (roles + weekly goals)
+///   - 7 LinesRegion blocks on the right half, one per day-of-week, each
+///     prefixed with a tiny TextBlock day label.
+pub fn builtin_franklin_weekly() -> PageTemplate {
+    let margin = 8.0_f64;
+    let page_w = US_LETTER.0;
+    let page_h = US_LETTER.1;
+
+    let header_h = 12.0_f64;
+    let header = TemplateWidget {
+        id: Uuid::parse_str("a0000008-0001-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::TextBlock {
+            text: "Week {week} — {month_name} {year}".into(),
+            font_size_mm: 7.0,
+        },
+        rect: WidgetRect { x: margin, y: margin, width: page_w - margin * 2.0, height: header_h },
+        style: WidgetStyle::default(),
+    };
+
+    let body_top = margin + header_h + margin;
+    let body_h = page_h - body_top - margin;
+    let half_w = (page_w - margin * 3.0) * 0.5;
+
+    let compass = TemplateWidget {
+        id: Uuid::parse_str("a0000008-0002-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::WeeklyCompass,
+        rect: WidgetRect { x: margin, y: body_top, width: half_w, height: body_h },
+        style: WidgetStyle::default(),
+    };
+
+    let day_block_h = body_h / 7.0;
+    let days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    let mut widgets = vec![header, compass];
+    for (i, day) in days.iter().enumerate() {
+        let y = body_top + day_block_h * i as f64;
+        let label_h = 5.0_f64;
+        // Day label
+        widgets.push(TemplateWidget {
+            id: Uuid::parse_str(&format!("a0000008-1{:03}-0000-0000-000000000000", i)).unwrap(),
+            kind: WidgetKind::TextBlock { text: format!("{}", day), font_size_mm: 3.5 },
+            rect: WidgetRect {
+                x: margin + half_w + margin,
+                y,
+                width: half_w,
+                height: label_h,
+            },
+            style: WidgetStyle::default(),
+        });
+        // Lines region underneath the label
+        widgets.push(TemplateWidget {
+            id: Uuid::parse_str(&format!("a0000008-2{:03}-0000-0000-000000000000", i)).unwrap(),
+            kind: WidgetKind::LinesRegion { spacing_mm: 6.0 },
+            rect: WidgetRect {
+                x: margin + half_w + margin,
+                y: y + label_h,
+                width: half_w,
+                height: day_block_h - label_h,
+            },
+            style: WidgetStyle::default(),
+        });
+    }
+
+    PageTemplate {
+        id: TemplateId(BUILTIN_FRANKLIN_WEEKLY_ID),
+        name: "Franklin Weekly".into(),
+        description: "Franklin Planner-style weekly spread: weekly compass on the left, day-by-day notes on the right.".into(),
+        background: BackgroundType::Blank,
+        size_mm: US_LETTER,
+        tiling: TilingMode::None,
+        default_viewport: None,
+        widgets,
+        category: "Weekly Planner".into(),
+    }
+}
+
+/// Monthly Goals — US Letter, blank background.
+/// Layout:
+///   - TextBlock header: "{month_name} {year}" (12mm)
+///   - CalendarMonth on the upper-left (~half page)
+///   - PriorityList (12 rows) on the upper-right (monthly goals)
+///   - LinesRegion across the bottom (monthly notes / reflection)
+pub fn builtin_monthly_goals() -> PageTemplate {
+    let margin = 8.0_f64;
+    let page_w = US_LETTER.0;
+    let page_h = US_LETTER.1;
+
+    let header_h = 12.0_f64;
+    let header = TemplateWidget {
+        id: Uuid::parse_str("a0000009-0001-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::TextBlock {
+            text: "{month_name} {year}".into(),
+            font_size_mm: 9.0,
+        },
+        rect: WidgetRect { x: margin, y: margin, width: page_w - margin * 2.0, height: header_h },
+        style: WidgetStyle::default(),
+    };
+
+    let body_top = margin + header_h + margin;
+    let upper_h = (page_h - body_top - margin) * 0.55;
+    let lower_h = (page_h - body_top - margin) - upper_h - margin;
+    let half_w = (page_w - margin * 3.0) * 0.5;
+
+    let calendar = TemplateWidget {
+        id: Uuid::parse_str("a0000009-0002-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::CalendarMonth,
+        rect: WidgetRect { x: margin, y: body_top, width: half_w, height: upper_h },
+        style: WidgetStyle::default(),
+    };
+
+    let goals = TemplateWidget {
+        id: Uuid::parse_str("a0000009-0003-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::PriorityList { count: 12 },
+        rect: WidgetRect {
+            x: margin + half_w + margin,
+            y: body_top,
+            width: half_w,
+            height: upper_h,
+        },
+        style: WidgetStyle::default(),
+    };
+
+    let notes_label = TemplateWidget {
+        id: Uuid::parse_str("a0000009-0004-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::TextBlock { text: "Reflection / Notes".into(), font_size_mm: 4.0 },
+        rect: WidgetRect {
+            x: margin,
+            y: body_top + upper_h + margin,
+            width: page_w - margin * 2.0,
+            height: 6.0,
+        },
+        style: WidgetStyle::default(),
+    };
+
+    let notes = TemplateWidget {
+        id: Uuid::parse_str("a0000009-0005-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::LinesRegion { spacing_mm: 8.0 },
+        rect: WidgetRect {
+            x: margin,
+            y: body_top + upper_h + margin + 6.0,
+            width: page_w - margin * 2.0,
+            height: lower_h - 6.0,
+        },
+        style: WidgetStyle::default(),
+    };
+
+    PageTemplate {
+        id: TemplateId(BUILTIN_MONTHLY_GOALS_ID),
+        name: "Monthly Goals".into(),
+        description: "Monthly overview with calendar, top-12 goals, and reflection space.".into(),
+        background: BackgroundType::Blank,
+        size_mm: US_LETTER,
+        tiling: TilingMode::None,
+        default_viewport: None,
+        widgets: vec![header, calendar, goals, notes_label, notes],
+        category: "Monthly Planner".into(),
+    }
+}
+
+/// Quarterly Review — US Letter, blank background.
+/// Layout:
+///   - TextBlock header: "Quarterly Review — {year}"
+///   - 3 stacked sections, one per month: month name (TextBlock) + LinesRegion
+///   - "Wins / Lessons / Next quarter" priority list at the bottom
+pub fn builtin_quarterly_review() -> PageTemplate {
+    let margin = 8.0_f64;
+    let page_w = US_LETTER.0;
+    let page_h = US_LETTER.1;
+
+    let header_h = 14.0_f64;
+    let header = TemplateWidget {
+        id: Uuid::parse_str("a000000a-0001-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::TextBlock {
+            text: "Quarterly Review — {year}".into(),
+            font_size_mm: 10.0,
+        },
+        rect: WidgetRect { x: margin, y: margin, width: page_w - margin * 2.0, height: header_h },
+        style: WidgetStyle::default(),
+    };
+
+    let body_top = margin + header_h + margin;
+    let body_h = page_h - body_top - margin;
+    // 3 month strips on top take ~60% of remaining height; bottom 40% =
+    // priority list for wins/lessons/next.
+    let strips_total_h = body_h * 0.60;
+    let bottom_h = body_h - strips_total_h - margin;
+    let strip_h = strips_total_h / 3.0;
+    let strip_label_h = 5.0_f64;
+
+    let mut widgets = vec![header];
+    for i in 0..3u32 {
+        let y = body_top + strip_h * i as f64;
+        widgets.push(TemplateWidget {
+            id: Uuid::parse_str(&format!("a000000a-1{:03}-0000-0000-000000000000", i)).unwrap(),
+            kind: WidgetKind::TextBlock {
+                text: format!("Month {} — wins, decisions, blockers", i + 1),
+                font_size_mm: 4.0,
+            },
+            rect: WidgetRect {
+                x: margin,
+                y,
+                width: page_w - margin * 2.0,
+                height: strip_label_h,
+            },
+            style: WidgetStyle::default(),
+        });
+        widgets.push(TemplateWidget {
+            id: Uuid::parse_str(&format!("a000000a-2{:03}-0000-0000-000000000000", i)).unwrap(),
+            kind: WidgetKind::LinesRegion { spacing_mm: 7.0 },
+            rect: WidgetRect {
+                x: margin,
+                y: y + strip_label_h,
+                width: page_w - margin * 2.0,
+                height: strip_h - strip_label_h,
+            },
+            style: WidgetStyle::default(),
+        });
+    }
+
+    widgets.push(TemplateWidget {
+        id: Uuid::parse_str("a000000a-0002-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::TextBlock {
+            text: "Wins · Lessons · Next quarter".into(),
+            font_size_mm: 4.5,
+        },
+        rect: WidgetRect {
+            x: margin,
+            y: body_top + strips_total_h + margin,
+            width: page_w - margin * 2.0,
+            height: 6.0,
+        },
+        style: WidgetStyle::default(),
+    });
+    widgets.push(TemplateWidget {
+        id: Uuid::parse_str("a000000a-0003-0000-0000-000000000000").unwrap(),
+        kind: WidgetKind::PriorityList { count: 9 },
+        rect: WidgetRect {
+            x: margin,
+            y: body_top + strips_total_h + margin + 6.0,
+            width: page_w - margin * 2.0,
+            height: bottom_h - 6.0,
+        },
+        style: WidgetStyle::default(),
+    });
+
+    PageTemplate {
+        id: TemplateId(BUILTIN_QUARTERLY_REVIEW_ID),
+        name: "Quarterly Review".into(),
+        description: "Per-month notes for the past quarter plus a 9-row wins/lessons/next list.".into(),
+        background: BackgroundType::Blank,
+        size_mm: US_LETTER,
+        tiling: TilingMode::None,
+        default_viewport: None,
+        widgets,
+        category: "Quarterly Planner".into(),
+    }
+}
+
 pub fn builtin_templates() -> Vec<PageTemplate> {
     vec![
         builtin_blank(),
@@ -229,5 +492,8 @@ pub fn builtin_templates() -> Vec<PageTemplate> {
         builtin_daily_planner(),
         builtin_fullfocus_daily(),
         builtin_franklin_daily(),
+        builtin_franklin_weekly(),
+        builtin_monthly_goals(),
+        builtin_quarterly_review(),
     ]
 }

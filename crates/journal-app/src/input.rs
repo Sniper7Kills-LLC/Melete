@@ -1155,3 +1155,77 @@ fn apply_scale(state: &SharedState, ids: &[Uuid], anchor_x: f64, anchor_y: f64, 
         }
     }
 }
+
+/// Copy all currently selected strokes into the per-app stroke clipboard.
+/// Does nothing when nothing is selected.
+pub fn copy_selection(state: &SharedState) {
+    let mut s = state.borrow_mut();
+    if s.selected_stroke_ids.is_empty() {
+        return;
+    }
+    let clipboard: Vec<Stroke> = s
+        .strokes
+        .iter()
+        .filter(|st| s.selected_stroke_ids.contains(&st.id))
+        .cloned()
+        .collect();
+    let count = clipboard.len();
+    s.stroke_clipboard = clipboard;
+    tracing::info!("copied {} stroke(s) to clipboard", count);
+}
+
+/// Paste strokes from the per-app clipboard onto the current page.
+///
+/// Each pasted stroke gets a fresh UUID and is offset by ~10 mm in both axes
+/// so it doesn't land exactly on top of the original. The pasted strokes are
+/// immediately selected so the user can drag them into position.
+pub fn paste_clipboard(state: &SharedState, area: &DrawingArea) {
+    const PASTE_OFFSET: f64 = 10.0; // canvas units (≈ mm for A4-sized pages)
+
+    let (page_id, backend, clipboard) = {
+        let s = state.borrow();
+        let page_id = match s.current_page_id {
+            Some(id) => id,
+            None => return,
+        };
+        if s.stroke_clipboard.is_empty() {
+            return;
+        }
+        (page_id, s.backend.clone(), s.stroke_clipboard.clone())
+    };
+
+    let mut new_strokes: Vec<Stroke> = Vec::with_capacity(clipboard.len());
+    for src in &clipboard {
+        let mut clone = src.clone();
+        clone.id = Uuid::new_v4();
+        // Offset all points.
+        for pt in clone.points.iter_mut() {
+            pt.x += PASTE_OFFSET;
+            pt.y += PASTE_OFFSET;
+        }
+        // Offset bounding box.
+        clone.bounding_box.x += PASTE_OFFSET;
+        clone.bounding_box.y += PASTE_OFFSET;
+        new_strokes.push(clone);
+    }
+
+    // Persist and update in-memory state.
+    {
+        let mut s = state.borrow_mut();
+        s.selected_stroke_ids.clear();
+        for st in &new_strokes {
+            s.selected_stroke_ids.insert(st.id);
+            s.strokes.push(st.clone());
+            s.history.push_add(st.clone());
+        }
+    }
+
+    for st in &new_strokes {
+        if let Err(e) = backend.borrow_mut().insert_stroke(st, page_id) {
+            tracing::error!("paste_clipboard: insert_stroke failed for {}: {}", st.id, e);
+        }
+    }
+
+    tracing::info!("pasted {} stroke(s)", new_strokes.len());
+    area.queue_draw();
+}

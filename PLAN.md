@@ -268,11 +268,20 @@ Home screen (no notebook open) shows notebook grid/list.
 - [x] `WidgetKind::TextBlock` text now runs through `journal_core::title_format::render` so `{date}/{weekday}/{month_name}/{year}/{week}/{day}/{month}` expand at draw time. The template editor preview binds today's date; the planner canvas binds the page's calendar date.
 - [x] `title_format` engine moved from `journal_templates` to `journal_core` (re-exported from `journal_templates` for back-compat) so `journal_canvas` can call it without a circular dep.
 - [x] Variable insertion popover in the editor: pick `{date}`, `{year}`, `{month}`, `{month_name}`, `{week}`, `{day}`, `{weekday}` and it inserts at the entry caret.
-- [x] Template editor undo/redo (Ctrl+Z / Ctrl+Shift+Z) — `EditorHistory` with `Vec<EditOp>` (Insert, Remove, Move, Resize). Every widget drop, delete, drag-move-end, and drag-resize-end pushes an op. Undo/redo applies the inverse/forward transform and updates selection. Modify op skipped — comment left in code.
+- [x] Template editor undo/redo (Ctrl+Z / Ctrl+Shift+Z) — `EditorHistory` with Insert / Remove / Move / Resize / **Modify** ops. Modify captures `before` + `after` widget snapshots on every property edit; consecutive Modify ops on the same widget coalesce so a slider drag is one undo, not 50.
 - [x] Template editor snap-to-grid — `snap_grid_mm: Option<f64>` in `CreatorState`; `Switch` + `SpinButton` in the editor top row; all drag-place, drag-move, and drag-resize endpoints are grid-snapped when enabled.
 - [x] Template editor smart guides — while dragging a widget, amber guide lines are rendered in `draw_creator_canvas` wherever the dragged widget's left/right/top/bottom/center aligns within 1.5 mm of another widget's edges or the page edges; `apply_smart_snap` also adjusts the widget's position to that edge. Toggle via "Smart guides" Switch in the top row.
-- [x] Template editor selection refresh via observer signal — replaced `add_tick_callback` with a `SelectionObserverFn` (`Rc<dyn Fn(Option<usize>)>`) stored in a separate `Rc<RefCell<Option<...>>>` outside `CreatorState`. Registered in `build_editor_view`; fired from all call sites that change `selected_idx` (via `select_widget` helper after releasing the borrow). Props panel rebuilds only when selection actually changes.
-- [ ] Template editor multi-select — skipped; `selected_idx: Option<usize>` replacement with `HashSet<usize>` would require rewriting all hit-test, props-panel, undo/redo, and smart-guide code. Filed as TODO in code.
+- [x] Template editor selection refresh via observer signal — replaced `add_tick_callback` with a `SelectionObserverFn` (`Rc<dyn Fn(Option<usize>)>`) stored in a separate `Rc<RefCell<Option<...>>>` outside `CreatorState`. Registered in `build_editor_view`; fired from all call sites that change `selected_indices`.
+- [x] Template editor **multi-select** — `selected_indices: HashSet<usize>` replaces the old `selected_idx: Option<usize>`. Plain click replaces; Ctrl-click toggles; Shift-click extends. Drag-move applies to every selected widget. Resize handles and the props panel restrict to single-select. Delete removes the entire set in one undo op.
+
+---
+
+## Phase 5.6: Quick wins — multi-select, exports, presets, more builtins ✅
+
+- [x] **Notebook → PDF export** (`pdf_export::export_notebook_to_pdf`) walks every section + child section depth-first, in `position` order, rendering each page (background + widgets + strokes) into a multi-page Cairo `PdfSurface`. Triggered from a new "Export notebook as PDF…" entry in the header menu, sensitive only when a notebook is open.
+- [x] **Stroke copy/paste** — `state::CanvasState::stroke_clipboard: Vec<Stroke>`. Ctrl+C snapshots the selected strokes; Ctrl+V mints fresh UUIDs, offsets each by ~10 canvas units, persists via `backend.insert_stroke`, pushes Add ops to the per-page history, and selects the new ids so the user can drag them.
+- [x] **Custom pen presets** — `config::PenPreset { name, color_rgba, width_mm }` persisted in `~/.config/journal/config.toml`. The floating toolbar renders a row of 28×28 colored chips between the tool buttons and the colour picker; clicking a chip switches the pen to that preset. App settings → "Pen presets" → "Manage presets…" opens a dialog with rename / re-color / re-width / reorder / delete / "Add current pen" actions.
+- [x] **More built-in templates** (Phase 5.6 builtins): `Franklin Weekly` (weekly-compass left + 7 day-blocks right), `Monthly Goals` (calendar + 12-row priority list + reflection lines), `Quarterly Review` (3 month-strips + 9-row wins/lessons/next list). Categories `Weekly Planner` / `Monthly Planner` / `Quarterly Planner`.
 
 ---
 

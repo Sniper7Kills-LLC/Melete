@@ -223,6 +223,17 @@ const APP_CSS: &str = r#"
     box-shadow: 0 1px 2px alpha(black, 0.08);
 }
 
+/* ── Pen preset chips on the floating toolbar ─────────────────────── */
+.pen-preset {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 2px;
+    border-radius: 50%;
+    border: 1px solid alpha(@borders, 0.6);
+    transition: transform 100ms;
+}
+.pen-preset:hover { transform: scale(1.1); }
+
 /* ── Zoom badge in the canvas overlay corner ──────────────────────── */
 .zoom-badge {
     font-family: "Source Code Pro", monospace;

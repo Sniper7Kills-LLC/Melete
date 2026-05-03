@@ -70,6 +70,10 @@ pub struct CanvasState {
     pub saved_pen_color: Color,
     pub saved_pen_width: f64,
 
+    /// Per-app stroke clipboard for copy/paste between pages.
+    /// Empty = nothing copied.
+    pub stroke_clipboard: Vec<Stroke>,
+
     pub placeholder_image: Option<cairo::ImageSurface>,
     pub placeholder_text: String,
     pub show_page_bounds: bool,
@@ -145,6 +149,7 @@ pub fn new_shared_state(
         thumbnail_cache: HashMap::new(),
         saved_pen_color: Color { r: 20, g: 20, b: 20, a: 255 },
         saved_pen_width: 2.0,
+        stroke_clipboard: Vec::new(),
         placeholder_image: None,
         placeholder_text: "Select a page to start drawing".into(),
         show_page_bounds: true,

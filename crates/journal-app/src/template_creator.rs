@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk4::cairo;
@@ -49,8 +50,12 @@ enum Handle {
 enum EditOp {
     Insert { idx: usize, widget: TemplateWidget },
     Remove { idx: usize, widget: TemplateWidget },
+    /// Batched removal of multiple widgets (multi-select delete).
+    RemoveMany { entries: Vec<(usize, TemplateWidget)> },
     Move { idx: usize, before_rect: WidgetRect, after_rect: WidgetRect },
     Resize { idx: usize, before_rect: WidgetRect, after_rect: WidgetRect },
+    /// Property-panel edit: snapshot of a single widget before/after change.
+    Modify { idx: usize, before: TemplateWidget, after: TemplateWidget },
 }
 
 struct EditorHistory {
@@ -87,6 +92,30 @@ impl EditorHistory {
     }
 }
 
+/// Snapshot the widget at `idx` for use in a Modify op.
+fn snapshot_widget(cs: &CreatorState, idx: usize) -> Option<TemplateWidget> {
+    cs.template.widgets.get(idx).cloned()
+}
+
+/// Push a Modify op, coalescing with the top of the stack when the top is
+/// also a Modify for the same index (avoids one undo entry per slider tick).
+fn push_or_coalesce_modify(
+    history: &mut EditorHistory,
+    idx: usize,
+    before: TemplateWidget,
+    after: TemplateWidget,
+) {
+    if let Some(EditOp::Modify { idx: top_idx, after: top_after, .. }) = history.undo.last_mut() {
+        if *top_idx == idx {
+            // Coalesce: just update `after` in the existing op.
+            *top_after = after;
+            history.redo.clear();
+            return;
+        }
+    }
+    history.push(EditOp::Modify { idx, before, after });
+}
+
 /// Apply `op` forward (for redo). Returns the resulting `selected_idx`.
 fn apply_op(op: &EditOp, widgets: &mut Vec<TemplateWidget>) -> Option<usize> {
     match op {
@@ -100,12 +129,23 @@ fn apply_op(op: &EditOp, widgets: &mut Vec<TemplateWidget>) -> Option<usize> {
             if i < widgets.len() { widgets.remove(i); }
             None
         }
+        EditOp::RemoveMany { entries } => {
+            // Re-remove in descending order (indices were captured in descending order).
+            for (i, _) in entries {
+                if *i < widgets.len() { widgets.remove(*i); }
+            }
+            None
+        }
         EditOp::Move { idx, after_rect, .. } => {
             if let Some(w) = widgets.get_mut(*idx) { w.rect = after_rect.clone(); }
             Some(*idx)
         }
         EditOp::Resize { idx, after_rect, .. } => {
             if let Some(w) = widgets.get_mut(*idx) { w.rect = after_rect.clone(); }
+            Some(*idx)
+        }
+        EditOp::Modify { idx, after, .. } => {
+            if let Some(w) = widgets.get_mut(*idx) { *w = after.clone(); }
             Some(*idx)
         }
     }
@@ -124,12 +164,26 @@ fn apply_inverse(op: &EditOp, widgets: &mut Vec<TemplateWidget>) -> Option<usize
             widgets.insert(i, widget.clone());
             Some(i)
         }
+        EditOp::RemoveMany { entries } => {
+            // Re-insert in ascending order so earlier indices stay valid.
+            let mut sorted = entries.clone();
+            sorted.sort_by_key(|(i, _)| *i);
+            for (i, w) in &sorted {
+                let pos = (*i).min(widgets.len());
+                widgets.insert(pos, w.clone());
+            }
+            None
+        }
         EditOp::Move { idx, before_rect, .. } => {
             if let Some(w) = widgets.get_mut(*idx) { w.rect = before_rect.clone(); }
             Some(*idx)
         }
         EditOp::Resize { idx, before_rect, .. } => {
             if let Some(w) = widgets.get_mut(*idx) { w.rect = before_rect.clone(); }
+            Some(*idx)
+        }
+        EditOp::Modify { idx, before, .. } => {
+            if let Some(w) = widgets.get_mut(*idx) { *w = before.clone(); }
             Some(*idx)
         }
     }
@@ -139,17 +193,23 @@ fn apply_inverse(op: &EditOp, widgets: &mut Vec<TemplateWidget>) -> Option<usize
 
 struct CreatorState {
     template: PageTemplate,
-    selected_idx: Option<usize>,
+    /// All currently-selected widget indices.
+    selected_indices: HashSet<usize>,
+    /// The index of the widget that was most recently clicked (primary selection).
+    primary_idx: Option<usize>,
     tool: PlaceTool,
     drag_start_canvas: Option<(f64, f64)>,
     drag_active: bool,
     drag_handle: Handle,
+    /// Original rect of the primary (clicked) widget at drag start.
     drag_orig_rect: Option<WidgetRect>,
+    /// Original rects of ALL selected widgets at drag start (for multi-move).
+    drag_orig_rects: Vec<(usize, WidgetRect)>,
 
-    /// Undo/redo stack for template edits (Feature 2).
+    /// Undo/redo stack for template edits.
     history: EditorHistory,
 
-    // ── Snap-to-grid (Feature 3) ──────────────────────────────────────────
+    // ── Snap-to-grid ──────────────────────────────────────────────────────
     /// When `Some(mm)`, dragged/resized widget coordinates snap to this grid.
     snap_grid_mm: Option<f64>,
     /// Whether smart-guide alignment hints are rendered during a drag.
@@ -160,15 +220,27 @@ impl CreatorState {
     fn new(template: PageTemplate) -> Self {
         Self {
             template,
-            selected_idx: None,
+            selected_indices: HashSet::new(),
+            primary_idx: None,
             tool: PlaceTool::None,
             drag_start_canvas: None,
             drag_active: false,
             drag_handle: Handle::Move,
             drag_orig_rect: None,
+            drag_orig_rects: Vec::new(),
             history: EditorHistory::new(),
             snap_grid_mm: None,
             smart_guides_active: true,
+        }
+    }
+
+    /// Returns `Some(idx)` only when exactly one widget is selected.
+    /// Used by the props panel and resize-handle render path.
+    fn selected_one(&self) -> Option<usize> {
+        if self.selected_indices.len() == 1 {
+            self.selected_indices.iter().copied().next()
+        } else {
+            None
         }
     }
 
@@ -181,26 +253,34 @@ impl CreatorState {
     }
 }
 
-// ── Selection observer (Feature 4) ───────────────────────────────────────────
+// ── Selection observer ────────────────────────────────────────────────────────
 //
 // Stored separately from `CreatorState` so we can call it after releasing any
 // mutable borrow on `cs`.  The observer rebuilds the props panel whenever
-// `selected_idx` changes.
+// the selection changes.
 
 type SelectionObserverFn = Rc<dyn Fn(Option<usize>)>;
 
-/// Helper: change `selected_idx` in `cs`, then fire the observer (separately,
-/// after the borrow has been dropped).
+/// Helper: replace the selection with a single optional widget, update
+/// `primary_idx`, then fire the observer after dropping the borrow.
 fn select_widget(
     cs: &Rc<RefCell<CreatorState>>,
     idx: Option<usize>,
     observer: &Option<SelectionObserverFn>,
 ) {
-    cs.borrow_mut().selected_idx = idx;
+    {
+        let mut s = cs.borrow_mut();
+        s.selected_indices.clear();
+        if let Some(i) = idx {
+            s.selected_indices.insert(i);
+        }
+        s.primary_idx = idx;
+    }
     if let Some(obs) = observer {
         obs(idx);
     }
 }
+
 
 /// Build the full-screen template editor view (root widget tree).
 ///
@@ -584,17 +664,8 @@ fn build_palette(
         let cs = cs.clone();
         let obs2 = sel_obs.clone();
         move |_| {
-            let removed = {
-                let mut s = cs.borrow_mut();
-                if let Some(idx) = s.selected_idx {
-                    if idx < s.template.widgets.len() {
-                        let w = s.template.widgets.remove(idx);
-                        s.history.push(EditOp::Remove { idx, widget: w });
-                        Some(idx)
-                    } else { None }
-                } else { None }
-            };
-            if removed.is_some() {
+            let removed = delete_selected_widgets(&cs);
+            if removed {
                 let obs = obs2.borrow().clone();
                 select_widget(&cs, None, &obs);
             }
@@ -604,6 +675,40 @@ fn build_palette(
 
     scroller.set_child(Some(&vbox));
     scroller
+}
+
+/// Delete all selected widgets (in descending index order so earlier indices
+/// stay valid). Pushes a single batched undo op. Returns true if any widget
+/// was deleted.
+fn delete_selected_widgets(cs: &Rc<RefCell<CreatorState>>) -> bool {
+    let mut s = cs.borrow_mut();
+    if s.selected_indices.is_empty() {
+        return false;
+    }
+    // Collect selected indices in descending order.
+    let mut indices: Vec<usize> = s.selected_indices.iter().copied().collect();
+    indices.sort_unstable_by(|a, b| b.cmp(a));
+    // Filter out out-of-bounds.
+    indices.retain(|&i| i < s.template.widgets.len());
+    if indices.is_empty() {
+        return false;
+    }
+    // Remove and collect removed widgets (in descending order).
+    let mut removed: Vec<(usize, TemplateWidget)> = Vec::new();
+    for i in &indices {
+        let w = s.template.widgets.remove(*i);
+        removed.push((*i, w));
+    }
+    let op = if removed.len() == 1 {
+        let (idx, widget) = removed.into_iter().next().unwrap();
+        EditOp::Remove { idx, widget }
+    } else {
+        EditOp::RemoveMany { entries: removed }
+    };
+    s.history.push(op);
+    s.selected_indices.clear();
+    s.primary_idx = None;
+    true
 }
 
 fn build_canvas_area(
@@ -622,12 +727,68 @@ fn build_canvas_area(
         }
     });
 
+    // We also need a GestureClick to detect Ctrl/Shift modifiers on mouse-down.
+    // GestureDrag fires drag_begin which doesn't expose modifier state easily,
+    // so we use an additional GestureClick to handle modifier-click selection.
+    let click = gtk4::GestureClick::new();
+    click.connect_pressed({
+        let cs = cs.clone();
+        let area = area.clone();
+        let obs = sel_obs.clone();
+        move |gesture, _n_press, x, y| {
+            let mods = gesture.current_event_state();
+            let ctrl = mods.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
+            let shift = mods.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
+            // Only handle modifier-clicks (plain click is handled by drag_begin).
+            if !ctrl && !shift {
+                return;
+            }
+            let size = get_area_size(&area);
+            let canvas_pt = screen_to_template(x, y, size, &cs.borrow().template);
+            let hit = {
+                let s = cs.borrow();
+                hit_test(&s.template.widgets, canvas_pt)
+            };
+            let new_primary = {
+                let mut s = cs.borrow_mut();
+                if let Some(idx) = hit {
+                    if ctrl {
+                        // Ctrl-click: toggle widget in/out of set.
+                        if s.selected_indices.contains(&idx) {
+                            s.selected_indices.remove(&idx);
+                            if s.primary_idx == Some(idx) {
+                                s.primary_idx = s.selected_indices.iter().copied().next();
+                            }
+                        } else {
+                            s.selected_indices.insert(idx);
+                            s.primary_idx = Some(idx);
+                        }
+                    } else {
+                        // Shift-click: add to set.
+                        s.selected_indices.insert(idx);
+                        s.primary_idx = Some(idx);
+                    }
+                    s.primary_idx
+                } else {
+                    None
+                }
+            };
+            let obs_fn = obs.borrow().clone();
+            if let Some(f) = obs_fn { f(new_primary); }
+            area.queue_draw();
+        }
+    });
+    area.add_controller(click);
+
     let drag = gtk4::GestureDrag::new();
     drag.connect_drag_begin({
         let cs = cs.clone();
         let area = area.clone();
         let obs = sel_obs.clone();
         move |gesture, x, y| {
+            let mods = gesture.current_event_state();
+            let ctrl = mods.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
+            let shift = mods.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
             let size = get_area_size(&area);
             let canvas_pt = screen_to_template(x, y, size, &cs.borrow().template);
             let sel_change: Option<Option<usize>>;
@@ -640,19 +801,53 @@ fn build_canvas_area(
                 } else {
                     let hit = hit_test(&s.template.widgets, canvas_pt);
                     if let Some(idx) = hit {
-                        let handle = resize_handle_hit(&s.template.widgets[idx].rect, canvas_pt);
+                        if ctrl || shift {
+                            // Modifier-drag: selection already updated by GestureClick;
+                            // set up drag on the hit widget if it is selected.
+                            if !s.selected_indices.contains(&idx) {
+                                s.selected_indices.insert(idx);
+                                s.primary_idx = Some(idx);
+                            }
+                            sel_change = Some(s.primary_idx);
+                        } else {
+                            // Plain drag: if clicking outside current selection, reset.
+                            if !s.selected_indices.contains(&idx) {
+                                s.selected_indices.clear();
+                                s.selected_indices.insert(idx);
+                                s.primary_idx = Some(idx);
+                                sel_change = Some(Some(idx));
+                            } else {
+                                // Stay in current multi-selection, update primary.
+                                s.primary_idx = Some(idx);
+                                sel_change = None;
+                            }
+                        }
+                        // Only allow resize handle when exactly one widget selected.
+                        let handle = if s.selected_indices.len() == 1 {
+                            resize_handle_hit(&s.template.widgets[idx].rect, canvas_pt)
+                        } else {
+                            Handle::Move
+                        };
                         s.drag_handle = handle;
                         s.drag_orig_rect = Some(s.template.widgets[idx].rect.clone());
+                        // Capture original rects for all selected widgets (for multi-move).
+                        s.drag_orig_rects = s.selected_indices.iter().copied()
+                            .filter(|&i| i < s.template.widgets.len())
+                            .map(|i| (i, s.template.widgets[i].rect.clone()))
+                            .collect();
                         s.drag_start_canvas = Some(canvas_pt);
                         s.drag_active = true;
-                        let prev = s.selected_idx;
-                        s.selected_idx = Some(idx);
-                        sel_change = if prev != Some(idx) { Some(Some(idx)) } else { None };
                     } else {
-                        let prev = s.selected_idx;
-                        s.selected_idx = None;
-                        s.drag_start_canvas = None;
-                        sel_change = if prev.is_some() { Some(None) } else { None };
+                        // Plain click on empty space: clear selection.
+                        if !ctrl && !shift {
+                            let had_sel = !s.selected_indices.is_empty();
+                            s.selected_indices.clear();
+                            s.primary_idx = None;
+                            s.drag_start_canvas = None;
+                            sel_change = if had_sel { Some(None) } else { None };
+                        } else {
+                            sel_change = None;
+                        }
                     }
                     gesture.set_state(gtk4::EventSequenceState::Claimed);
                 }
@@ -676,30 +871,42 @@ fn build_canvas_area(
             if s.tool != PlaceTool::None {
                 s.drag_active = true;
             } else if s.drag_active {
-                if let (Some(orig), Some(idx)) = (s.drag_orig_rect.clone(), s.selected_idx) {
-                    if idx < s.template.widgets.len() {
-                        match s.drag_handle {
-                            Handle::Move => {
+                let primary = s.primary_idx;
+                let handle = s.drag_handle;
+                match handle {
+                    Handle::Move => {
+                        // Apply delta to every selected widget based on its own
+                        // original rect captured at drag start.
+                        let orig_rects = s.drag_orig_rects.clone();
+                        for (i, orig) in &orig_rects {
+                            if *i < s.template.widgets.len() {
                                 let raw_x = orig.x + dcx;
                                 let raw_y = orig.y + dcy;
-                                // Apply snap-to-grid first.
                                 let snapped_x = s.snap(raw_x);
                                 let snapped_y = s.snap(raw_y);
-                                s.template.widgets[idx].rect.x = snapped_x;
-                                s.template.widgets[idx].rect.y = snapped_y;
-
-                                // Smart guides: snap to other widget edges / page edges.
-                                if s.smart_guides_active {
+                                s.template.widgets[*i].rect.x = snapped_x;
+                                s.template.widgets[*i].rect.y = snapped_y;
+                            }
+                        }
+                        // Smart guides only on the primary widget.
+                        if s.smart_guides_active {
+                            if let Some(idx) = primary {
+                                if let Some(orig) = orig_rects.iter().find(|(i, _)| *i == idx).map(|(_, r)| r.clone()) {
                                     apply_smart_snap(
                                         &mut s.template.widgets,
                                         idx,
-                                        orig.clone(),
+                                        orig,
                                         dcx,
                                         dcy,
                                     );
                                 }
                             }
-                            Handle::ResizeBottomRight => {
+                        }
+                    }
+                    Handle::ResizeBottomRight => {
+                        // Resize only when exactly one widget selected.
+                        if let (Some(orig), Some(idx)) = (s.drag_orig_rect.clone(), primary) {
+                            if idx < s.template.widgets.len() {
                                 let snapped_w = s.snap(orig.width + dcx).max(2.0);
                                 let snapped_h = s.snap(orig.height + dcy).max(2.0);
                                 s.template.widgets[idx].rect.width = snapped_w;
@@ -745,24 +952,43 @@ fn build_canvas_area(
                     s.template.widgets.push(widget.clone());
                     s.history.push(EditOp::Insert { idx: insert_idx, widget });
                     let new_sel = s.template.widgets.len() - 1;
-                    s.selected_idx = Some(new_sel);
+                    s.selected_indices.clear();
+                    s.selected_indices.insert(new_sel);
+                    s.primary_idx = Some(new_sel);
                     s.tool = PlaceTool::None;
                     sel_change = Some(Some(new_sel));
                 } else if s.drag_active {
-                    // Move/resize finished — push undo op.
-                    if let (Some(orig), Some(idx)) = (s.drag_orig_rect.clone(), s.selected_idx) {
-                        if idx < s.template.widgets.len() {
-                            let after = s.template.widgets[idx].rect.clone();
-                            if after != orig {
-                                let op = match s.drag_handle {
-                                    Handle::Move => EditOp::Move {
-                                        idx, before_rect: orig, after_rect: after,
-                                    },
-                                    Handle::ResizeBottomRight => EditOp::Resize {
-                                        idx, before_rect: orig, after_rect: after,
-                                    },
-                                };
-                                s.history.push(op);
+                    // Move/resize finished — push undo op(s).
+                    let handle = s.drag_handle;
+                    match handle {
+                        Handle::Move => {
+                            // Push a Move op for each widget that actually moved.
+                            let orig_rects = s.drag_orig_rects.clone();
+                            for (idx, orig) in orig_rects {
+                                if idx < s.template.widgets.len() {
+                                    let after = s.template.widgets[idx].rect.clone();
+                                    if after != orig {
+                                        s.history.push(EditOp::Move {
+                                            idx,
+                                            before_rect: orig,
+                                            after_rect: after,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        Handle::ResizeBottomRight => {
+                            if let (Some(orig), Some(idx)) = (s.drag_orig_rect.clone(), s.primary_idx) {
+                                if idx < s.template.widgets.len() {
+                                    let after = s.template.widgets[idx].rect.clone();
+                                    if after != orig {
+                                        s.history.push(EditOp::Resize {
+                                            idx,
+                                            before_rect: orig,
+                                            after_rect: after,
+                                        });
+                                    }
+                                }
                             }
                         }
                     }
@@ -773,6 +999,7 @@ fn build_canvas_area(
                 s.drag_start_canvas = None;
                 s.drag_active = false;
                 s.drag_orig_rect = None;
+                s.drag_orig_rects.clear();
             }
             // Fire observer outside the borrow.
             if let Some(new_sel) = sel_change {
@@ -792,20 +1019,9 @@ fn build_canvas_area(
         let obs = sel_obs.clone();
         move |_, key, _, _| {
             if key == gtk4::gdk::Key::Delete || key == gtk4::gdk::Key::BackSpace {
-                let removed = {
-                    let mut s = cs.borrow_mut();
-                    if let Some(idx) = s.selected_idx {
-                        if idx < s.template.widgets.len() {
-                            let w = s.template.widgets.remove(idx);
-                            s.history.push(EditOp::Remove { idx, widget: w });
-                            true
-                        } else { false }
-                    } else { false }
-                };
+                let removed = delete_selected_widgets(&cs);
                 if removed {
                     let obs_fn = obs.borrow().clone();
-                    // selected_idx is already removed above; update it to None.
-                    cs.borrow_mut().selected_idx = None;
                     if let Some(f) = obs_fn { f(None); }
                     area.queue_draw();
                 }
@@ -917,10 +1133,25 @@ fn refresh_props_panel(
     header.add_css_class("title-4");
     vbox.append(&header);
 
-    let sel_idx = cs.borrow().selected_idx;
-    let Some(idx) = sel_idx else {
+    // Multi-select: determine how many widgets are selected.
+    let sel_count = cs.borrow().selected_indices.len();
+    let idx = cs.borrow().selected_one();
+
+    if sel_count == 0 {
         let hint = Label::builder()
             .label("Select a widget to edit its properties.")
+            .halign(gtk4::Align::Start)
+            .wrap(true)
+            .build();
+        hint.add_css_class("dim-label");
+        vbox.append(&hint);
+        return;
+    }
+
+    let Some(idx) = idx else {
+        // Multiple widgets selected — no per-widget properties shown.
+        let hint = Label::builder()
+            .label(&format!("({} widgets selected — pick one to edit properties)", sel_count))
             .halign(gtk4::Align::Start)
             .wrap(true)
             .build();
@@ -948,10 +1179,19 @@ fn refresh_props_panel(
     {
         let cs2 = cs.clone();
         let area2 = area.clone();
+        // Capture before-state on first signal fire via a RefCell<Option<TemplateWidget>>.
+        let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
         stroke_btn.connect_rgba_notify(move |b| {
             let c = rgba_to_color(b.rgba());
+            let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+            }).clone();
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 w.style.stroke_color = c;
+            }
+            let after_opt = snapshot_widget(&cs2.borrow(), idx);
+            if let Some(after) = after_opt {
+                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
             }
             area2.queue_draw();
         });
@@ -981,10 +1221,14 @@ fn refresh_props_panel(
         fill_switch.connect_active_notify(move |sw| {
             let on = sw.is_active();
             fill_btn2.set_sensitive(on);
+            let before = snapshot_widget(&cs2.borrow(), idx);
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 w.style.fill_color = if on {
                     Some(rgba_to_color(fill_btn2.rgba()))
                 } else { None };
+            }
+            if let (Some(bef), Some(after)) = (before, snapshot_widget(&cs2.borrow(), idx)) {
+                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, bef, after);
             }
             area2.queue_draw();
         });
@@ -992,12 +1236,19 @@ fn refresh_props_panel(
     {
         let cs2 = cs.clone();
         let area2 = area.clone();
+        let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
         fill_btn.connect_rgba_notify(move |b| {
             let c = rgba_to_color(b.rgba());
+            let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+            }).clone();
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 if w.style.fill_color.is_some() {
                     w.style.fill_color = Some(c);
                 }
+            }
+            if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
             }
             area2.queue_draw();
         });
@@ -1012,9 +1263,16 @@ fn refresh_props_panel(
     {
         let cs2 = cs.clone();
         let area2 = area.clone();
+        let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
         width_spin.connect_value_changed(move |sb| {
+            let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+            }).clone();
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 w.style.stroke_width_mm = sb.value();
+            }
+            if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
             }
             area2.queue_draw();
         });
@@ -1032,12 +1290,19 @@ fn refresh_props_panel(
             {
                 let cs2 = cs.clone();
                 let area2 = area.clone();
+                let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
                 entry.connect_changed(move |e| {
                     let s = e.text().to_string();
+                    let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                    }).clone();
                     if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                         if let WidgetKind::TextBlock { text, .. } = &mut w.kind {
                             *text = s;
                         }
+                    }
+                    if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                        push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
                 });
@@ -1110,11 +1375,18 @@ fn refresh_props_panel(
             {
                 let cs2 = cs.clone();
                 let area2 = area.clone();
+                let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
                 font_spin.connect_value_changed(move |sb| {
+                    let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                    }).clone();
                     if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                         if let WidgetKind::TextBlock { font_size_mm, .. } = &mut w.kind {
                             *font_size_mm = sb.value();
                         }
+                    }
+                    if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                        push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
                 });
@@ -1128,11 +1400,18 @@ fn refresh_props_panel(
             spin.set_value(thickness_mm);
             let cs2 = cs.clone();
             let area2 = area.clone();
+            let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
             spin.connect_value_changed(move |sb| {
+                let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                }).clone();
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     if let WidgetKind::Line { thickness_mm } = &mut w.kind {
                         *thickness_mm = sb.value();
                     }
+                }
+                if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                    push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
             });
@@ -1147,7 +1426,11 @@ fn refresh_props_panel(
             spin.set_value(spacing_mm);
             let cs2 = cs.clone();
             let area2 = area.clone();
+            let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
             spin.connect_value_changed(move |sb| {
+                let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                }).clone();
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     let v = sb.value();
                     match &mut w.kind {
@@ -1156,6 +1439,9 @@ fn refresh_props_panel(
                         | WidgetKind::DotsRegion { spacing_mm } => *spacing_mm = v,
                         _ => {}
                     }
+                }
+                if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                    push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
             });
@@ -1174,14 +1460,21 @@ fn refresh_props_panel(
             {
                 let cs2 = cs.clone();
                 let area2 = area.clone();
+                let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
                 start_spin.connect_value_changed(move |sb| {
                     let v = sb.value() as u8;
+                    let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                    }).clone();
                     if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                         match &mut w.kind {
                             WidgetKind::Timeline { start_hour, .. } => *start_hour = v,
                             WidgetKind::DailyAppointments { start_hour, .. } => *start_hour = v,
                             _ => {}
                         }
+                    }
+                    if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                        push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
                 });
@@ -1200,14 +1493,21 @@ fn refresh_props_panel(
             {
                 let cs2 = cs.clone();
                 let area2 = area.clone();
+                let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
                 end_spin.connect_value_changed(move |sb| {
                     let v = sb.value() as u8;
+                    let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                    }).clone();
                     if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                         match &mut w.kind {
                             WidgetKind::Timeline { end_hour, .. } => *end_hour = v,
                             WidgetKind::DailyAppointments { end_hour, .. } => *end_hour = v,
                             _ => {}
                         }
+                    }
+                    if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                        push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
                 });
@@ -1221,11 +1521,18 @@ fn refresh_props_panel(
             spin.set_value(count as f64);
             let cs2 = cs.clone();
             let area2 = area.clone();
+            let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
             spin.connect_value_changed(move |sb| {
+                let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                }).clone();
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     if let WidgetKind::PriorityList { count } = &mut w.kind {
                         *count = sb.value() as u32;
                     }
+                }
+                if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                    push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
             });
@@ -1237,13 +1544,20 @@ fn refresh_props_panel(
             entry.set_tooltip_text(Some("Separator: ' | '"));
             let cs2 = cs.clone();
             let area2 = area.clone();
+            let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
             entry.connect_changed(move |e| {
                 let parts: Vec<String> =
                     e.text().split('|').map(|s| s.trim().to_string()).collect();
+                let before = before_snap.borrow_mut().get_or_insert_with(|| {
+                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                }).clone();
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     if let WidgetKind::Checklist { items } = &mut w.kind {
                         *items = parts;
                     }
+                }
+                if let Some(after) = snapshot_widget(&cs2.borrow(), idx) {
+                    push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
             });
@@ -1380,20 +1694,25 @@ fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) 
         draw_widgets_with_context(ctx, &transform, &template.widgets, page_rect, &render_ctx);
     }
 
-    if let Some(idx) = cs.selected_idx {
-        if let Some(w_ref) = template.widgets.get(idx) {
-            draw_selection_overlay(ctx, &w_ref.rect, scale);
+    // Draw selection overlay for every selected widget.
+    // Single-selection also draws the resize handle; multi-selection draws
+    // a simpler outline only (no resize handle).
+    let single = cs.selected_one();
+    for &sel_idx in &cs.selected_indices {
+        if let Some(w_ref) = template.widgets.get(sel_idx) {
+            let is_primary_single = single == Some(sel_idx);
+            draw_selection_overlay(ctx, &w_ref.rect, scale, is_primary_single);
         }
     }
 
-    // ── Smart guide lines (Feature 3) ─────────────────────────────────────
-    // Render amber alignment guides while a Move drag is active.
+    // ── Smart guide lines ─────────────────────────────────────────────────
+    // Render amber alignment guides while a Move drag is active (primary widget).
     if cs.smart_guides_active
         && cs.drag_active
         && cs.drag_handle == Handle::Move
         && cs.drag_start_canvas.is_some()
     {
-        if let Some(idx) = cs.selected_idx {
+        if let Some(idx) = cs.primary_idx {
             if let Some(cur) = cs.template.widgets.get(idx) {
                 draw_smart_guides(ctx, &cs.template.widgets, idx, cur, scale, tw, th);
             }
@@ -1472,19 +1791,23 @@ fn draw_smart_guides(
     ctx.restore().ok();
 }
 
-fn draw_selection_overlay(ctx: &cairo::Context, r: &WidgetRect, scale: f64) {
+/// Draw the blue selection outline around `r`.
+/// `draw_handle`: only true when this is the sole selected widget (resize handle shown).
+fn draw_selection_overlay(ctx: &cairo::Context, r: &WidgetRect, scale: f64, draw_handle: bool) {
     let lw = 1.5 / scale;
     ctx.set_line_width(lw);
     ctx.set_source_rgba(0.2, 0.5, 1.0, 0.8);
     ctx.rectangle(r.x, r.y, r.width, r.height);
     let _ = ctx.stroke();
 
-    let handle_sz = 6.0 / scale;
-    let hx = r.x + r.width - handle_sz * 0.5;
-    let hy = r.y + r.height - handle_sz * 0.5;
-    ctx.set_source_rgba(0.2, 0.5, 1.0, 1.0);
-    ctx.rectangle(hx, hy, handle_sz, handle_sz);
-    let _ = ctx.fill();
+    if draw_handle {
+        let handle_sz = 6.0 / scale;
+        let hx = r.x + r.width - handle_sz * 0.5;
+        let hy = r.y + r.height - handle_sz * 0.5;
+        ctx.set_source_rgba(0.2, 0.5, 1.0, 1.0);
+        ctx.rectangle(hx, hy, handle_sz, handle_sz);
+        let _ = ctx.fill();
+    }
 }
 
 fn templates_dir() -> Option<std::path::PathBuf> {

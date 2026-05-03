@@ -54,7 +54,10 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     notebook_settings_btn.set_visible(false);
     header.pack_end(&notebook_settings_btn);
 
-    let menu_btn = build_menu_button(parent, state.clone());
+    // Create current_notebook early so build_menu_button can share it.
+    let current_notebook: Rc<RefCell<Option<NotebookId>>> = Rc::new(RefCell::new(None));
+
+    let menu_btn = build_menu_button(parent, state.clone(), current_notebook.clone());
     header.pack_end(&menu_btn);
 
     let cheatsheet_btn = build_cheatsheet_button();
@@ -117,7 +120,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         title_label,
         state: state.clone(),
         parent: parent.clone(),
-        current_notebook: Rc::new(RefCell::new(None)),
+        current_notebook,
         previous_view: Rc::new(RefCell::new(None)),
     }));
 
@@ -151,7 +154,11 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     win
 }
 
-fn build_menu_button(parent: &ApplicationWindow, state: SharedState) -> MenuButton {
+fn build_menu_button(
+    parent: &ApplicationWindow,
+    state: SharedState,
+    current_notebook: Rc<RefCell<Option<NotebookId>>>,
+) -> MenuButton {
     let popover = Popover::new();
     let vbox = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -173,6 +180,37 @@ fn build_menu_button(parent: &ApplicationWindow, state: SharedState) -> MenuButt
         });
     }
     vbox.append(&export_btn);
+
+    // Export the entire notebook as a multi-page PDF.
+    let export_nb_btn = Button::with_label("Export notebook as PDF…");
+    // Start disabled; enabled when a notebook is open.
+    export_nb_btn.set_sensitive(false);
+    {
+        let state = state.clone();
+        let parent = parent.clone();
+        let popover_clone = popover.clone();
+        let current_notebook = current_notebook.clone();
+        export_nb_btn.connect_clicked(move |_| {
+            popover_clone.popdown();
+            let nb_id = match *current_notebook.borrow() {
+                Some(id) => id,
+                None => return,
+            };
+            do_notebook_pdf_export(&parent, state.clone(), nb_id);
+        });
+    }
+    // Keep sensitivity in sync with whether a notebook is open by watching
+    // via a tick callback on the button widget.
+    {
+        let export_nb_btn_tick = export_nb_btn.clone();
+        let current_notebook_tick = current_notebook.clone();
+        export_nb_btn.add_tick_callback(move |_, _| {
+            let has_nb = current_notebook_tick.borrow().is_some();
+            export_nb_btn_tick.set_sensitive(has_nb);
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
+    vbox.append(&export_nb_btn);
 
     popover.set_child(Some(&vbox));
 
@@ -226,6 +264,56 @@ fn do_pdf_export(parent: &ApplicationWindow, state: SharedState) {
             dialog.show(Some(&parent_clone));
         } else {
             tracing::info!("PDF exported to {:?}", path);
+        }
+    });
+}
+
+fn do_notebook_pdf_export(
+    parent: &ApplicationWindow,
+    state: SharedState,
+    notebook_id: journal_core::NotebookId,
+) {
+    let dialog = gtk4::FileDialog::builder()
+        .title("Export notebook as PDF")
+        .modal(true)
+        .initial_name("notebook.pdf")
+        .build();
+
+    let filter = gtk4::FileFilter::new();
+    filter.set_name(Some("PDF files"));
+    filter.add_pattern("*.pdf");
+    filter.add_mime_type("application/pdf");
+    let filters = gtk4::gio::ListStore::new::<gtk4::FileFilter>();
+    filters.append(&filter);
+    dialog.set_filters(Some(&filters));
+
+    let parent_clone = parent.clone();
+    dialog.save(Some(parent), gtk4::gio::Cancellable::NONE, move |result| {
+        let file = match result {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        let path = match file.path() {
+            Some(p) => p,
+            None => {
+                tracing::warn!("notebook PDF export: no path from file dialog");
+                return;
+            }
+        };
+        let path = if path.extension().map(|e| e != "pdf").unwrap_or(true) {
+            path.with_extension("pdf")
+        } else {
+            path
+        };
+        if let Err(e) = crate::pdf_export::export_notebook_to_pdf(&state, notebook_id, &path) {
+            tracing::error!("notebook PDF export failed: {:#}", e);
+            let dialog = gtk4::AlertDialog::builder()
+                .message("Export failed")
+                .detail(format!("{:#}", e).as_str())
+                .build();
+            dialog.show(Some(&parent_clone));
+        } else {
+            tracing::info!("notebook PDF exported to {:?}", path);
         }
     });
 }
@@ -480,6 +568,8 @@ fn build_cheatsheet_button() -> MenuButton {
         ("V",            "Selection"),
         ("Ctrl+Z",       "Undo"),
         ("Ctrl+Shift+Z", "Redo"),
+        ("Ctrl+C",       "Copy selection"),
+        ("Ctrl+V",       "Paste"),
         ("Ctrl+0",       "Fit page"),
         ("Ctrl++",       "Zoom in"),
         ("Ctrl+-",       "Zoom out"),

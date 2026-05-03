@@ -2,6 +2,22 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PenPreset {
+    pub name: String,
+    pub color_rgba: [u8; 4],
+    pub width_mm: f64,
+}
+
+fn default_pen_presets() -> Vec<PenPreset> {
+    vec![
+        PenPreset { name: "Black fine".into(), color_rgba: [20, 20, 20, 255], width_mm: 1.5 },
+        PenPreset { name: "Blue".into(),       color_rgba: [30, 90, 200, 255], width_mm: 2.0 },
+        PenPreset { name: "Red".into(),        color_rgba: [200, 50, 50, 255], width_mm: 2.0 },
+        PenPreset { name: "Marker".into(),     color_rgba: [20, 20, 20, 255], width_mm: 4.0 },
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -22,6 +38,8 @@ pub struct AppConfig {
     pub toolbar_y: Option<i32>,
     #[serde(default)]
     pub toolbar_collapsed: bool,
+    #[serde(default = "default_pen_presets")]
+    pub pen_presets: Vec<PenPreset>,
 }
 
 impl Default for AppConfig {
@@ -36,6 +54,7 @@ impl Default for AppConfig {
             toolbar_x: None,
             toolbar_y: None,
             toolbar_collapsed: false,
+            pen_presets: default_pen_presets(),
         }
     }
 }

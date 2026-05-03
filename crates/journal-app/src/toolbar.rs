@@ -5,8 +5,8 @@ use gtk4::gdk::RGBA;
 use gtk4::graphene::Point as GraphenePoint;
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, Button, ColorDialog, ColorDialogButton, GestureDrag, Image, Orientation,
-    PropagationPhase, Scale, Separator, ToggleButton,
+    Box as GtkBox, Button, ColorDialog, ColorDialogButton, DrawingArea, GestureDrag, Image,
+    Orientation, PropagationPhase, Scale, Separator, ToggleButton,
 };
 
 use crate::state::{SharedState, Tool};
@@ -195,6 +195,14 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
         extras.append(b);
     }
     extras.append(&Separator::new(Orientation::Vertical));
+
+    // ── Pen preset chips ──────────────────────────────────────────────────
+    // Re-read the config so we always have the latest presets when the
+    // toolbar is built.
+    let preset_chips = build_preset_chips(&state, &cfg.pen_presets);
+    extras.append(&preset_chips);
+    extras.append(&Separator::new(Orientation::Vertical));
+
     extras.append(&color_btn);
     extras.append(&scale);
 
@@ -389,6 +397,67 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
     handle.add_controller(drag);
 
     bar
+}
+
+/// Build a horizontal row of colored preset chip buttons from the given preset list.
+///
+/// Each chip is a small 28×28 `Button` containing a `DrawingArea` that draws a
+/// filled circle in the preset's color.  Clicking a chip:
+///   1. Sets `state.pen.color` + `state.pen.base_width` to the preset values.
+///   2. Updates `saved_pen_color` / `saved_pen_width` so the toolbar color button
+///      stays in sync on the next expansion.
+///   3. Switches the tool to `Pen` so the user can draw immediately.
+fn build_preset_chips(
+    state: &SharedState,
+    presets: &[crate::config::PenPreset],
+) -> GtkBox {
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(3)
+        .build();
+
+    for preset in presets {
+        let [r, g, b, a] = preset.color_rgba;
+        let rf = r as f64 / 255.0;
+        let gf = g as f64 / 255.0;
+        let bf = b as f64 / 255.0;
+        let af = a as f64 / 255.0;
+
+        // Tiny DrawingArea renders the colored circle.
+        let swatch = DrawingArea::new();
+        swatch.set_size_request(16, 16);
+        swatch.set_draw_func(move |_, cr, w, h| {
+            let cx = w as f64 / 2.0;
+            let cy = h as f64 / 2.0;
+            let radius = (cx.min(cy) - 1.0).max(1.0);
+            cr.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
+            cr.set_source_rgba(rf, gf, bf, af);
+            let _ = cr.fill();
+        });
+
+        let chip_btn = Button::builder()
+            .tooltip_text(format!("{} ({:.1} mm)", preset.name, preset.width_mm))
+            .build();
+        chip_btn.add_css_class("pen-preset");
+        chip_btn.set_size_request(28, 28);
+        chip_btn.set_child(Some(&swatch));
+
+        let color = journal_core::Color { r, g, b, a };
+        let width = preset.width_mm;
+        let state_c = state.clone();
+        chip_btn.connect_clicked(move |_| {
+            let mut s = state_c.borrow_mut();
+            s.pen.color = color;
+            s.pen.base_width = width;
+            s.saved_pen_color = color;
+            s.saved_pen_width = width;
+            s.tool = Tool::Pen;
+        });
+
+        row.append(&chip_btn);
+    }
+
+    row
 }
 
 /// Returns the symbolic icon name for the given tool.
