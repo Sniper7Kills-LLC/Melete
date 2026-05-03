@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS pages (
     created_at TEXT NOT NULL,
     modified_at TEXT NOT NULL
 );";
+// `name` and `widget_overrides_json` columns get added by the v2/v5
+// migrations below — keep CREATE_PAGES at the original Phase 2 shape so
+// the migrations are idempotent on every code path (fresh DB, upgrade
+// from any prior schema version).
 
 pub const CREATE_STROKES: &str = "
 CREATE TABLE IF NOT EXISTS strokes (
@@ -130,6 +134,16 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             conn.execute(CREATE_INDEX_SECTIONS_PARENT_POSITION, [])?;
         }
         conn.pragma_update(None, "user_version", 4)?;
+    }
+    if v < 5 {
+        // Per-page widget overrides — JSON map keyed by TemplateWidget.id.
+        if !column_exists(conn, "pages", "widget_overrides_json")? {
+            conn.execute(
+                "ALTER TABLE pages ADD COLUMN widget_overrides_json TEXT NOT NULL DEFAULT '{}'",
+                [],
+            )?;
+        }
+        conn.pragma_update(None, "user_version", 5)?;
     }
     Ok(())
 }

@@ -1,15 +1,27 @@
+use std::collections::HashMap;
+
 use gtk4::cairo;
 use journal_core::{
-    render_title, Color, Rect, TemplateWidget, TitleContext, WidgetKind, WidgetRect, WidgetStyle,
+    render_title, Color, Rect, TemplateWidget, TitleContext, WidgetKind, WidgetOverride,
+    WidgetRect, WidgetStyle,
 };
+use uuid::Uuid;
 
 use crate::viewport_transform::ViewportTransform;
 
-/// Date used to expand `{date}/{weekday}/{month}/...` placeholders inside
-/// `WidgetKind::TextBlock` text. `None` means "today (local)".
-#[derive(Debug, Clone, Copy, Default)]
+/// Per-frame context the canvas hands to every template widget's draw fn.
+///
+/// - `date`: bound calendar date (planner page → that page's day; freeform
+///   page → `None`, falls back to today). Used for `{date}` expansions and
+///   the smart calendar.
+/// - `overrides`: per-widget overrides from the page's `widget_overrides`
+///   map (keyed by `TemplateWidget.id`). Lets a freeform page pin a
+///   specific month / hour range / row count / etc. without changing the
+///   shared template.
+#[derive(Debug, Clone, Default)]
 pub struct WidgetRenderContext {
     pub date: Option<chrono::NaiveDate>,
+    pub overrides: HashMap<Uuid, WidgetOverride>,
 }
 
 fn resolve_date(ctx: &WidgetRenderContext) -> chrono::NaiveDate {
@@ -91,6 +103,7 @@ fn draw_widget(
 ) {
     let r = &widget.rect;
     let style = &widget.style;
+    let override_ = render_ctx.overrides.get(&widget.id);
 
     match &widget.kind {
         WidgetKind::Rectangle => {
@@ -110,46 +123,97 @@ fn draw_widget(
             apply_fill_then_stroke(ctx, style, transform);
         }
         WidgetKind::Line { thickness_mm } => {
+            let thickness = match override_ {
+                Some(WidgetOverride::Line { thickness_mm }) => *thickness_mm,
+                _ => *thickness_mm,
+            };
             set_color(ctx, style.stroke_color);
-            ctx.set_line_width(*thickness_mm);
+            ctx.set_line_width(thickness);
             ctx.move_to(r.x, r.y + r.height * 0.5);
             ctx.line_to(r.x + r.width, r.y + r.height * 0.5);
             let _ = ctx.stroke();
         }
         WidgetKind::TextBlock { text, font_size_mm } => {
+            let (text, font_size) = match override_ {
+                Some(WidgetOverride::TextBlock { text, font_size_mm }) => {
+                    (text.as_str(), *font_size_mm)
+                }
+                _ => (text.as_str(), *font_size_mm),
+            };
             set_color(ctx, style.stroke_color);
-            ctx.set_font_size(*font_size_mm);
-            ctx.move_to(r.x, r.y + *font_size_mm);
+            ctx.set_font_size(font_size);
+            ctx.move_to(r.x, r.y + font_size);
             let date = resolve_date(render_ctx);
             let expanded = render_title(text, &TitleContext::new(date));
             let _ = ctx.show_text(&expanded);
         }
         WidgetKind::GridRegion { spacing_mm } => {
-            draw_grid_region(ctx, transform, r, style, *spacing_mm);
+            let s = match override_ {
+                Some(WidgetOverride::GridRegion { spacing_mm }) => *spacing_mm,
+                _ => *spacing_mm,
+            };
+            draw_grid_region(ctx, transform, r, style, s);
         }
         WidgetKind::LinesRegion { spacing_mm } => {
-            draw_lines_region(ctx, transform, r, style, *spacing_mm);
+            let s = match override_ {
+                Some(WidgetOverride::LinesRegion { spacing_mm }) => *spacing_mm,
+                _ => *spacing_mm,
+            };
+            draw_lines_region(ctx, transform, r, style, s);
         }
         WidgetKind::DotsRegion { spacing_mm } => {
-            draw_dots_region(ctx, transform, r, style, *spacing_mm);
+            let s = match override_ {
+                Some(WidgetOverride::DotsRegion { spacing_mm }) => *spacing_mm,
+                _ => *spacing_mm,
+            };
+            draw_dots_region(ctx, transform, r, style, s);
         }
         WidgetKind::CalendarMonth => {
-            draw_calendar_month(ctx, transform, r, style, resolve_date(render_ctx));
+            // Override pins the displayed month/year explicitly. Falls
+            // through to the page's bound date (planner) or today.
+            let date = match override_ {
+                Some(WidgetOverride::CalendarMonth { year, month }) => {
+                    chrono::NaiveDate::from_ymd_opt(*year, *month, 1)
+                        .unwrap_or_else(|| resolve_date(render_ctx))
+                }
+                _ => resolve_date(render_ctx),
+            };
+            draw_calendar_month(ctx, transform, r, style, date);
         }
         WidgetKind::Timeline { start_hour, end_hour, slot_minutes } => {
-            draw_timeline_stub(ctx, transform, r, style, *start_hour, *end_hour, *slot_minutes);
+            let (s, e, m) = match override_ {
+                Some(WidgetOverride::Timeline { start_hour, end_hour, slot_minutes }) => {
+                    (*start_hour, *end_hour, *slot_minutes)
+                }
+                _ => (*start_hour, *end_hour, *slot_minutes),
+            };
+            draw_timeline_stub(ctx, transform, r, style, s, e, m);
         }
         WidgetKind::Checklist { items } => {
+            let items = match override_ {
+                Some(WidgetOverride::Checklist { items }) => items.as_slice(),
+                _ => items.as_slice(),
+            };
             draw_checklist(ctx, transform, r, style, items);
         }
         WidgetKind::BigThree => {
             draw_big_three(ctx, transform, r, style);
         }
         WidgetKind::PriorityList { count } => {
-            draw_priority_list(ctx, transform, r, style, *count);
+            let n = match override_ {
+                Some(WidgetOverride::PriorityList { count }) => *count,
+                _ => *count,
+            };
+            draw_priority_list(ctx, transform, r, style, n);
         }
         WidgetKind::DailyAppointments { start_hour, end_hour } => {
-            draw_daily_appointments(ctx, transform, r, style, *start_hour, *end_hour);
+            let (s, e) = match override_ {
+                Some(WidgetOverride::DailyAppointments { start_hour, end_hour }) => {
+                    (*start_hour, *end_hour)
+                }
+                _ => (*start_hour, *end_hour),
+            };
+            draw_daily_appointments(ctx, transform, r, style, s, e);
         }
         WidgetKind::WeeklyCompass => {
             draw_weekly_compass(ctx, transform, r, style);

@@ -163,7 +163,10 @@ pub fn export_notebook_to_pdf(
             Some(journal_core::CalendarPageAddress::Day { date, .. }) => Some(date),
             _ => None,
         };
-        let render_ctx = WidgetRenderContext { date: page_date };
+        let render_ctx = WidgetRenderContext {
+            date: page_date,
+            overrides: page.widget_overrides.clone(),
+        };
 
         if !first_page {
             // Emit the previous page and start a fresh A4 page.

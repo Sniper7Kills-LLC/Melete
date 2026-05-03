@@ -344,6 +344,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
                         created_at: now,
                         modified_at: now,
                         name: String::new(),
+                        widget_overrides: Default::default(),
                     };
                     if let Err(e) =
                         ctx_inner.db.borrow_mut().insert_page(&page)
@@ -765,6 +766,7 @@ fn duplicate_page(ctx: &SidebarCtx, page: &Page, canvas: &DrawingArea) {
         created_at: now,
         modified_at: now,
         name: new_name,
+        widget_overrides: page.widget_overrides.clone(),
     };
 
     {

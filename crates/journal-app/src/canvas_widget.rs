@@ -44,7 +44,10 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
             let page_rect = s.page_rect;
             let background = s.background.clone();
             let transform = s.transform;
-            let render_ctx = WidgetRenderContext { date: s.current_page_date };
+            let render_ctx = WidgetRenderContext {
+                date: s.current_page_date,
+                overrides: s.current_page_overrides.clone(),
+            };
 
             if let Some(cs) = s.current_stroke.clone() {
                 let mut frame: Vec<journal_core::Stroke> =

@@ -651,6 +651,7 @@ mod tests {
             created_at: now,
             modified_at: now,
             name: String::new(),
+            widget_overrides: Default::default(),
         }
     }
 

@@ -10,7 +10,7 @@ pub mod title_format;
 pub use stroke::{Stroke, StrokePoint};
 pub use viewport::Viewport;
 pub use pen::{PenSettings, Color, BlendMode};
-pub use page::{Page, PageId};
+pub use page::{Page, PageId, WidgetOverride};
 pub use notebook::{Notebook, NotebookId, NotebookKind, Section, SectionId};
 pub use template::{
     PageTemplate, TemplateId, BackgroundType, TilingMode,

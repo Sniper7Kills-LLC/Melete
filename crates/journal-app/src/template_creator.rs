@@ -1690,6 +1690,7 @@ fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) 
     if !template.widgets.is_empty() {
         let render_ctx = WidgetRenderContext {
             date: Some(chrono::Local::now().date_naive()),
+            overrides: Default::default(),
         };
         draw_widgets_with_context(ctx, &transform, &template.widgets, page_rect, &render_ctx);
     }

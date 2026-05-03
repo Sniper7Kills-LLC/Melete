@@ -47,6 +47,10 @@ pub struct CanvasState {
     /// expand `{date}/{weekday}/...` placeholders in template `TextBlock`s.
     /// `None` when the current page is not a planner page.
     pub current_page_date: Option<chrono::NaiveDate>,
+    /// Per-widget overrides loaded from `Page.widget_overrides` for the
+    /// currently-loaded page. Empty when no page is loaded.
+    pub current_page_overrides:
+        std::collections::HashMap<uuid::Uuid, journal_core::WidgetOverride>,
     /// Installed by the planner navigation strip; called from `load_page`
     /// when the user clicks a Day-addressed planner page so prev/next walk
     /// from that date instead of from "today".
@@ -132,6 +136,7 @@ pub fn new_shared_state(
         current_page_id: None,
         current_template: None,
         current_page_date: None,
+        current_page_overrides: std::collections::HashMap::new(),
         planner_nav_sync_date: None,
         tool: Tool::Pen,
         history: History::new(),
@@ -195,7 +200,7 @@ fn load_image_surface(path: std::path::PathBuf) -> Option<cairo::ImageSurface> {
 /// Caller is responsible for queue_draw on the canvas afterwards.
 pub fn set_current_page(state: &SharedState, page_id: PageId) {
     let backend = state.borrow().backend.clone();
-    let (strokes, page_date) = {
+    let (strokes, page_date, overrides) = {
         let mut b = backend.borrow_mut();
         let strokes = match b.list_strokes_for_page(page_id) {
             Ok(v) => v,
@@ -204,21 +209,24 @@ pub fn set_current_page(state: &SharedState, page_id: PageId) {
                 Vec::new()
             }
         };
-        // Resolve the page's calendar date if it has a planner address.
-        let page_date = match b.get_page(page_id) {
-            Ok(p) => match p.planner_address {
-                Some(journal_core::CalendarPageAddress::Day { date, .. }) => Some(date),
-                _ => None,
-            },
-            Err(_) => None,
+        let (page_date, overrides) = match b.get_page(page_id) {
+            Ok(p) => {
+                let d = match p.planner_address {
+                    Some(journal_core::CalendarPageAddress::Day { date, .. }) => Some(date),
+                    _ => None,
+                };
+                (d, p.widget_overrides.clone())
+            }
+            Err(_) => (None, std::collections::HashMap::new()),
         };
-        (strokes, page_date)
+        (strokes, page_date, overrides)
     };
     let mut s = state.borrow_mut();
     s.strokes = strokes;
     s.current_stroke = None;
     s.current_page_id = Some(page_id);
     s.current_page_date = page_date;
+    s.current_page_overrides = overrides;
     s.history.clear();
     s.selected_stroke_ids.clear();
     s.lasso_points.clear();

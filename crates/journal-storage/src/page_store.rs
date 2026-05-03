@@ -6,15 +6,19 @@ use journal_core::{Page, PageId, PlannerPageAddress, SectionId, TemplateId};
 use crate::error::{Result, StorageError};
 use crate::util::{blob_to_uuid, uuid_to_blob};
 
+const PAGE_COLUMNS: &str =
+    "id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json";
+
 pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
     let template_blob = page.template_id.map(|t| uuid_to_blob(t.0));
     let planner_json = match &page.planner_address {
         Some(a) => Some(serde_json::to_string(a)?),
         None => None,
     };
+    let overrides_json = serde_json::to_string(&page.widget_overrides)?;
     conn.execute(
-        "INSERT INTO pages (id, section_id, position, template_id, planner_address_json, created_at, modified_at, name)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO pages (id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             uuid_to_blob(page.id.0),
             uuid_to_blob(page.section_id.0),
@@ -24,6 +28,7 @@ pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
             page.created_at.to_rfc3339(),
             page.modified_at.to_rfc3339(),
             page.name,
+            overrides_json,
         ],
     )?;
     Ok(())
@@ -32,8 +37,7 @@ pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
 pub fn get_page(conn: &Connection, id: PageId) -> Result<Page> {
     let inner = conn
         .query_row(
-            "SELECT id, section_id, position, template_id, planner_address_json, created_at, modified_at, name
-             FROM pages WHERE id = ?1",
+            &format!("SELECT {} FROM pages WHERE id = ?1", PAGE_COLUMNS),
             params![uuid_to_blob(id.0)],
             row_to_page,
         )
@@ -50,10 +54,10 @@ pub fn find_page_by_address(
     address: &PlannerPageAddress,
 ) -> Result<Option<Page>> {
     let needle = serde_json::to_string(address)?;
-    let mut stmt = conn.prepare(
-        "SELECT id, section_id, position, template_id, planner_address_json, created_at, modified_at, name
-         FROM pages WHERE section_id = ?1 AND planner_address_json = ?2 LIMIT 1",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM pages WHERE section_id = ?1 AND planner_address_json = ?2 LIMIT 1",
+        PAGE_COLUMNS,
+    ))?;
     let mut rows = stmt.query(params![uuid_to_blob(section_id.0), needle])?;
     if let Some(row) = rows.next()? {
         return Ok(Some(row_to_page(row)??));
@@ -62,10 +66,10 @@ pub fn find_page_by_address(
 }
 
 pub fn list_pages(conn: &Connection, section_id: SectionId) -> Result<Vec<Page>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, section_id, position, template_id, planner_address_json, created_at, modified_at, name
-         FROM pages WHERE section_id = ?1 ORDER BY position ASC",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM pages WHERE section_id = ?1 ORDER BY position ASC",
+        PAGE_COLUMNS,
+    ))?;
     let rows = stmt.query_map(params![uuid_to_blob(section_id.0)], row_to_page)?;
     let mut out = Vec::new();
     for r in rows {
@@ -80,9 +84,11 @@ pub fn update_page(conn: &Connection, page: &Page) -> Result<()> {
         Some(a) => Some(serde_json::to_string(a)?),
         None => None,
     };
+    let overrides_json = serde_json::to_string(&page.widget_overrides)?;
     let updated = conn.execute(
         "UPDATE pages SET section_id = ?2, position = ?3, template_id = ?4,
-            planner_address_json = ?5, created_at = ?6, modified_at = ?7, name = ?8
+            planner_address_json = ?5, created_at = ?6, modified_at = ?7, name = ?8,
+            widget_overrides_json = ?9
          WHERE id = ?1",
         params![
             uuid_to_blob(page.id.0),
@@ -93,6 +99,7 @@ pub fn update_page(conn: &Connection, page: &Page) -> Result<()> {
             page.created_at.to_rfc3339(),
             page.modified_at.to_rfc3339(),
             page.name,
+            overrides_json,
         ],
     )?;
     if updated == 0 {
@@ -191,6 +198,7 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
     let created_at_str: String = row.get(5)?;
     let modified_at_str: String = row.get(6)?;
     let name: String = row.get(7)?;
+    let overrides_json: String = row.get::<_, Option<String>>(8)?.unwrap_or_else(|| "{}".into());
     Ok((|| {
         let template_id = match template_blob {
             Some(b) => Some(TemplateId(blob_to_uuid(&b)?)),
@@ -202,6 +210,7 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
         };
         let created_at = parse_dt(&created_at_str)?;
         let modified_at = parse_dt(&modified_at_str)?;
+        let widget_overrides = serde_json::from_str(&overrides_json).unwrap_or_default();
         Ok(Page {
             id: PageId(blob_to_uuid(&id_blob)?),
             section_id: SectionId(blob_to_uuid(&section_blob)?),
@@ -211,6 +220,7 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
             created_at,
             modified_at,
             name,
+            widget_overrides,
         })
     })())
 }
@@ -262,6 +272,7 @@ mod tests {
             created_at: now,
             modified_at: now,
             name: String::new(),
+            widget_overrides: Default::default(),
         }
     }
 
