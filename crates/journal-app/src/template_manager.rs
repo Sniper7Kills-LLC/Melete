@@ -582,14 +582,15 @@ fn refresh_list(
         let reg = s.templates.borrow();
         reg.list().iter().map(|t| (*t).clone()).collect()
     };
-    // Sort by category, then by name within a category, so the rows arrive
-    // already grouped — the ListBox header function then inserts visual
-    // dividers when the category changes.
+    // Sort by category-priority first, then alphabetically within a
+    // category. The ListBox header function then inserts visual dividers
+    // when the category changes.
     templates.sort_by(|a, b| {
-        let ca = if a.category.is_empty() { "Uncategorized" } else { a.category.as_str() };
-        let cb = if b.category.is_empty() { "Uncategorized" } else { b.category.as_str() };
-        ca.to_lowercase()
-            .cmp(&cb.to_lowercase())
+        let ca = canonical_category(&a.category);
+        let cb = canonical_category(&b.category);
+        category_priority(&ca)
+            .cmp(&category_priority(&cb))
+            .then_with(|| ca.to_lowercase().cmp(&cb.to_lowercase()))
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
 
@@ -765,6 +766,36 @@ fn build_template_preview(template: PageTemplate, dark_mode: bool) -> Frame {
     frame.add_css_class("template-preview-frame");
     frame.set_child(Some(&area));
     frame
+}
+
+/// Map an empty category to the literal "Uncategorized" so it groups with
+/// itself instead of being its own empty bucket.
+fn canonical_category(s: &str) -> String {
+    if s.trim().is_empty() {
+        "Uncategorized".to_string()
+    } else {
+        s.trim().to_string()
+    }
+}
+
+/// Sort rank for known categories. Lower value = appears earlier in the
+/// list. Anything not in this table falls into the "user-defined" bucket
+/// (priority 100) and sorts alphabetically among its peers.
+///
+///   0   Basics                — foundational page templates
+///   10  Daily Planner         — built-in planner spreads
+///   20–99 reserved for additional well-known categories
+///   100 user-defined / custom — sorted alphabetically among themselves
+///   200 Imported              — image / PDF imports
+///   300 Uncategorized         — fallback bucket
+fn category_priority(name: &str) -> u32 {
+    match name {
+        "Basics" => 0,
+        "Daily Planner" => 10,
+        "Imported" => 200,
+        "Uncategorized" => 300,
+        _ => 100,
+    }
 }
 
 fn describe(bg: &BackgroundType) -> String {
