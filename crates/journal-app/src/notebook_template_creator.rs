@@ -10,6 +10,7 @@ use std::rc::Rc;
 
 use chrono::Weekday;
 use gtk4::gdk::DragAction;
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     Align, ApplicationWindow, Box as GtkBox, Button, DropDown, DropTarget, Entry, Label,
@@ -88,30 +89,36 @@ fn refresh_layout_preview(
             row
         };
 
-        // Build a horizontal "section card": header with title + `× N`
-        // badge pinned at the top, then a horizontal row of contents
-        // underneath. Header and contents both centred horizontally.
+        // Build a horizontal "section card": title + `× N` badge sit on
+        // a single line at the LEFT of the card, contents flow to the
+        // RIGHT in a horizontal row. Whole preview reads as one strip
+        // (Year × 1 ▸ Quarter × 4 ▸ Month × 3 ▸ Week × 4–5 ▸ Mon × 1 …).
         let make_section = |title: &str, mult: &str| -> (GtkBox, GtkBox) {
             let outer = GtkBox::builder()
-                .orientation(Orientation::Vertical)
-                .spacing(2)
+                .orientation(Orientation::Horizontal)
+                .spacing(6)
                 .valign(Align::Center)
                 .build();
             outer.add_css_class("nbtc-preview-card");
-            let header = GtkBox::builder()
-                .orientation(Orientation::Horizontal)
-                .spacing(4)
+
+            let header = Label::builder()
                 .halign(Align::Center)
+                .valign(Align::Center)
+                .justify(gtk4::Justification::Center)
+                .use_markup(true)
                 .build();
-            let title_lbl = Label::builder().label(title).halign(Align::Center).build();
-            title_lbl.add_css_class("nbtc-preview-title");
-            header.append(&title_lbl);
-            if !mult.is_empty() {
-                let mult_lbl = Label::builder().label(mult).halign(Align::Center).build();
-                mult_lbl.add_css_class("nbtc-preview-multiplier");
-                header.append(&mult_lbl);
+            if mult.is_empty() {
+                header.set_markup(&format!("<b>{}</b>", glib::markup_escape_text(title)));
+            } else {
+                header.set_markup(&format!(
+                    "<b>{}</b> <span foreground=\"#d6a83a\" weight=\"700\">{}</span>",
+                    glib::markup_escape_text(title),
+                    glib::markup_escape_text(mult),
+                ));
             }
+            header.add_css_class("nbtc-preview-title");
             outer.append(&header);
+
             let inner = GtkBox::builder()
                 .orientation(Orientation::Horizontal)
                 .spacing(4)
@@ -175,26 +182,22 @@ fn refresh_layout_preview(
             row
         };
 
-        // Build innermost-first; nest left → right.
-        let week_card_for_month = || -> GtkBox {
+        // Always wrap days in Week × 4–5, regardless of grouping.
+        // The grouping kind only determines which wrapper section the
+        // planner runtime uses for actual file structure; visually a
+        // week always exists (5–7 days = 1 week), and each weekday
+        // happens × 1 per week. `before_week` pages live at the week
+        // boundary and apply across both grouping kinds.
+        let week_card = || -> GtkBox {
             let (card, inner) = make_section("Week", "× 4–5");
             inner.append(&make_pre("Before week", &s.template.before_week));
-            // Inside Week, each weekday lands once per week.
             inner.append(&make_weekday_cards("× 1"));
             card
         };
 
         let (month_card, month_inner) = make_section("Month", "× 3");
         month_inner.append(&make_pre("Before month", &s.template.before_month));
-        match s.template.grouping {
-            journal_core::PlannerGrouping::Month => {
-                // No Week wrapper — each weekday lands ~4–5 times per month.
-                month_inner.append(&make_weekday_cards("× 4–5"));
-            }
-            journal_core::PlannerGrouping::Week => {
-                month_inner.append(&week_card_for_month());
-            }
-        }
+        month_inner.append(&week_card());
 
         let (quarter_card, quarter_inner) = make_section("Quarter", "× 4");
         quarter_inner.append(&make_pre("Before quarter", &s.template.before_quarter));
