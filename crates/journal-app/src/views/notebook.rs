@@ -3,15 +3,16 @@ use std::rc::Rc;
 
 use chrono::Utc;
 use gtk4::gdk::{ContentProvider, DragAction};
+use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, DrawingArea as GtkDrawingArea, DragSource,
     DrawingArea, DropTarget, Entry, EventControllerFocus, EventControllerKey, Expander,
-    GestureClick, Label, Orientation, Overlay, Paned, ScrolledWindow, Stack,
+    GestureClick, Label, Orientation, Overlay, Paned, PopoverMenu, ScrolledWindow, Stack, Window,
 };
 use journal_core::{NotebookId, Page, PageId, Section, SectionId};
-use journal_storage::{page_store, section_store, Db};
+use journal_storage::{page_store, section_store, stroke_store, Db};
 use uuid::Uuid;
 
 use crate::dialogs;
@@ -588,6 +589,11 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
     attach_page_drag_source(&row, page.id, page.section_id);
     attach_page_drop_target(ctx, &row, page.id, page.section_id, list_index);
 
+    // Right-click context menu: Duplicate / Delete (not on planner notebooks).
+    if !ctx.is_planner {
+        attach_page_context_menu(ctx, &row, page);
+    }
+
     // Highlight the currently-loaded page so users see context at a glance.
     {
         let state = ctx.state.clone();
@@ -605,6 +611,165 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
     }
 
     row
+}
+
+fn attach_page_context_menu(ctx: &SidebarCtx, row: &GtkBox, page: &Page) {
+    // Build the GMenu model.
+    let menu = gio::Menu::new();
+    menu.append(Some("Duplicate page"), Some("page-ctx.duplicate"));
+    menu.append(Some("Delete page"), Some("page-ctx.delete"));
+
+    let popover = PopoverMenu::from_model(Some(&menu));
+    popover.set_parent(row);
+    popover.set_has_arrow(false);
+
+    // Wire up SimpleAction group on the row.
+    let action_group = gio::SimpleActionGroup::new();
+
+    // --- Duplicate action ---
+    {
+        let ctx = ctx.clone();
+        let page = page.clone();
+        let canvas = ctx.canvas.clone();
+        let dup_action = gio::SimpleAction::new("duplicate", None);
+        dup_action.connect_activate(move |_, _| {
+            duplicate_page(&ctx, &page, &canvas);
+        });
+        action_group.add_action(&dup_action);
+    }
+
+    // --- Delete action ---
+    {
+        let ctx = ctx.clone();
+        let page = page.clone();
+        let parent_win = ctx.parent.clone();
+        let del_action = gio::SimpleAction::new("delete", None);
+        del_action.connect_activate(move |_, _| {
+            let win = Window::builder()
+                .transient_for(&parent_win)
+                .modal(true)
+                .title("Delete page?")
+                .default_width(320)
+                .build();
+            let body = GtkBox::builder()
+                .orientation(Orientation::Vertical)
+                .spacing(12)
+                .margin_top(16)
+                .margin_bottom(16)
+                .margin_start(16)
+                .margin_end(16)
+                .build();
+            let msg = Label::new(Some(
+                "This will permanently delete the page and all its strokes.",
+            ));
+            msg.set_wrap(true);
+            body.append(&msg);
+            let btn_row = GtkBox::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(8)
+                .halign(gtk4::Align::End)
+                .build();
+            let cancel_btn = Button::with_label("Cancel");
+            let delete_btn = Button::with_label("Delete");
+            delete_btn.add_css_class("destructive-action");
+            btn_row.append(&cancel_btn);
+            btn_row.append(&delete_btn);
+            body.append(&btn_row);
+            win.set_child(Some(&body));
+            {
+                let win = win.clone();
+                cancel_btn.connect_clicked(move |_| win.close());
+            }
+            {
+                let win = win.clone();
+                let ctx = ctx.clone();
+                let page = page.clone();
+                delete_btn.connect_clicked(move |_| {
+                    let db = ctx.db.borrow();
+                    if let Err(e) = page_store::delete_page(db.conn(), page.id) {
+                        tracing::error!("delete page {:?}: {}", page.id, e);
+                    } else {
+                        drop(db);
+                        ctx.refresh();
+                    }
+                    win.close();
+                });
+            }
+            win.present();
+        });
+        action_group.add_action(&del_action);
+    }
+
+    row.insert_action_group("page-ctx", Some(&action_group));
+
+    // Secondary-button click → position the popover under the cursor and pop it.
+    let right_click = GestureClick::new();
+    right_click.set_button(gtk4::gdk::BUTTON_SECONDARY);
+    right_click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    {
+        let popover = popover.clone();
+        right_click.connect_pressed(move |g, _n, x, y| {
+            let rect = gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+            popover.set_pointing_to(Some(&rect));
+            popover.popup();
+            g.set_state(gtk4::EventSequenceState::Claimed);
+        });
+    }
+    row.add_controller(right_click);
+}
+
+fn duplicate_page(ctx: &SidebarCtx, page: &Page, canvas: &DrawingArea) {
+    let db_ref = ctx.db.borrow();
+    // Clone the page: fresh UUID, same section, position = original + 1, name suffix.
+    let new_name = if page.name.is_empty() {
+        String::new()
+    } else {
+        format!("{} (copy)", page.name)
+    };
+    let now = Utc::now();
+    let new_id = PageId(Uuid::new_v4());
+    let new_page = Page {
+        id: new_id,
+        section_id: page.section_id,
+        position: page.position + 1,
+        template_id: page.template_id,
+        planner_address: None,
+        created_at: now,
+        modified_at: now,
+        name: new_name,
+    };
+
+    if let Err(e) = page_store::insert_page(db_ref.conn(), &new_page) {
+        tracing::error!("duplicate page insert: {}", e);
+        return;
+    }
+
+    // Clone all strokes from the source page to the new page.
+    let strokes = match stroke_store::list_strokes_for_page(db_ref.conn(), page.id) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("duplicate: list strokes: {}", e);
+            vec![]
+        }
+    };
+    for mut s in strokes {
+        s.id = Uuid::new_v4();
+        if let Err(e) = stroke_store::insert_stroke(db_ref.conn(), &s, new_id) {
+            tracing::error!("duplicate stroke insert: {}", e);
+        }
+    }
+    drop(db_ref);
+
+    // Slot the new page right after the original.
+    {
+        let mut db = ctx.db.borrow_mut();
+        if let Err(e) = page_store::reorder_page(db.conn_mut(), new_id, page.position + 1) {
+            tracing::warn!("duplicate reorder: {}", e);
+        }
+    }
+
+    ctx.refresh();
+    load_page(&ctx.state, &new_page, canvas);
 }
 
 fn build_page_thumbnail(ctx: &SidebarCtx, page: &Page) -> GtkDrawingArea {

@@ -8,7 +8,8 @@ use std::rc::Rc;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, Button, Calendar, DrawingArea, Label, MenuButton, Orientation, Popover,
+    Box as GtkBox, Button, Calendar, DrawingArea, GestureClick, Label, MenuButton, Orientation,
+    Popover,
 };
 use uuid::Uuid;
 
@@ -321,8 +322,56 @@ fn fmt_date(d: NaiveDate) -> String {
     d.format("%a, %b %-d, %Y").to_string()
 }
 
-/// Build the planner navigation strip: Prev / Today / [date label menu] / Next.
-/// Returns the strip widget. Auto-loads today's page on construction.
+/// Compute what fraction of the year [0.0, 1.0) a given date represents.
+/// Uses day_of_year - 1 so Jan 1 == 0.0, Dec 31 ≈ 1.0.
+fn year_fraction(d: NaiveDate) -> f64 {
+    use chrono::Datelike;
+    let days_in_year = if d.leap_year() { 366.0 } else { 365.0 };
+    (d.ordinal() as f64 - 1.0) / days_in_year
+}
+
+/// Draw the year-progress bar: dim background rounded rect, indigo foreground,
+/// 12 month-tick lines, and optionally highlight where `frac` sits.
+fn draw_year_bar(ctx: &gtk4::cairo::Context, w: f64, h: f64, frac: f64) {
+    let r = h / 2.0;
+
+    // Dim background track.
+    ctx.set_source_rgba(0.5, 0.5, 0.5, 0.15);
+    rounded_rect(ctx, 0.0, 0.0, w, h, r);
+    let _ = ctx.fill();
+
+    // Filled progress in indigo accent #3a3d6e.
+    let progress_w = (w * frac).max(0.0).min(w);
+    if progress_w > 0.0 {
+        ctx.set_source_rgba(0.227, 0.239, 0.431, 0.85);
+        rounded_rect(ctx, 0.0, 0.0, progress_w, h, r);
+        let _ = ctx.fill();
+    }
+
+    // Month tick marks at each 1/12 boundary.
+    ctx.set_source_rgba(1.0, 1.0, 1.0, 0.25);
+    ctx.set_line_width(0.75);
+    for m in 1..12 {
+        let x = w * (m as f64 / 12.0);
+        ctx.move_to(x, 0.0);
+        ctx.line_to(x, h);
+        let _ = ctx.stroke();
+    }
+}
+
+fn rounded_rect(ctx: &gtk4::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
+    let r = r.min(w / 2.0).min(h / 2.0);
+    ctx.new_sub_path();
+    ctx.arc(x + r, y + r, r, std::f64::consts::PI, 3.0 * std::f64::consts::PI / 2.0);
+    ctx.arc(x + w - r, y + r, r, 3.0 * std::f64::consts::PI / 2.0, 0.0);
+    ctx.arc(x + w - r, y + h - r, r, 0.0, std::f64::consts::PI / 2.0);
+    ctx.arc(x + r, y + h - r, r, std::f64::consts::PI / 2.0, std::f64::consts::PI);
+    ctx.close_path();
+}
+
+/// Build the planner navigation strip: Prev / Today / [date label menu] / Next,
+/// with a thin year-progress bar below the buttons.
+/// Returns the outer container widget. Auto-loads today's page on construction.
 pub fn build_nav_strip(
     state: SharedState,
     canvas: DrawingArea,
@@ -330,13 +379,18 @@ pub fn build_nav_strip(
     template: NotebookTemplate,
     on_refresh: Rc<dyn Fn()>,
 ) -> GtkBox {
+    let outer = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_top(4)
+        .margin_bottom(4)
+        .margin_start(8)
+        .margin_end(8)
+        .build();
+
     let strip = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(6)
-        .margin_top(6)
-        .margin_bottom(6)
-        .margin_start(8)
-        .margin_end(8)
         .build();
 
     let current: Rc<Cell<NaiveDate>> = Rc::new(Cell::new(Utc::now().date_naive()));
@@ -369,12 +423,71 @@ pub fn build_nav_strip(
     strip.append(&date_btn);
     strip.append(&next_btn);
 
+    // Year-progress bar — redraws whenever `current` changes.
+    let progress_bar = DrawingArea::new();
+    progress_bar.set_height_request(6);
+    progress_bar.set_hexpand(true);
+    progress_bar.set_margin_top(2);
+    {
+        let current = current.clone();
+        progress_bar.set_draw_func(move |_area, ctx, w, h| {
+            if w <= 0 || h <= 0 {
+                return;
+            }
+            let frac = year_fraction(current.get());
+            draw_year_bar(ctx, w as f64, h as f64, frac);
+        });
+    }
+    // Click on the bar → jump to that date in the year.
+    {
+        let current_for_click = current.clone();
+        let progress_for_click = progress_bar.clone();
+        let state_for_click = state.clone();
+        let canvas_for_click = canvas.clone();
+        let template_for_click = template.clone();
+        let on_refresh_for_click = on_refresh.clone();
+        let date_label_for_click = date_label.clone();
+        let cal_for_click = cal.clone();
+        let suppress_for_click = suppress_day_selected.clone();
+        let click = gtk4::GestureClick::new();
+        click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        click.connect_pressed(move |_g, _n, x, _y| {
+            let width = progress_for_click.width() as f64;
+            if width <= 0.0 {
+                return;
+            }
+            let frac = (x / width).clamp(0.0, 1.0 - 1e-9);
+            let year = current_for_click.get().year();
+            let is_leap = chrono::NaiveDate::from_ymd_opt(year, 2, 29).is_some();
+            let days_in_year = if is_leap { 366.0 } else { 365.0 };
+            let ordinal = (frac * days_in_year) as u32 + 1;
+            let d = chrono::NaiveDate::from_yo_opt(year, ordinal.clamp(1, days_in_year as u32));
+            if let Some(d) = d {
+                current_for_click.set(d);
+                date_label_for_click.set_text(&fmt_date(d));
+                suppress_for_click.set(true);
+                cal_for_click.set_year(d.year());
+                cal_for_click.set_month(d.month0() as i32);
+                cal_for_click.set_day(d.day() as i32);
+                suppress_for_click.set(false);
+                progress_for_click.queue_draw();
+                goto_date(&state_for_click, &canvas_for_click, notebook_id, &template_for_click, d);
+                (on_refresh_for_click)();
+            }
+        });
+        progress_bar.add_controller(click);
+    }
+
+    outer.append(&strip);
+    outer.append(&progress_bar);
+
     let nav = |state: &SharedState,
                canvas: &DrawingArea,
                template: &NotebookTemplate,
                current: &Rc<Cell<NaiveDate>>,
                label: &Label,
                cal: &Calendar,
+               bar: &DrawingArea,
                date: NaiveDate,
                notebook_id: NotebookId,
                on_refresh: &Rc<dyn Fn()>,
@@ -390,6 +503,7 @@ pub fn build_nav_strip(
         cal.set_month(date.month0() as i32);
         cal.set_day(date.day() as i32);
         suppress.set(false);
+        bar.queue_draw();
         goto_date(state, canvas, notebook_id, template, date);
         (on_refresh)();
     };
@@ -401,11 +515,12 @@ pub fn build_nav_strip(
         let current = current.clone();
         let label = date_label.clone();
         let cal = cal.clone();
+        let bar = progress_bar.clone();
         let on_refresh_clone = on_refresh.clone();
         let suppress = suppress_day_selected.clone();
         prev_btn.connect_clicked(move |_| {
             let d = current.get() - Duration::days(1);
-            nav(&state, &canvas, &template, &current, &label, &cal, d, notebook_id, &on_refresh_clone, &suppress);
+            nav(&state, &canvas, &template, &current, &label, &cal, &bar, d, notebook_id, &on_refresh_clone, &suppress);
         });
     }
     {
@@ -415,11 +530,12 @@ pub fn build_nav_strip(
         let current = current.clone();
         let label = date_label.clone();
         let cal = cal.clone();
+        let bar = progress_bar.clone();
         let on_refresh_clone = on_refresh.clone();
         let suppress = suppress_day_selected.clone();
         next_btn.connect_clicked(move |_| {
             let d = current.get() + Duration::days(1);
-            nav(&state, &canvas, &template, &current, &label, &cal, d, notebook_id, &on_refresh_clone, &suppress);
+            nav(&state, &canvas, &template, &current, &label, &cal, &bar, d, notebook_id, &on_refresh_clone, &suppress);
         });
     }
     {
@@ -429,11 +545,12 @@ pub fn build_nav_strip(
         let current = current.clone();
         let label = date_label.clone();
         let cal_clone = cal.clone();
+        let bar = progress_bar.clone();
         let on_refresh_clone = on_refresh.clone();
         let suppress = suppress_day_selected.clone();
         today_btn.connect_clicked(move |_| {
             let d = Utc::now().date_naive();
-            nav(&state, &canvas, &template, &current, &label, &cal_clone, d, notebook_id, &on_refresh_clone, &suppress);
+            nav(&state, &canvas, &template, &current, &label, &cal_clone, &bar, d, notebook_id, &on_refresh_clone, &suppress);
         });
     }
     {
@@ -443,6 +560,7 @@ pub fn build_nav_strip(
         let current = current.clone();
         let label = date_label.clone();
         let popover = popover.clone();
+        let bar = progress_bar.clone();
         let on_refresh_clone = on_refresh.clone();
         let suppress = suppress_day_selected.clone();
         cal.connect_day_selected(move |c| {
@@ -455,6 +573,7 @@ pub fn build_nav_strip(
             if let Some(d) = d {
                 current.set(d);
                 label.set_text(&fmt_date(d));
+                bar.queue_draw();
                 goto_date(&state, &canvas, notebook_id, &template, d);
                 (on_refresh_clone)();
                 popover.popdown();
@@ -469,6 +588,7 @@ pub fn build_nav_strip(
         let current = current.clone();
         let label = date_label.clone();
         let cal = cal.clone();
+        let bar = progress_bar.clone();
         let suppress = suppress_day_selected.clone();
         let sync: Rc<dyn Fn(NaiveDate)> = Rc::new(move |d: NaiveDate| {
             if current.get() == d {
@@ -476,6 +596,7 @@ pub fn build_nav_strip(
             }
             current.set(d);
             label.set_text(&fmt_date(d));
+            bar.queue_draw();
             suppress.set(true);
             cal.set_year(d.year());
             cal.set_month(d.month0() as i32);
@@ -489,7 +610,7 @@ pub fn build_nav_strip(
     goto_date(&state, &canvas, notebook_id, &template, current.get());
     (on_refresh)();
 
-    strip
+    outer
 }
 
 /// Resolve the active `NotebookTemplate` for a planner notebook from the

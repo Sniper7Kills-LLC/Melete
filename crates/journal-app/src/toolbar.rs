@@ -5,7 +5,7 @@ use gtk4::gdk::RGBA;
 use gtk4::graphene::Point as GraphenePoint;
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, ColorDialog, ColorDialogButton, GestureDrag, Image, Label, Orientation,
+    Box as GtkBox, Button, ColorDialog, ColorDialogButton, GestureDrag, Image, Orientation,
     PropagationPhase, Scale, Separator, ToggleButton,
 };
 
@@ -17,6 +17,9 @@ use crate::state::{SharedState, Tool};
 /// inside a `gtk4::Overlay` with `halign(Start)` + `valign(Start)`.  A
 /// `GestureDrag` attached to the grip handle (left-most icon) lets the user
 /// reposition it; the final position is saved to `~/.config/journal/config.toml`.
+///
+/// A chevron button at the right end toggles a collapsed mode where only the
+/// drag handle and the currently-active tool icon are visible.
 pub fn build_toolbar(state: SharedState) -> GtkBox {
     // ── Outer wrapper: positioned inside the Overlay via margins ─────────
     let cfg = crate::config::load();
@@ -117,10 +120,7 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
 
     for b in [&pen_btn, &highlighter_btn, &eraser_btn, &partial_eraser_btn, &selection_btn] {
         b.add_css_class("compact-tool");
-        bar.append(b);
     }
-
-    bar.append(&Separator::new(Orientation::Vertical));
 
     // ── Color picker ──────────────────────────────────────────────────────
     let initial = state.borrow().pen.color;
@@ -149,7 +149,6 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
             s.saved_pen_color = color;
         });
     }
-    bar.append(&color_btn);
 
     // ── Width scale (compact, no leading "Width" label) ──────────────────
     let scale = Scale::with_range(Orientation::Horizontal, 0.5, 12.0, 0.5);
@@ -168,22 +167,126 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
             st.saved_pen_width = v;
         });
     }
-    bar.append(&scale);
+
+    // ── Collapse / expand chevron ─────────────────────────────────────────
+    // collapsed: Rc<Cell<bool>> tracks whether the toolbar is currently
+    // collapsed. We persist the state to config on every toggle.
+    let collapsed = Rc::new(Cell::new(cfg.toolbar_collapsed));
+
+    let chevron_btn = Button::builder()
+        .icon_name(if cfg.toolbar_collapsed {
+            "go-previous-symbolic"
+        } else {
+            "go-next-symbolic"
+        })
+        .tooltip_text("Collapse / expand toolbar")
+        .build();
+    chevron_btn.add_css_class("compact-tool");
+
+    // The "extra" box holds everything that should hide when collapsed:
+    // tool buttons, separator, color, scale, separator before chevron.
+    let extras = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(4)
+        .build();
+
+    // Pen tool buttons go in extras
+    for b in [&pen_btn, &highlighter_btn, &eraser_btn, &partial_eraser_btn, &selection_btn] {
+        extras.append(b);
+    }
+    extras.append(&Separator::new(Orientation::Vertical));
+    extras.append(&color_btn);
+    extras.append(&scale);
+
+    // "Collapsed active tool" icon — shown only when collapsed.
+    // We use a Button so clicking it also expands the toolbar.
+    let collapsed_tool_btn = Button::builder()
+        .icon_name("document-edit-symbolic")
+        .tooltip_text("Active tool — click to expand")
+        .build();
+    collapsed_tool_btn.add_css_class("compact-tool");
+
+    bar.append(&collapsed_tool_btn);
+    bar.append(&extras);
+    bar.append(&chevron_btn);
+
+    // Apply initial visibility based on saved collapsed state.
+    extras.set_visible(!cfg.toolbar_collapsed);
+    collapsed_tool_btn.set_visible(cfg.toolbar_collapsed);
+
+    // `icon_for_tool` is defined at the bottom of this module; call it directly.
+
+    // Tick callback to keep the collapsed-tool icon in sync with current tool.
+    {
+        let state = state.clone();
+        let collapsed_btn = collapsed_tool_btn.clone();
+        let collapsed_cell = collapsed.clone();
+        let last_tool: Rc<Cell<Tool>> = Rc::new(Cell::new(state.borrow().tool));
+        bar.add_tick_callback(move |_, _| {
+            let cur = state.borrow().tool;
+            if collapsed_cell.get() && cur != last_tool.get() {
+                last_tool.set(cur);
+                collapsed_btn.set_icon_name(icon_for_tool(cur));
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
+
+    // Toggle collapse on chevron click.
+    {
+        let extras = extras.clone();
+        let collapsed_tool_btn = collapsed_tool_btn.clone();
+        let collapsed = collapsed.clone();
+        let chevron_btn2 = chevron_btn.clone();
+        let state = state.clone();
+        chevron_btn.connect_clicked(move |_| {
+            let now = !collapsed.get();
+            collapsed.set(now);
+            extras.set_visible(!now);
+            collapsed_tool_btn.set_visible(now);
+            if now {
+                // Update collapsed icon immediately.
+                collapsed_tool_btn.set_icon_name(icon_for_tool(state.borrow().tool));
+                chevron_btn2.set_icon_name("go-previous-symbolic");
+            } else {
+                chevron_btn2.set_icon_name("go-next-symbolic");
+            }
+            // Persist
+            let mut cfg = crate::config::load();
+            cfg.toolbar_collapsed = now;
+            if let Err(e) = crate::config::save(&cfg) {
+                tracing::warn!("Failed to save toolbar collapsed state: {}", e);
+            }
+        });
+    }
+
+    // Toggle expand on collapsed-tool-btn click.
+    {
+        let extras = extras.clone();
+        let collapsed_tool_btn2 = collapsed_tool_btn.clone();
+        let collapsed = collapsed.clone();
+        let chevron_btn2 = chevron_btn.clone();
+        collapsed_tool_btn.connect_clicked(move |_| {
+            // Always expand.
+            collapsed.set(false);
+            extras.set_visible(true);
+            collapsed_tool_btn2.set_visible(false);
+            chevron_btn2.set_icon_name("go-next-symbolic");
+            let mut cfg = crate::config::load();
+            cfg.toolbar_collapsed = false;
+            if let Err(e) = crate::config::save(&cfg) {
+                tracing::warn!("Failed to save toolbar collapsed state: {}", e);
+            }
+        });
+    }
 
     // ── Restore saved position or default to bottom-centre ───────────────
-    // Default bottom-centre is computed lazily on first map using the
-    // overlay's allocated size.  If we have a saved position we apply it
-    // immediately; otherwise we wait for the "map" signal.
     if let (Some(x), Some(y)) = (cfg.toolbar_x, cfg.toolbar_y) {
         bar.set_margin_start(x);
         bar.set_margin_top(y);
     } else {
-        // Park at a plausible bottom-centre default.  We cannot know the
-        // exact overlay size before the widget is mapped, so we connect to
-        // the "map" signal to compute and apply the true default once.
         let bar_for_map = bar.clone();
         bar.connect_map(move |_| {
-            // Only position if we haven't been given explicit margins yet.
             if bar_for_map.margin_start() == 0 && bar_for_map.margin_top() == 0 {
                 if let Some(parent) = bar_for_map.parent() {
                     let pw = parent.width();
@@ -200,17 +303,6 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
     }
 
     // ── GestureDrag on the handle ─────────────────────────────────────────
-    //
-    // GestureDrag's (dx, dy) deltas live in the *controller widget's* local
-    // coordinate space.  Because we move the toolbar (and therefore the
-    // handle) on every drag_update, that local frame slides under the
-    // gesture and the deltas oscillate — the bar visibly shakes.
-    //
-    // Workaround: project both the drag's start point and the live cursor
-    // position into the toplevel window's root coordinate space (stable),
-    // then compute the delta there.  GestureDrag's start point (passed to
-    // drag_begin) and `gesture.point()` (live position) are both in
-    // handle-local coords, so we translate via `Widget::compute_point`.
     let drag = GestureDrag::builder()
         .propagation_phase(PropagationPhase::Capture)
         .build();
@@ -264,7 +356,6 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
             if new_x < 0 { new_x = 0; }
             if new_y < 0 { new_y = 0; }
 
-            // Clamp so the toolbar stays at least partially on-screen.
             if let Some(parent) = bar_ref.parent() {
                 let pw = parent.width();
                 let ph = parent.height();
@@ -298,4 +389,15 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
     handle.add_controller(drag);
 
     bar
+}
+
+/// Returns the symbolic icon name for the given tool.
+fn icon_for_tool(tool: Tool) -> &'static str {
+    match tool {
+        Tool::Pen => "document-edit-symbolic",
+        Tool::Highlighter => "marker-symbolic",
+        Tool::Eraser(crate::state::EraserMode::Stroke) => "edit-clear-symbolic",
+        Tool::Eraser(crate::state::EraserMode::Partial) => "edit-cut-symbolic",
+        Tool::Selection => "edit-select-all-symbolic",
+    }
 }

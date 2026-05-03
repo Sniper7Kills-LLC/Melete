@@ -214,7 +214,7 @@ fn build_notebook_templates_tab(
     root.append(&scroller);
 
     let list_rc = Rc::new(list);
-    refresh_notebook_template_list(&list_rc, state.clone());
+    refresh_notebook_template_list(&list_rc, state.clone(), parent);
 
     {
         let parent = parent.clone();
@@ -223,10 +223,13 @@ fn build_notebook_templates_tab(
         new_btn.connect_clicked(move |_| {
             let list_inner = list.clone();
             let state_inner = state.clone();
+            let parent_inner = parent.clone();
             crate::dialogs::prompt_new_notebook_template(
                 &parent,
                 state.clone(),
-                Box::new(move |_id| refresh_notebook_template_list(&list_inner, state_inner.clone())),
+                Box::new(move |_id| {
+                    refresh_notebook_template_list(&list_inner, state_inner.clone(), &parent_inner)
+                }),
             );
         });
     }
@@ -234,7 +237,11 @@ fn build_notebook_templates_tab(
     root
 }
 
-fn refresh_notebook_template_list(list: &Rc<ListBox>, state: SharedState) {
+fn refresh_notebook_template_list(
+    list: &Rc<ListBox>,
+    state: SharedState,
+    parent: &ApplicationWindow,
+) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
@@ -258,7 +265,7 @@ fn refresh_notebook_template_list(list: &Rc<ListBox>, state: SharedState) {
     }
 
     for t in templates {
-        let row = build_notebook_template_row(&t, state.clone(), list.clone());
+        let row = build_notebook_template_row(&t, state.clone(), list.clone(), parent);
         list.append(&row);
     }
 }
@@ -267,6 +274,7 @@ fn build_notebook_template_row(
     t: &NotebookTemplate,
     state: SharedState,
     list: Rc<ListBox>,
+    parent: &ApplicationWindow,
 ) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
@@ -304,15 +312,38 @@ fn build_notebook_template_row(
     row.append(&text_col);
 
     if !is_builtin_notebook_template(t.id) {
+        // Edit button — opens the full template editor pre-populated.
+        let edit_btn = Button::from_icon_name("document-edit-symbolic");
+        edit_btn.set_tooltip_text(Some("Edit template"));
+        let template_for_edit = t.clone();
+        let state_for_edit = state.clone();
+        let list_for_edit = list.clone();
+        let parent_for_edit = parent.clone();
+        edit_btn.connect_clicked(move |_| {
+            let list_inner = list_for_edit.clone();
+            let state_inner = state_for_edit.clone();
+            let parent_inner = parent_for_edit.clone();
+            crate::dialogs::prompt_notebook_template_editor(
+                &parent_for_edit,
+                state_for_edit.clone(),
+                Some(template_for_edit.clone()),
+                Box::new(move |_id| {
+                    refresh_notebook_template_list(&list_inner, state_inner.clone(), &parent_inner)
+                }),
+            );
+        });
+        row.append(&edit_btn);
+
         let del = Button::from_icon_name("edit-delete-symbolic");
         del.set_tooltip_text(Some("Delete template"));
         del.add_css_class("destructive-action");
         let tid = t.id;
         let state_for_del = state.clone();
         let list_for_del = list.clone();
+        let parent_for_del = parent.clone();
         del.connect_clicked(move |_| {
             delete_notebook_template(tid, state_for_del.clone());
-            refresh_notebook_template_list(&list_for_del, state_for_del.clone());
+            refresh_notebook_template_list(&list_for_del, state_for_del.clone(), &parent_for_del);
         });
         row.append(&del);
     } else {

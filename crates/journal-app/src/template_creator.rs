@@ -42,6 +42,101 @@ enum Handle {
     ResizeBottomRight,
 }
 
+// ── Template-editor undo/redo history (Feature 2) ────────────────────────────
+
+/// A single undoable/redoable edit in the template editor.
+#[derive(Clone, Debug)]
+enum EditOp {
+    Insert { idx: usize, widget: TemplateWidget },
+    Remove { idx: usize, widget: TemplateWidget },
+    Move { idx: usize, before_rect: WidgetRect, after_rect: WidgetRect },
+    Resize { idx: usize, before_rect: WidgetRect, after_rect: WidgetRect },
+}
+
+struct EditorHistory {
+    undo: Vec<EditOp>,
+    redo: Vec<EditOp>,
+}
+
+impl EditorHistory {
+    fn new() -> Self {
+        Self { undo: Vec::new(), redo: Vec::new() }
+    }
+
+    fn push(&mut self, op: EditOp) {
+        self.undo.push(op);
+        self.redo.clear();
+    }
+
+    /// Pop the top undo op (without applying it — caller applies and calls redo_push).
+    fn undo_pop(&mut self) -> Option<EditOp> {
+        self.undo.pop()
+    }
+
+    /// Pop the top redo op (without applying it — caller applies and calls undo_push).
+    fn redo_pop(&mut self) -> Option<EditOp> {
+        self.redo.pop()
+    }
+
+    fn undo_push(&mut self, op: EditOp) {
+        self.undo.push(op);
+    }
+
+    fn redo_push(&mut self, op: EditOp) {
+        self.redo.push(op);
+    }
+}
+
+/// Apply `op` forward (for redo). Returns the resulting `selected_idx`.
+fn apply_op(op: &EditOp, widgets: &mut Vec<TemplateWidget>) -> Option<usize> {
+    match op {
+        EditOp::Insert { idx, widget } => {
+            let i = (*idx).min(widgets.len());
+            widgets.insert(i, widget.clone());
+            Some(i)
+        }
+        EditOp::Remove { idx, .. } => {
+            let i = *idx;
+            if i < widgets.len() { widgets.remove(i); }
+            None
+        }
+        EditOp::Move { idx, after_rect, .. } => {
+            if let Some(w) = widgets.get_mut(*idx) { w.rect = after_rect.clone(); }
+            Some(*idx)
+        }
+        EditOp::Resize { idx, after_rect, .. } => {
+            if let Some(w) = widgets.get_mut(*idx) { w.rect = after_rect.clone(); }
+            Some(*idx)
+        }
+    }
+}
+
+/// Apply the inverse of `op` (for undo). Returns the resulting `selected_idx`.
+fn apply_inverse(op: &EditOp, widgets: &mut Vec<TemplateWidget>) -> Option<usize> {
+    match op {
+        EditOp::Insert { idx, .. } => {
+            let i = *idx;
+            if i < widgets.len() { widgets.remove(i); }
+            None
+        }
+        EditOp::Remove { idx, widget } => {
+            let i = (*idx).min(widgets.len());
+            widgets.insert(i, widget.clone());
+            Some(i)
+        }
+        EditOp::Move { idx, before_rect, .. } => {
+            if let Some(w) = widgets.get_mut(*idx) { w.rect = before_rect.clone(); }
+            Some(*idx)
+        }
+        EditOp::Resize { idx, before_rect, .. } => {
+            if let Some(w) = widgets.get_mut(*idx) { w.rect = before_rect.clone(); }
+            Some(*idx)
+        }
+    }
+}
+
+// ── CreatorState ─────────────────────────────────────────────────────────────
+
 struct CreatorState {
     template: PageTemplate,
     selected_idx: Option<usize>,
@@ -50,6 +145,15 @@ struct CreatorState {
     drag_active: bool,
     drag_handle: Handle,
     drag_orig_rect: Option<WidgetRect>,
+
+    /// Undo/redo stack for template edits (Feature 2).
+    history: EditorHistory,
+
+    // ── Snap-to-grid (Feature 3) ──────────────────────────────────────────
+    /// When `Some(mm)`, dragged/resized widget coordinates snap to this grid.
+    snap_grid_mm: Option<f64>,
+    /// Whether smart-guide alignment hints are rendered during a drag.
+    smart_guides_active: bool,
 }
 
 impl CreatorState {
@@ -62,7 +166,39 @@ impl CreatorState {
             drag_active: false,
             drag_handle: Handle::Move,
             drag_orig_rect: None,
+            history: EditorHistory::new(),
+            snap_grid_mm: None,
+            smart_guides_active: true,
         }
+    }
+
+    /// Snap a value to the nearest grid multiple (if snap is enabled).
+    fn snap(&self, v: f64) -> f64 {
+        match self.snap_grid_mm {
+            Some(g) if g > 0.0 => (v / g).round() * g,
+            _ => v,
+        }
+    }
+}
+
+// ── Selection observer (Feature 4) ───────────────────────────────────────────
+//
+// Stored separately from `CreatorState` so we can call it after releasing any
+// mutable borrow on `cs`.  The observer rebuilds the props panel whenever
+// `selected_idx` changes.
+
+type SelectionObserverFn = Rc<dyn Fn(Option<usize>)>;
+
+/// Helper: change `selected_idx` in `cs`, then fire the observer (separately,
+/// after the borrow has been dropped).
+fn select_widget(
+    cs: &Rc<RefCell<CreatorState>>,
+    idx: Option<usize>,
+    observer: &Option<SelectionObserverFn>,
+) {
+    cs.borrow_mut().selected_idx = idx;
+    if let Some(obs) = observer {
+        obs(idx);
     }
 }
 
@@ -79,6 +215,10 @@ pub fn build_editor_view(
 ) -> GtkBox {
     let template = edit.unwrap_or_else(PageTemplate::default);
     let cs = Rc::new(RefCell::new(CreatorState::new(template)));
+
+    // ── Selection observer — stored outside `cs` to avoid re-entrant borrows.
+    // Initialised as `None`; wired up below after `props_box_rc` exists.
+    let sel_obs: Rc<RefCell<Option<SelectionObserverFn>>> = Rc::new(RefCell::new(None));
 
     let root = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -119,8 +259,13 @@ pub fn build_editor_view(
     let meta_row = build_meta_row(&cs);
     root.append(&meta_row);
 
-    let palette = build_palette(&cs);
-    let canvas_area = build_canvas_area(&cs);
+    // ── Snap row ─────────────────────────────────────────────────────────
+    let snap_row = build_snap_row(&cs);
+    root.append(&snap_row);
+
+    let palette = build_palette(&cs, &sel_obs);
+    let canvas_area = build_canvas_area(&cs, &sel_obs);
+
     let props_scroll = ScrolledWindow::builder()
         .width_request(260)
         .vexpand(true)
@@ -136,25 +281,17 @@ pub fn build_editor_view(
     props_scroll.set_child(Some(&props_box));
     let props_box_rc = Rc::new(props_box);
 
-    // Initial render + future re-renders driven by selection changes.
+    // ── Feature 4: wire up the selection observer ─────────────────────────
+    // Initial render of props panel.
     refresh_props_panel(&props_box_rc, &cs, &canvas_area);
+
     {
         let cs2 = cs.clone();
         let props2 = props_box_rc.clone();
         let area2 = canvas_area.clone();
-        // Wrap the canvas's existing draw to also refresh the props panel
-        // when the selected widget changes. We piggy-back on a tick callback
-        // that reads selected_idx and rebuilds when it differs.
-        let last_sel: Rc<RefCell<Option<usize>>> =
-            Rc::new(RefCell::new(cs.borrow().selected_idx));
-        canvas_area.add_tick_callback(move |_, _| {
-            let cur = cs2.borrow().selected_idx;
-            if cur != *last_sel.borrow() {
-                *last_sel.borrow_mut() = cur;
-                refresh_props_panel(&props2, &cs2, &area2);
-            }
-            gtk4::glib::ControlFlow::Continue
-        });
+        *sel_obs.borrow_mut() = Some(Rc::new(move |_new_sel: Option<usize>| {
+            refresh_props_panel(&props2, &cs2, &area2);
+        }));
     }
 
     let inner_paned = Paned::new(Orientation::Horizontal);
@@ -187,8 +324,6 @@ pub fn build_editor_view(
                 return;
             }
             indicator.set_text("Saved \u{2713}");
-            // Brief pause so the user can read the confirmation, then return
-            // to the previous view. Use a timeout instead of blocking.
             let on_done = on_done.clone();
             gtk4::glib::timeout_add_local_once(
                 std::time::Duration::from_millis(450),
@@ -202,25 +337,135 @@ pub fn build_editor_view(
         save_btn.connect_clicked(move |_| (do_save)());
     }
 
-    // Ctrl+S → save. Attach to the editor root so it fires anywhere in the
-    // template editor view.
+    // Ctrl+S → save, Ctrl+Z → undo, Ctrl+Shift+Z → redo.
     {
         let key = gtk4::EventControllerKey::new();
         key.set_propagation_phase(gtk4::PropagationPhase::Capture);
         let do_save = do_save.clone();
+        let cs2 = cs.clone();
+        let area2 = canvas_area.clone();
+        let obs2 = sel_obs.clone();
         key.connect_key_pressed(move |_c, keyval, _code, mods| {
-            if mods.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
-                && (keyval == gtk4::gdk::Key::s || keyval == gtk4::gdk::Key::S)
-            {
+            let ctrl = mods.contains(gtk4::gdk::ModifierType::CONTROL_MASK);
+            let shift = mods.contains(gtk4::gdk::ModifierType::SHIFT_MASK);
+
+            if ctrl && (keyval == gtk4::gdk::Key::s || keyval == gtk4::gdk::Key::S) {
                 (do_save)();
                 return gtk4::glib::Propagation::Stop;
             }
+
+            // Ctrl+Z → undo
+            if ctrl && !shift && (keyval == gtk4::gdk::Key::z || keyval == gtk4::gdk::Key::Z) {
+                // Pull out the top undo op, apply its inverse to the widget list.
+                let result = {
+                    let mut s = cs2.borrow_mut();
+                    if let Some(op) = s.history.undo_pop() {
+                        let sel = apply_inverse(&op, &mut s.template.widgets);
+                        s.history.redo_push(op);
+                        Some(sel)
+                    } else {
+                        None
+                    }
+                };
+                if let Some(new_sel) = result {
+                    // select_widget releases cs2 borrow before firing observer,
+                    // so the observer can safely borrow cs2 to rebuild props.
+                    let obs_clone = obs2.borrow().clone();
+                    select_widget(&cs2, new_sel, &obs_clone);
+                    area2.queue_draw();
+                }
+                return gtk4::glib::Propagation::Stop;
+            }
+
+            // Ctrl+Shift+Z → redo
+            if ctrl && shift && (keyval == gtk4::gdk::Key::z || keyval == gtk4::gdk::Key::Z) {
+                let result = {
+                    let mut s = cs2.borrow_mut();
+                    if let Some(op) = s.history.redo_pop() {
+                        let sel = apply_op(&op, &mut s.template.widgets);
+                        s.history.undo_push(op);
+                        Some(sel)
+                    } else {
+                        None
+                    }
+                };
+                if let Some(new_sel) = result {
+                    let obs_clone = obs2.borrow().clone();
+                    select_widget(&cs2, new_sel, &obs_clone);
+                    area2.queue_draw();
+                }
+                return gtk4::glib::Propagation::Stop;
+            }
+
             gtk4::glib::Propagation::Proceed
         });
         root.add_controller(key);
     }
 
     root
+}
+
+/// Build the snap-to-grid / smart guides control row.
+fn build_snap_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .margin_top(4)
+        .margin_bottom(4)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+
+    row.append(&Label::new(Some("Snap:")));
+
+    let snap_switch = Switch::new();
+    snap_switch.set_active(false);
+    snap_switch.set_tooltip_text(Some("Enable snap-to-grid"));
+    row.append(&snap_switch);
+
+    let grid_spin = SpinButton::with_range(0.5, 50.0, 0.5);
+    grid_spin.set_digits(1);
+    grid_spin.set_value(5.0);
+    grid_spin.set_tooltip_text(Some("Snap grid spacing (mm)"));
+    grid_spin.set_sensitive(false);
+    row.append(&grid_spin);
+
+    row.append(&Label::new(Some("mm")));
+    row.append(&Label::new(Some("  Smart guides:")));
+
+    let guides_switch = Switch::new();
+    guides_switch.set_active(true);
+    guides_switch.set_tooltip_text(Some("Show alignment guides while dragging"));
+    row.append(&guides_switch);
+
+    {
+        let cs2 = cs.clone();
+        let grid_spin2 = grid_spin.clone();
+        snap_switch.connect_active_notify(move |sw| {
+            let on = sw.is_active();
+            grid_spin2.set_sensitive(on);
+            cs2.borrow_mut().snap_grid_mm = if on { Some(grid_spin2.value()) } else { None };
+        });
+    }
+
+    {
+        let cs2 = cs.clone();
+        let snap_switch2 = snap_switch.clone();
+        grid_spin.connect_value_changed(move |sb| {
+            if snap_switch2.is_active() {
+                cs2.borrow_mut().snap_grid_mm = Some(sb.value());
+            }
+        });
+    }
+
+    {
+        let cs2 = cs.clone();
+        guides_switch.connect_active_notify(move |sw| {
+            cs2.borrow_mut().smart_guides_active = sw.is_active();
+        });
+    }
+
+    row
 }
 
 fn build_meta_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
@@ -233,8 +478,7 @@ fn build_meta_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
         .margin_end(12)
         .build();
 
-    let name_label = Label::new(Some("Name:"));
-    row.append(&name_label);
+    row.append(&Label::new(Some("Name:")));
     let name_entry = Entry::builder().placeholder_text("Template name").hexpand(true).build();
     {
         let t = cs.borrow();
@@ -242,14 +486,11 @@ fn build_meta_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
     }
     name_entry.connect_changed({
         let cs = cs.clone();
-        move |e| {
-            cs.borrow_mut().template.name = e.text().to_string();
-        }
+        move |e| { cs.borrow_mut().template.name = e.text().to_string(); }
     });
     row.append(&name_entry);
 
-    let desc_label = Label::new(Some("Description:"));
-    row.append(&desc_label);
+    row.append(&Label::new(Some("Description:")));
     let desc_entry = Entry::builder().placeholder_text("Optional description").hexpand(true).build();
     {
         let t = cs.borrow();
@@ -257,14 +498,11 @@ fn build_meta_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
     }
     desc_entry.connect_changed({
         let cs = cs.clone();
-        move |e| {
-            cs.borrow_mut().template.description = e.text().to_string();
-        }
+        move |e| { cs.borrow_mut().template.description = e.text().to_string(); }
     });
     row.append(&desc_entry);
 
-    let cat_label = Label::new(Some("Category:"));
-    row.append(&cat_label);
+    row.append(&Label::new(Some("Category:")));
     let cat_entry = Entry::builder()
         .placeholder_text("e.g. Daily Planner, Basics")
         .build();
@@ -275,16 +513,17 @@ fn build_meta_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
     }
     cat_entry.connect_changed({
         let cs = cs.clone();
-        move |e| {
-            cs.borrow_mut().template.category = e.text().to_string();
-        }
+        move |e| { cs.borrow_mut().template.category = e.text().to_string(); }
     });
     row.append(&cat_entry);
 
     row
 }
 
-fn build_palette(cs: &Rc<RefCell<CreatorState>>) -> ScrolledWindow {
+fn build_palette(
+    cs: &Rc<RefCell<CreatorState>>,
+    sel_obs: &Rc<RefCell<Option<SelectionObserverFn>>>,
+) -> ScrolledWindow {
     let scroller = ScrolledWindow::builder()
         .width_request(140)
         .vexpand(true)
@@ -322,10 +561,12 @@ fn build_palette(cs: &Rc<RefCell<CreatorState>>) -> ScrolledWindow {
     for (label_text, tool) in tools {
         let btn = Button::with_label(label_text);
         let cs2 = cs.clone();
+        let obs2 = sel_obs.clone();
         let t = *tool;
         btn.connect_clicked(move |_| {
             cs2.borrow_mut().tool = t;
-            cs2.borrow_mut().selected_idx = None;
+            let obs = obs2.borrow().clone();
+            select_widget(&cs2, None, &obs);
         });
         vbox.append(&btn);
     }
@@ -333,9 +574,7 @@ fn build_palette(cs: &Rc<RefCell<CreatorState>>) -> ScrolledWindow {
     let desel_btn = Button::with_label("Select/Move");
     desel_btn.connect_clicked({
         let cs = cs.clone();
-        move |_| {
-            cs.borrow_mut().tool = PlaceTool::None;
-        }
+        move |_| { cs.borrow_mut().tool = PlaceTool::None; }
     });
     vbox.prepend(&desel_btn);
 
@@ -343,13 +582,21 @@ fn build_palette(cs: &Rc<RefCell<CreatorState>>) -> ScrolledWindow {
     del_btn.add_css_class("destructive-action");
     del_btn.connect_clicked({
         let cs = cs.clone();
+        let obs2 = sel_obs.clone();
         move |_| {
-            let mut s = cs.borrow_mut();
-            if let Some(idx) = s.selected_idx {
-                if idx < s.template.widgets.len() {
-                    s.template.widgets.remove(idx);
-                }
-                s.selected_idx = None;
+            let removed = {
+                let mut s = cs.borrow_mut();
+                if let Some(idx) = s.selected_idx {
+                    if idx < s.template.widgets.len() {
+                        let w = s.template.widgets.remove(idx);
+                        s.history.push(EditOp::Remove { idx, widget: w });
+                        Some(idx)
+                    } else { None }
+                } else { None }
+            };
+            if removed.is_some() {
+                let obs = obs2.borrow().clone();
+                select_widget(&cs, None, &obs);
             }
         }
     });
@@ -359,7 +606,10 @@ fn build_palette(cs: &Rc<RefCell<CreatorState>>) -> ScrolledWindow {
     scroller
 }
 
-fn build_canvas_area(cs: &Rc<RefCell<CreatorState>>) -> DrawingArea {
+fn build_canvas_area(
+    cs: &Rc<RefCell<CreatorState>>,
+    sel_obs: &Rc<RefCell<Option<SelectionObserverFn>>>,
+) -> DrawingArea {
     let area = DrawingArea::builder()
         .hexpand(true)
         .vexpand(true)
@@ -376,27 +626,41 @@ fn build_canvas_area(cs: &Rc<RefCell<CreatorState>>) -> DrawingArea {
     drag.connect_drag_begin({
         let cs = cs.clone();
         let area = area.clone();
+        let obs = sel_obs.clone();
         move |gesture, x, y| {
             let size = get_area_size(&area);
             let canvas_pt = screen_to_template(x, y, size, &cs.borrow().template);
-            let mut s = cs.borrow_mut();
-            if s.tool != PlaceTool::None {
-                s.drag_start_canvas = Some(canvas_pt);
-                s.drag_active = false;
-            } else {
-                let hit = hit_test(&s.template.widgets, canvas_pt);
-                if let Some(idx) = hit {
-                    let handle = resize_handle_hit(&s.template.widgets[idx].rect, canvas_pt);
-                    s.selected_idx = Some(idx);
+            let sel_change: Option<Option<usize>>;
+            {
+                let mut s = cs.borrow_mut();
+                if s.tool != PlaceTool::None {
                     s.drag_start_canvas = Some(canvas_pt);
-                    s.drag_handle = handle;
-                    s.drag_orig_rect = Some(s.template.widgets[idx].rect.clone());
-                    s.drag_active = true;
+                    s.drag_active = false;
+                    sel_change = None; // no selection change
                 } else {
-                    s.selected_idx = None;
-                    s.drag_start_canvas = None;
+                    let hit = hit_test(&s.template.widgets, canvas_pt);
+                    if let Some(idx) = hit {
+                        let handle = resize_handle_hit(&s.template.widgets[idx].rect, canvas_pt);
+                        s.drag_handle = handle;
+                        s.drag_orig_rect = Some(s.template.widgets[idx].rect.clone());
+                        s.drag_start_canvas = Some(canvas_pt);
+                        s.drag_active = true;
+                        let prev = s.selected_idx;
+                        s.selected_idx = Some(idx);
+                        sel_change = if prev != Some(idx) { Some(Some(idx)) } else { None };
+                    } else {
+                        let prev = s.selected_idx;
+                        s.selected_idx = None;
+                        s.drag_start_canvas = None;
+                        sel_change = if prev.is_some() { Some(None) } else { None };
+                    }
+                    gesture.set_state(gtk4::EventSequenceState::Claimed);
                 }
-                gesture.set_state(gtk4::EventSequenceState::Claimed);
+            }
+            // Fire observer outside the borrow.
+            if let Some(new_sel) = sel_change {
+                let obs_fn = obs.borrow().clone();
+                if let Some(f) = obs_fn { f(new_sel); }
             }
         }
     });
@@ -416,14 +680,30 @@ fn build_canvas_area(cs: &Rc<RefCell<CreatorState>>) -> DrawingArea {
                     if idx < s.template.widgets.len() {
                         match s.drag_handle {
                             Handle::Move => {
-                                s.template.widgets[idx].rect.x = orig.x + dcx;
-                                s.template.widgets[idx].rect.y = orig.y + dcy;
+                                let raw_x = orig.x + dcx;
+                                let raw_y = orig.y + dcy;
+                                // Apply snap-to-grid first.
+                                let snapped_x = s.snap(raw_x);
+                                let snapped_y = s.snap(raw_y);
+                                s.template.widgets[idx].rect.x = snapped_x;
+                                s.template.widgets[idx].rect.y = snapped_y;
+
+                                // Smart guides: snap to other widget edges / page edges.
+                                if s.smart_guides_active {
+                                    apply_smart_snap(
+                                        &mut s.template.widgets,
+                                        idx,
+                                        orig.clone(),
+                                        dcx,
+                                        dcy,
+                                    );
+                                }
                             }
                             Handle::ResizeBottomRight => {
-                                let new_w = (orig.width + dcx).max(2.0);
-                                let new_h = (orig.height + dcy).max(2.0);
-                                s.template.widgets[idx].rect.width = new_w;
-                                s.template.widgets[idx].rect.height = new_h;
+                                let snapped_w = s.snap(orig.width + dcx).max(2.0);
+                                let snapped_h = s.snap(orig.height + dcy).max(2.0);
+                                s.template.widgets[idx].rect.width = snapped_w;
+                                s.template.widgets[idx].rect.height = snapped_h;
                             }
                         }
                     }
@@ -437,37 +717,68 @@ fn build_canvas_area(cs: &Rc<RefCell<CreatorState>>) -> DrawingArea {
     drag.connect_drag_end({
         let cs = cs.clone();
         let area = area.clone();
+        let obs = sel_obs.clone();
         move |_, dx, dy| {
             let size = get_area_size(&area);
-            let canvas_start = {
-                let s = cs.borrow();
-                s.drag_start_canvas
-            };
+            let canvas_start = cs.borrow().drag_start_canvas;
             let Some(start) = canvas_start else { return };
             let scale = template_scale(size, &cs.borrow().template);
             let end = (start.0 + dx / scale, start.1 + dy / scale);
 
-            let mut s = cs.borrow_mut();
-            if s.tool != PlaceTool::None && s.drag_active {
-                let rx = start.0.min(end.0);
-                let ry = start.1.min(end.1);
-                let rw = (end.0 - start.0).abs().max(2.0);
-                let rh = (end.1 - start.1).abs().max(2.0);
-                let kind = default_kind_for(s.tool);
-                let widget = TemplateWidget {
-                    id: Uuid::new_v4(),
-                    kind,
-                    rect: WidgetRect { x: rx, y: ry, width: rw, height: rh },
-                    style: WidgetStyle::default(),
-                };
-                s.template.widgets.push(widget);
-                s.selected_idx = Some(s.template.widgets.len() - 1);
-                s.tool = PlaceTool::None;
+            let sel_change: Option<Option<usize>>;
+            {
+                let mut s = cs.borrow_mut();
+                if s.tool != PlaceTool::None && s.drag_active {
+                    // Place a new widget — snap coordinates.
+                    let rx = s.snap(start.0.min(end.0));
+                    let ry = s.snap(start.1.min(end.1));
+                    let rw = s.snap((end.0 - start.0).abs()).max(2.0);
+                    let rh = s.snap((end.1 - start.1).abs()).max(2.0);
+                    let kind = default_kind_for(s.tool);
+                    let widget = TemplateWidget {
+                        id: Uuid::new_v4(),
+                        kind,
+                        rect: WidgetRect { x: rx, y: ry, width: rw, height: rh },
+                        style: WidgetStyle::default(),
+                    };
+                    let insert_idx = s.template.widgets.len();
+                    s.template.widgets.push(widget.clone());
+                    s.history.push(EditOp::Insert { idx: insert_idx, widget });
+                    let new_sel = s.template.widgets.len() - 1;
+                    s.selected_idx = Some(new_sel);
+                    s.tool = PlaceTool::None;
+                    sel_change = Some(Some(new_sel));
+                } else if s.drag_active {
+                    // Move/resize finished — push undo op.
+                    if let (Some(orig), Some(idx)) = (s.drag_orig_rect.clone(), s.selected_idx) {
+                        if idx < s.template.widgets.len() {
+                            let after = s.template.widgets[idx].rect.clone();
+                            if after != orig {
+                                let op = match s.drag_handle {
+                                    Handle::Move => EditOp::Move {
+                                        idx, before_rect: orig, after_rect: after,
+                                    },
+                                    Handle::ResizeBottomRight => EditOp::Resize {
+                                        idx, before_rect: orig, after_rect: after,
+                                    },
+                                };
+                                s.history.push(op);
+                            }
+                        }
+                    }
+                    sel_change = None;
+                } else {
+                    sel_change = None;
+                }
+                s.drag_start_canvas = None;
+                s.drag_active = false;
+                s.drag_orig_rect = None;
             }
-            s.drag_start_canvas = None;
-            s.drag_active = false;
-            s.drag_orig_rect = None;
-            drop(s);
+            // Fire observer outside the borrow.
+            if let Some(new_sel) = sel_change {
+                let obs_fn = obs.borrow().clone();
+                if let Some(f) = obs_fn { f(new_sel); }
+            }
             area.queue_draw();
         }
     });
@@ -478,15 +789,24 @@ fn build_canvas_area(cs: &Rc<RefCell<CreatorState>>) -> DrawingArea {
     key.connect_key_pressed({
         let cs = cs.clone();
         let area = area.clone();
+        let obs = sel_obs.clone();
         move |_, key, _, _| {
             if key == gtk4::gdk::Key::Delete || key == gtk4::gdk::Key::BackSpace {
-                let mut s = cs.borrow_mut();
-                if let Some(idx) = s.selected_idx {
-                    if idx < s.template.widgets.len() {
-                        s.template.widgets.remove(idx);
-                    }
-                    s.selected_idx = None;
-                    drop(s);
+                let removed = {
+                    let mut s = cs.borrow_mut();
+                    if let Some(idx) = s.selected_idx {
+                        if idx < s.template.widgets.len() {
+                            let w = s.template.widgets.remove(idx);
+                            s.history.push(EditOp::Remove { idx, widget: w });
+                            true
+                        } else { false }
+                    } else { false }
+                };
+                if removed {
+                    let obs_fn = obs.borrow().clone();
+                    // selected_idx is already removed above; update it to None.
+                    cs.borrow_mut().selected_idx = None;
+                    if let Some(f) = obs_fn { f(None); }
                     area.queue_draw();
                 }
                 return gtk4::glib::Propagation::Stop;
@@ -498,6 +818,59 @@ fn build_canvas_area(cs: &Rc<RefCell<CreatorState>>) -> DrawingArea {
     area.add_controller(key);
 
     area
+}
+
+/// Smart-guide alignment snap: while dragging `idx`, if the widget's
+/// left/right/top/bottom edge aligns within GUIDE_SNAP_MM of another widget's
+/// corresponding edge (or the page left/top edges), snap to that edge.
+fn apply_smart_snap(
+    widgets: &mut Vec<TemplateWidget>,
+    idx: usize,
+    orig: WidgetRect,
+    dcx: f64,
+    dcy: f64,
+) {
+    const GUIDE_SNAP_MM: f64 = 1.5;
+
+    let proposed_x = orig.x + dcx;
+    let proposed_y = orig.y + dcy;
+    let w = widgets[idx].rect.width;
+    let h = widgets[idx].rect.height;
+
+    let mut x_cands: Vec<f64> = vec![0.0];
+    let mut y_cands: Vec<f64> = vec![0.0];
+
+    for (i, ww) in widgets.iter().enumerate() {
+        if i == idx { continue; }
+        // Snap dragged-widget's left edge to other widget's left/right edges,
+        // and dragged-widget's right edge aligned the same way.
+        x_cands.push(ww.rect.x);
+        x_cands.push(ww.rect.x + ww.rect.width - w);
+        x_cands.push(ww.rect.x + ww.rect.width);
+        x_cands.push(ww.rect.x + (ww.rect.width - w) * 0.5);
+
+        y_cands.push(ww.rect.y);
+        y_cands.push(ww.rect.y + ww.rect.height - h);
+        y_cands.push(ww.rect.y + ww.rect.height);
+        y_cands.push(ww.rect.y + (ww.rect.height - h) * 0.5);
+    }
+
+    let snapped_x = x_cands.iter().copied()
+        .filter(|&c| (proposed_x - c).abs() < GUIDE_SNAP_MM)
+        .min_by(|a, b| {
+            (proposed_x - a).abs().partial_cmp(&(proposed_x - b).abs()).unwrap()
+        })
+        .unwrap_or(proposed_x);
+
+    let snapped_y = y_cands.iter().copied()
+        .filter(|&c| (proposed_y - c).abs() < GUIDE_SNAP_MM)
+        .min_by(|a, b| {
+            (proposed_y - a).abs().partial_cmp(&(proposed_y - b).abs()).unwrap()
+        })
+        .unwrap_or(proposed_y);
+
+    widgets[idx].rect.x = snapped_x;
+    widgets[idx].rect.y = snapped_y;
 }
 
 fn color_to_rgba(c: Color) -> RGBA {
@@ -556,13 +929,9 @@ fn refresh_props_panel(
         return;
     };
 
-    let widget_kind_clone = match cs.borrow().template.widgets.get(idx) {
-        Some(w) => Some(w.kind.clone()),
-        None => None,
-    };
+    let widget_kind_clone = cs.borrow().template.widgets.get(idx).map(|w| w.kind.clone());
     let Some(kind) = widget_kind_clone else { return; };
 
-    // Kind label
     let kind_lbl = Label::builder()
         .label(kind_label(&kind))
         .halign(gtk4::Align::Start)
@@ -615,9 +984,7 @@ fn refresh_props_panel(
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 w.style.fill_color = if on {
                     Some(rgba_to_color(fill_btn2.rgba()))
-                } else {
-                    None
-                };
+                } else { None };
             }
             area2.queue_draw();
         });
@@ -677,27 +1044,16 @@ fn refresh_props_panel(
             }
             vbox.append(&entry);
 
-            // Variable insertion menu — grouped, with a live preview row
-            // so the user sees how their current text expands today.
-            let var_btn = MenuButton::builder()
-                .label("Insert variable…")
-                .build();
+            let var_btn = MenuButton::builder().label("Insert variable…").build();
             let popover = Popover::new();
             let pop_box = GtkBox::builder()
                 .orientation(Orientation::Vertical)
                 .spacing(2)
-                .margin_top(6)
-                .margin_bottom(6)
-                .margin_start(6)
-                .margin_end(6)
+                .margin_top(6).margin_bottom(6).margin_start(6).margin_end(6)
                 .build();
 
-            // Live preview of the current entry text expanded against today.
             let preview = Label::builder()
-                .label("")
-                .halign(gtk4::Align::Start)
-                .wrap(true)
-                .build();
+                .label("").halign(gtk4::Align::Start).wrap(true).build();
             preview.add_css_class("var-preview");
             let refresh_preview = {
                 let preview = preview.clone();
@@ -711,14 +1067,14 @@ fn refresh_props_panel(
             };
             refresh_preview();
             {
-                let refresh_preview = refresh_preview.clone();
-                entry.connect_changed(move |_| refresh_preview());
+                let rp = refresh_preview.clone();
+                entry.connect_changed(move |_| rp());
             }
             pop_box.append(&preview);
 
-            let header = Label::builder().label("Date variables").halign(gtk4::Align::Start).build();
-            header.add_css_class("var-group-header");
-            pop_box.append(&header);
+            let hdr = Label::builder().label("Date variables").halign(gtk4::Align::Start).build();
+            hdr.add_css_class("var-group-header");
+            pop_box.append(&hdr);
 
             for (token, desc) in TEXT_VARIABLES {
                 let row = Button::with_label(&format!("{}  —  {}", token, desc));
@@ -726,20 +1082,19 @@ fn refresh_props_panel(
                 row.add_css_class("flat");
                 let entry2 = entry.clone();
                 let pop2 = popover.clone();
-                let token = (*token).to_string();
-                let refresh_preview = refresh_preview.clone();
+                let tok = (*token).to_string();
+                let rp = refresh_preview.clone();
                 row.connect_clicked(move |_| {
                     let cur = entry2.text().to_string();
                     let pos = entry2.position();
                     let mut chars: Vec<char> = cur.chars().collect();
                     let insert_at = (pos as usize).min(chars.len());
-                    for (i, ch) in token.chars().enumerate() {
+                    for (i, ch) in tok.chars().enumerate() {
                         chars.insert(insert_at + i, ch);
                     }
-                    let new_text: String = chars.into_iter().collect();
-                    entry2.set_text(&new_text);
-                    entry2.set_position((insert_at + token.chars().count()) as i32);
-                    refresh_preview();
+                    entry2.set_text(&chars.into_iter().collect::<String>());
+                    entry2.set_position((insert_at + tok.chars().count()) as i32);
+                    rp();
                     pop2.popdown();
                 });
                 pop_box.append(&row);
@@ -807,7 +1162,6 @@ fn refresh_props_panel(
             vbox.append(&spin);
         }
         WidgetKind::Timeline { .. } | WidgetKind::DailyAppointments { .. } => {
-            // Render a small editor for hour bounds.
             vbox.append(&Label::builder().label("Start hour").halign(gtk4::Align::Start).build());
             let start_spin = SpinButton::with_range(0.0, 23.0, 1.0);
             start_spin.set_digits(0);
@@ -884,7 +1238,8 @@ fn refresh_props_panel(
             let cs2 = cs.clone();
             let area2 = area.clone();
             entry.connect_changed(move |e| {
-                let parts: Vec<String> = e.text().split('|').map(|s| s.trim().to_string()).collect();
+                let parts: Vec<String> =
+                    e.text().split('|').map(|s| s.trim().to_string()).collect();
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     if let WidgetKind::Checklist { items } = &mut w.kind {
                         *items = parts;
@@ -925,9 +1280,7 @@ fn template_scale(screen_size: (f64, f64), template: &PageTemplate) -> f64 {
     let margin = 0.9;
     let (sw, sh) = screen_size;
     let (tw, th) = template.size_mm;
-    if sw <= 0.0 || sh <= 0.0 || tw <= 0.0 || th <= 0.0 {
-        return 1.0;
-    }
+    if sw <= 0.0 || sh <= 0.0 || tw <= 0.0 || th <= 0.0 { return 1.0; }
     (sw / tw).min(sh / th) * margin
 }
 
@@ -935,9 +1288,7 @@ fn template_origin(screen_size: (f64, f64), template: &PageTemplate) -> (f64, f6
     let scale = template_scale(screen_size, template);
     let (sw, sh) = screen_size;
     let (tw, th) = template.size_mm;
-    let ox = (sw - tw * scale) * 0.5;
-    let oy = (sh - th * scale) * 0.5;
-    (ox, oy)
+    ((sw - tw * scale) * 0.5, (sh - th * scale) * 0.5)
 }
 
 fn screen_to_template(sx: f64, sy: f64, size: (f64, f64), template: &PageTemplate) -> (f64, f64) {
@@ -978,7 +1329,9 @@ fn default_kind_for(tool: PlaceTool) -> WidgetKind {
         PlaceTool::DotsRegion => WidgetKind::DotsRegion { spacing_mm: 5.0 },
         PlaceTool::CalendarMonth => WidgetKind::CalendarMonth,
         PlaceTool::Timeline => WidgetKind::Timeline { start_hour: 8, end_hour: 20, slot_minutes: 30 },
-        PlaceTool::Checklist => WidgetKind::Checklist { items: vec!["Item 1".into(), "Item 2".into(), "Item 3".into()] },
+        PlaceTool::Checklist => WidgetKind::Checklist {
+            items: vec!["Item 1".into(), "Item 2".into(), "Item 3".into()],
+        },
         PlaceTool::BigThree => WidgetKind::BigThree,
         PlaceTool::PriorityList => WidgetKind::PriorityList { count: 12 },
         PlaceTool::DailyAppointments => WidgetKind::DailyAppointments { start_hour: 7, end_hour: 19 },
@@ -991,9 +1344,7 @@ fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) 
     ctx.set_source_rgb(0.85, 0.85, 0.88);
     let _ = ctx.paint();
 
-    if w <= 0.0 || h <= 0.0 {
-        return;
-    }
+    if w <= 0.0 || h <= 0.0 { return; }
 
     let template = &cs.template;
     let scale = template_scale((w, h), template);
@@ -1032,6 +1383,89 @@ fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) 
     if let Some(idx) = cs.selected_idx {
         if let Some(w_ref) = template.widgets.get(idx) {
             draw_selection_overlay(ctx, &w_ref.rect, scale);
+        }
+    }
+
+    // ── Smart guide lines (Feature 3) ─────────────────────────────────────
+    // Render amber alignment guides while a Move drag is active.
+    if cs.smart_guides_active
+        && cs.drag_active
+        && cs.drag_handle == Handle::Move
+        && cs.drag_start_canvas.is_some()
+    {
+        if let Some(idx) = cs.selected_idx {
+            if let Some(cur) = cs.template.widgets.get(idx) {
+                draw_smart_guides(ctx, &cs.template.widgets, idx, cur, scale, tw, th);
+            }
+        }
+    }
+
+    ctx.restore().ok();
+}
+
+/// Render amber alignment guide lines during a drag.
+fn draw_smart_guides(
+    ctx: &cairo::Context,
+    widgets: &[TemplateWidget],
+    idx: usize,
+    cur: &TemplateWidget,
+    scale: f64,
+    page_w: f64,
+    page_h: f64,
+) {
+    const GUIDE_SNAP_MM: f64 = 1.5;
+
+    ctx.save().ok();
+    ctx.set_source_rgba(1.0, 0.65, 0.0, 0.85); // amber
+    ctx.set_line_width(0.5 / scale);
+
+    let r = &cur.rect;
+    let edges_x = [r.x, r.x + r.width * 0.5, r.x + r.width];
+    let edges_y = [r.y, r.y + r.height * 0.5, r.y + r.height];
+
+    for (i, other) in widgets.iter().enumerate() {
+        if i == idx { continue; }
+        let o = &other.rect;
+        let ox_edges = [o.x, o.x + o.width * 0.5, o.x + o.width];
+        let oy_edges = [o.y, o.y + o.height * 0.5, o.y + o.height];
+
+        for ex in &edges_x {
+            for oex in &ox_edges {
+                if (ex - oex).abs() < GUIDE_SNAP_MM {
+                    ctx.move_to(*oex, 0.0);
+                    ctx.line_to(*oex, page_h);
+                    let _ = ctx.stroke();
+                }
+            }
+        }
+        for ey in &edges_y {
+            for oey in &oy_edges {
+                if (ey - oey).abs() < GUIDE_SNAP_MM {
+                    ctx.move_to(0.0, *oey);
+                    ctx.line_to(page_w, *oey);
+                    let _ = ctx.stroke();
+                }
+            }
+        }
+    }
+
+    // Page edge guides.
+    for ex in &edges_x {
+        for px in &[0.0_f64, page_w] {
+            if (ex - px).abs() < GUIDE_SNAP_MM {
+                ctx.move_to(*px, 0.0);
+                ctx.line_to(*px, page_h);
+                let _ = ctx.stroke();
+            }
+        }
+    }
+    for ey in &edges_y {
+        for py in &[0.0_f64, page_h] {
+            if (ey - py).abs() < GUIDE_SNAP_MM {
+                ctx.move_to(0.0, *py);
+                ctx.line_to(page_w, *py);
+                let _ = ctx.stroke();
+            }
         }
     }
 

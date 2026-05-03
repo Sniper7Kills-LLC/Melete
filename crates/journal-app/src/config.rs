@@ -20,6 +20,8 @@ pub struct AppConfig {
     pub toolbar_x: Option<i32>,
     #[serde(default)]
     pub toolbar_y: Option<i32>,
+    #[serde(default)]
+    pub toolbar_collapsed: bool,
 }
 
 impl Default for AppConfig {
@@ -33,6 +35,7 @@ impl Default for AppConfig {
             show_page_bounds: true,
             toolbar_x: None,
             toolbar_y: None,
+            toolbar_collapsed: false,
         }
     }
 }
