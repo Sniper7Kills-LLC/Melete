@@ -2,12 +2,37 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub placeholder_image_path: Option<PathBuf>,
     #[serde(default)]
     pub placeholder_text: Option<String>,
+    #[serde(default)]
+    pub window_width: Option<i32>,
+    #[serde(default)]
+    pub window_height: Option<i32>,
+    #[serde(default)]
+    pub recent_notebook_ids: Vec<uuid::Uuid>,
+    #[serde(default = "default_true")]
+    pub show_page_bounds: bool,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            placeholder_image_path: None,
+            placeholder_text: None,
+            window_width: None,
+            window_height: None,
+            recent_notebook_ids: Vec::new(),
+            show_page_bounds: true,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn config_path() -> Option<PathBuf> {

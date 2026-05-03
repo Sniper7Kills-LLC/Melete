@@ -7,4 +7,4 @@ pub mod background_renderer;
 pub use renderer::{paint, draw_lasso_overlay};
 pub use viewport_transform::ViewportTransform;
 pub use grid_renderer::GridSettings;
-pub use background_renderer::BackgroundConfig;
+pub use background_renderer::{BackgroundConfig, draw_page_bounds_outline};

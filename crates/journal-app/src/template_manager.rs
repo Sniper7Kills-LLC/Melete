@@ -130,44 +130,147 @@ fn run_pdf_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListB
             Some(p) => p,
             None => { tracing::warn!("pdf file has no local path"); return; }
         };
-        if let Err(e) = import_pdf(&src_path, state.clone()) {
+        if let Err(e) = import_pdf(&parent_for_cb, &src_path, state.clone(), list.clone()) {
             tracing::error!("pdf import: {:#}", e);
             show_error(&parent_for_cb, &format!("Failed to import PDF: {}", e));
-            return;
         }
-        refresh_list(&list, state.clone());
     });
 }
 
-fn import_pdf(src: &std::path::Path, state: SharedState) -> anyhow::Result<()> {
+fn pdf_page_count(path: &std::path::Path) -> u32 {
+    #[cfg(feature = "pdf")]
+    {
+        use poppler::Document;
+        if let Ok(abs) = path.canonicalize() {
+            let uri = format!("file://{}", abs.display());
+            if let Ok(doc) = Document::from_file(&uri, None) {
+                let n = doc.n_pages();
+                if n > 0 {
+                    return n as u32;
+                }
+            }
+        }
+    }
+    1
+}
+
+fn import_pdf(parent: &ApplicationWindow, src: &std::path::Path, state: SharedState, list: Rc<ListBox>) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
     let pdf_dir = pdfs_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
     std::fs::create_dir_all(&pdf_dir)?;
     let dst = pdf_dir.join(format!("{}.pdf", id));
     std::fs::copy(src, &dst)?;
 
+    let n_pages = pdf_page_count(&dst);
     let name = src.file_stem().and_then(|s| s.to_str()).unwrap_or("PDF").to_string();
+    let dst_str = dst.to_string_lossy().to_string();
+
+    if n_pages <= 1 {
+        finalize_pdf_template(id, name, dst_str, 0, state.clone());
+        refresh_list(&list, state);
+        return Ok(());
+    }
+
+    // Ask the user which page to use (1-based display, 0-based storage).
+    show_pdf_page_picker(parent, id, name, dst_str, n_pages, state, list);
+    Ok(())
+}
+
+fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: SharedState) {
     let template = PageTemplate {
         id: journal_core::TemplateId(id),
-        name,
-        description: format!("Imported from {}", src.display()),
-        background: BackgroundType::Pdf { path: dst.to_string_lossy().to_string(), page: 0 },
+        name: name.clone(),
+        description: format!("PDF page {}", page + 1),
+        background: BackgroundType::Pdf { path: dst.clone(), page },
         size_mm: (215.9, 279.4),
         tiling: TilingMode::None,
         default_viewport: None,
     };
 
-    let tdir = templates_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
-    std::fs::create_dir_all(&tdir)?;
+    let tdir = match templates_dir() {
+        Some(d) => d,
+        None => { tracing::error!("could not resolve data dir"); return; }
+    };
+    if let Err(e) = std::fs::create_dir_all(&tdir) {
+        tracing::error!("create templates dir: {}", e);
+        return;
+    }
     let toml_path = tdir.join(format!("{}.toml", id));
     let file = template_file_from_page_template(&template);
-    let toml_text = serialize_template_toml(&file)
-        .map_err(|e| anyhow::anyhow!("serialize template: {}", e))?;
-    std::fs::write(&toml_path, toml_text)?;
-
+    match serialize_template_toml(&file) {
+        Ok(text) => {
+            if let Err(e) = std::fs::write(&toml_path, text) {
+                tracing::error!("write template toml: {}", e);
+                return;
+            }
+        }
+        Err(e) => { tracing::error!("serialize template: {}", e); return; }
+    }
     let s = state.borrow();
     s.templates.borrow_mut().insert(template);
-    Ok(())
+}
+
+fn show_pdf_page_picker(parent: &ApplicationWindow, id: Uuid, name: String, dst: String, n_pages: u32, state: SharedState, list: Rc<ListBox>) {
+    use gtk4::{Adjustment, Align, SpinButton, Window};
+
+    let win = Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .title("Choose PDF page")
+        .default_width(280)
+        .build();
+
+    let body = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Vertical)
+        .spacing(12)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+
+    let lbl = Label::new(Some(&format!("This PDF has {} pages.\nWhich page to use as background?", n_pages)));
+    lbl.set_halign(Align::Start);
+    body.append(&lbl);
+
+    let adj = Adjustment::new(1.0, 1.0, n_pages as f64, 1.0, 10.0, 0.0);
+    let spin = SpinButton::new(Some(&adj), 1.0, 0);
+    spin.set_numeric(true);
+    body.append(&spin);
+
+    let btn_row = gtk4::Box::builder()
+        .orientation(gtk4::Orientation::Horizontal)
+        .spacing(8)
+        .halign(Align::End)
+        .build();
+
+    let cancel_btn = Button::with_label("Cancel");
+    let ok_btn = Button::with_label("OK");
+    ok_btn.add_css_class("suggested-action");
+    btn_row.append(&cancel_btn);
+    btn_row.append(&ok_btn);
+    body.append(&btn_row);
+
+    win.set_child(Some(&body));
+
+    {
+        let win = win.clone();
+        cancel_btn.connect_clicked(move |_| {
+            win.close();
+        });
+    }
+    {
+        let win = win.clone();
+        let spin = spin.clone();
+        ok_btn.connect_clicked(move |_| {
+            let page = (spin.value() as u32).saturating_sub(1);
+            finalize_pdf_template(id, name.clone(), dst.clone(), page, state.clone());
+            refresh_list(&list, state.clone());
+            win.close();
+        });
+    }
+
+    win.present();
 }
 
 fn refresh_list(list: &Rc<ListBox>, state: SharedState) {

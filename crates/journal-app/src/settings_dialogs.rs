@@ -367,12 +367,11 @@ pub fn open_app_settings(
         let state = state.clone();
         let path_state = path_state.clone();
         save.connect_clicked(move |_| {
-            let new_cfg = crate::config::AppConfig {
-                placeholder_image_path: path_state.borrow().clone(),
-                placeholder_text: {
-                    let t = text_entry.text().to_string();
-                    if t.trim().is_empty() { None } else { Some(t) }
-                },
+            let mut new_cfg = crate::config::load();
+            new_cfg.placeholder_image_path = path_state.borrow().clone();
+            new_cfg.placeholder_text = {
+                let t = text_entry.text().to_string();
+                if t.trim().is_empty() { None } else { Some(t) }
             };
             if let Err(e) = crate::config::save(&new_cfg) {
                 tracing::error!("save config: {}", e);

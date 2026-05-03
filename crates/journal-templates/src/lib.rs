@@ -188,7 +188,7 @@ type = "blank"
     }
 
     #[test]
-    fn canvas_bridge_pdf_falls_back_to_blank() {
+    fn canvas_bridge_pdf_maps_to_pdf_config() {
         use journal_canvas::BackgroundConfig;
         use journal_core::{PageTemplate, TemplateId, TilingMode};
         use uuid::Uuid;
@@ -196,11 +196,18 @@ type = "blank"
             id: TemplateId(Uuid::new_v4()),
             name: "P".into(),
             description: String::new(),
-            background: BackgroundType::Pdf { path: "/tmp/x.pdf".into(), page: 0 },
+            background: BackgroundType::Pdf { path: "/tmp/x.pdf".into(), page: 2 },
             size_mm: (215.9, 279.4),
             tiling: TilingMode::None,
             default_viewport: None,
         };
-        assert!(matches!(page_template_to_background_config(&t), BackgroundConfig::Blank));
+        match page_template_to_background_config(&t) {
+            BackgroundConfig::Pdf { path, page, size_canvas } => {
+                assert_eq!(path.to_string_lossy(), "/tmp/x.pdf");
+                assert_eq!(page, 2);
+                assert_eq!(size_canvas, (215.9, 279.4));
+            }
+            other => panic!("expected Pdf variant, got {:?}", other),
+        }
     }
 }

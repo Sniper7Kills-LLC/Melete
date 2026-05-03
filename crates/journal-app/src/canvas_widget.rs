@@ -1,6 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::DrawingArea;
-use journal_canvas::{draw_lasso_overlay, paint};
+use journal_canvas::{draw_lasso_overlay, draw_page_bounds_outline, paint};
 
 use crate::state::SharedState;
 
@@ -32,14 +32,23 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
             let selected_ids = s.selected_stroke_ids.clone();
             let lasso_points = s.lasso_points.clone();
 
+            let show_bounds = s.show_page_bounds;
+            let page_rect = s.page_rect;
+            let background = s.background.clone();
+            let transform = s.transform;
+
             if let Some(cs) = s.current_stroke.clone() {
                 let mut frame: Vec<journal_core::Stroke> =
                     Vec::with_capacity(s.strokes.len() + 1);
                 frame.extend_from_slice(&s.strokes);
                 frame.push(cs);
-                paint(ctx, &s.transform, &s.background, s.page_rect, &frame, &selected_ids, dark_mode);
+                paint(ctx, &s.transform, &s.background, page_rect, &frame, &selected_ids, dark_mode);
             } else {
-                paint(ctx, &s.transform, &s.background, s.page_rect, &s.strokes, &selected_ids, dark_mode);
+                paint(ctx, &s.transform, &s.background, page_rect, &s.strokes, &selected_ids, dark_mode);
+            }
+
+            if show_bounds {
+                draw_page_bounds_outline(ctx, &transform, &background, page_rect, dark_mode);
             }
 
             if !lasso_points.is_empty() {

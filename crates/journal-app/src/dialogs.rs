@@ -391,7 +391,7 @@ pub fn prompt_new_notebook_template(
     on_ok: Box<dyn Fn(TemplateId)>,
 ) {
     use chrono::Weekday;
-    use gtk4::{ScrolledWindow, ToggleButton};
+    use gtk4::{Expander, ScrolledWindow, ToggleButton};
     use journal_core::{DailySlot, NotebookTemplate, SectionTitleFormats};
 
     let page_templates: Vec<PageTemplate> = {
@@ -411,7 +411,7 @@ pub fn prompt_new_notebook_template(
         .modal(true)
         .title("New Notebook Template")
         .default_width(560)
-        .default_height(640)
+        .default_height(680)
         .build();
 
     let scroll = ScrolledWindow::builder().hexpand(true).vexpand(true).build();
@@ -460,30 +460,81 @@ pub fn prompt_new_notebook_template(
     let week_entry = Entry::builder().text("Week {week} {year}").build();
     body.append(&week_entry);
 
+    let pt_strings: Vec<String> = page_templates.iter().map(|t| t.name.clone()).collect();
+
+    // Helper that builds a collapsible list of single-template-picker rows.
+    // Returns (expander_root, list_of_dropdowns_vec).
+    type TemplateList = Rc<RefCell<Vec<(DropDown, GtkBox)>>>;
+    let make_template_list = |label: &str| -> (Expander, TemplateList) {
+        let list: TemplateList = Rc::new(RefCell::new(Vec::new()));
+        let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(4).build();
+        let rows_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(4).build();
+        let expander = Expander::builder().label(label).expanded(false).build();
+
+        let add_btn = Button::with_label("+ Add");
+        add_btn.set_halign(gtk4::Align::Start);
+        outer.append(&rows_box);
+        outer.append(&add_btn);
+
+        let rows_box_for_add = rows_box.clone();
+        let list_for_add = list.clone();
+        let pt_strings_c = pt_strings.clone();
+        add_btn.connect_clicked(move |_| {
+            let refs: Vec<&str> = pt_strings_c.iter().map(|s| s.as_str()).collect();
+            let model = StringList::new(&refs);
+            let dd = DropDown::builder().model(&model).selected(0).build();
+            let row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
+            row.append(&dd);
+            let del = Button::from_icon_name("edit-delete-symbolic");
+            row.append(&del);
+
+            let row_w = row.clone();
+            let rows_box_w = rows_box_for_add.clone();
+            let list_w = list_for_add.clone();
+            del.connect_clicked(move |_| {
+                rows_box_w.remove(&row_w);
+                list_w.borrow_mut().retain(|(_, r)| !r.eq(&row_w));
+            });
+
+            rows_box_for_add.append(&row);
+            list_for_add.borrow_mut().push((dd, row));
+        });
+
+        expander.set_child(Some(&outer));
+        (expander, list)
+    };
+
+    let (year_start_exp, year_start_list) = make_template_list("Year start templates");
+    let (before_quarter_exp, before_quarter_list) = make_template_list("Before each quarter");
+    let (before_month_exp, before_month_list) = make_template_list("Before each month");
+    let (before_week_exp, before_week_list) = make_template_list("Before each week");
+    body.append(&year_start_exp);
+    body.append(&before_quarter_exp);
+    body.append(&before_month_exp);
+    body.append(&before_week_exp);
+
     body.append(&Label::new(Some("Daily slots")));
     let slots_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(6).build();
     body.append(&slots_box);
 
+    let names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
     type SlotRowCtl = (Vec<ToggleButton>, DropDown, GtkBox);
     let slots: Rc<RefCell<Vec<SlotRowCtl>>> = Rc::new(RefCell::new(Vec::new()));
 
-    let names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-    let pt_strings: Vec<String> = page_templates.iter().map(|t| t.name.clone()).collect();
-    let pt_str_refs: Vec<&str> = pt_strings.iter().map(|s| s.as_str()).collect();
-
     let make_slot = {
-        let pt_str_refs_owned = pt_str_refs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let pt_strings_owned = pt_strings.clone();
         let slots_box = slots_box.clone();
         let slots = slots.clone();
         Rc::new(move |default_all: bool| {
             let row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
             let mut day_btns = Vec::with_capacity(7);
-            for (_i, n) in names.iter().enumerate() {
+            for n in names.iter() {
                 let b = ToggleButton::builder().label(*n).active(default_all).build();
                 row.append(&b);
                 day_btns.push(b);
             }
-            let refs: Vec<&str> = pt_str_refs_owned.iter().map(|s| s.as_str()).collect();
+            let refs: Vec<&str> = pt_strings_owned.iter().map(|s| s.as_str()).collect();
             let model = StringList::new(&refs);
             let dd = DropDown::builder().model(&model).selected(0).build();
             row.append(&dd);
@@ -512,7 +563,7 @@ pub fn prompt_new_notebook_template(
         add_slot_btn.connect_clicked(move |_| (make_slot)(false));
     }
 
-    let row = GtkBox::builder()
+    let btn_row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
         .halign(gtk4::Align::End)
@@ -520,9 +571,9 @@ pub fn prompt_new_notebook_template(
         .build();
     let cancel = Button::with_label("Cancel");
     let save = Button::with_label("Save");
-    row.append(&cancel);
-    row.append(&save);
-    body.append(&row);
+    btn_row.append(&cancel);
+    btn_row.append(&save);
+    body.append(&btn_row);
 
     {
         let win = win.clone();
@@ -554,14 +605,19 @@ pub fn prompt_new_notebook_template(
                     daily_slots.push(DailySlot { days, templates: vec![pt.id] });
                 }
             }
+            let collect_ids = |list: &TemplateList| -> Vec<TemplateId> {
+                list.borrow().iter().filter_map(|(dd, _)| {
+                    page_templates.get(dd.selected() as usize).map(|t| t.id)
+                }).collect()
+            };
             let nt = NotebookTemplate {
                 id: TemplateId(Uuid::new_v4()),
                 name: name_entry.text().to_string(),
                 description: desc_entry.text().to_string(),
-                year_start: vec![],
-                before_quarter: vec![],
-                before_month: vec![],
-                before_week: vec![],
+                year_start: collect_ids(&year_start_list),
+                before_quarter: collect_ids(&before_quarter_list),
+                before_month: collect_ids(&before_month_list),
+                before_week: collect_ids(&before_week_list),
                 daily_slots,
                 grouping: match grouping_dropdown.selected() {
                     1 => PlannerGrouping::Week,

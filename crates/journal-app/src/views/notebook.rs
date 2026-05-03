@@ -608,8 +608,23 @@ fn attach_page_drop_target(
     target_index: u32,
 ) {
     let target = DropTarget::new(glib::types::Type::STRING, DragAction::MOVE);
+    {
+        let row_enter = row.clone();
+        target.connect_enter(move |_, _, _| {
+            row_enter.add_css_class("drag-target");
+            DragAction::MOVE
+        });
+    }
+    {
+        let row_leave = row.clone();
+        target.connect_leave(move |_| {
+            row_leave.remove_css_class("drag-target");
+        });
+    }
     let ctx = ctx.clone();
+    let row_drop = row.clone();
     target.connect_drop(move |_, value, _x, _y| {
+        row_drop.remove_css_class("drag-target");
         let payload = match value.get::<String>() {
             Ok(s) => s,
             Err(_) => return false,
@@ -667,8 +682,23 @@ fn attach_section_drop_target(
     target_parent_id: Option<SectionId>,
 ) {
     let target = DropTarget::new(glib::types::Type::STRING, DragAction::MOVE);
+    {
+        let wrapper_enter = wrapper.clone();
+        target.connect_enter(move |_, _, _| {
+            wrapper_enter.add_css_class("drag-target");
+            DragAction::MOVE
+        });
+    }
+    {
+        let wrapper_leave = wrapper.clone();
+        target.connect_leave(move |_| {
+            wrapper_leave.remove_css_class("drag-target");
+        });
+    }
     let ctx = ctx.clone();
+    let wrapper_drop = wrapper.clone();
     target.connect_drop(move |_, value, _x, _y| {
+        wrapper_drop.remove_css_class("drag-target");
         let payload = match value.get::<String>() {
             Ok(s) => s,
             Err(_) => return false,

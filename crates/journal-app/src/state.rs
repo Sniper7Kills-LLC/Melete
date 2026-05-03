@@ -52,6 +52,7 @@ pub struct CanvasState {
 
     pub placeholder_image: Option<cairo::ImageSurface>,
     pub placeholder_text: String,
+    pub show_page_bounds: bool,
 }
 
 pub type SharedState = Rc<RefCell<CanvasState>>;
@@ -119,6 +120,7 @@ pub fn new_shared_state(
         saved_pen_width: 2.0,
         placeholder_image: None,
         placeholder_text: "Select a page to start drawing".into(),
+        show_page_bounds: true,
     }))
 }
 
@@ -131,6 +133,7 @@ pub fn reload_placeholder(state: &SharedState) {
         .filter(|t| !t.trim().is_empty())
         .unwrap_or_else(|| "Select a page to start drawing".into());
     s.placeholder_image = cfg.placeholder_image_path.and_then(load_image_surface);
+    s.show_page_bounds = cfg.show_page_bounds;
 }
 
 fn load_image_surface(path: std::path::PathBuf) -> Option<cairo::ImageSurface> {

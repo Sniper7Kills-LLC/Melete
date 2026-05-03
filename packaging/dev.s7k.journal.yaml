@@ -1,0 +1,25 @@
+app-id: dev.s7k.journal
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: journal-app
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --filesystem=xdg-data/journal:create
+  - --filesystem=xdg-config/journal:create
+
+modules:
+  - name: journal-app
+    buildsystem: simple
+    build-commands:
+      - cargo build --release -p journal-app
+      - install -Dm755 target/release/journal-app /app/bin/journal-app
+      - install -Dm644 resources/dev.s7k.journal.desktop /app/share/applications/dev.s7k.journal.desktop
+      - install -Dm644 resources/icons/dev.s7k.journal.svg /app/share/icons/hicolor/scalable/apps/dev.s7k.journal.svg
+    sources:
+      - type: dir
+        path: ..

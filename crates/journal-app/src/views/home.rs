@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, Label, Orientation, ScrolledWindow,
+    ApplicationWindow, Box as GtkBox, Button, Label, Orientation, ScrolledWindow, Separator,
 };
 use journal_core::{Notebook, NotebookId, NotebookKind};
 use journal_storage::{notebook_store, Db};
@@ -174,6 +174,17 @@ pub fn build_home(
     root
 }
 
+fn notebook_button(nb: &Notebook, on_open: Rc<dyn Fn(NotebookId)>) -> Button {
+    let btn = Button::builder()
+        .label(&nb.name)
+        .hexpand(true)
+        .halign(gtk4::Align::Fill)
+        .build();
+    let id = nb.id;
+    btn.connect_clicked(move |_| on_open(id));
+    btn
+}
+
 fn refresh_list(
     list_box: &Rc<GtkBox>,
     db: Rc<RefCell<Db>>,
@@ -199,15 +210,40 @@ fn refresh_list(
         return;
     }
 
-    for nb in notebooks {
-        let btn = Button::builder()
-            .label(&nb.name)
-            .hexpand(true)
-            .halign(gtk4::Align::Fill)
-            .build();
-        let id = nb.id;
-        let on_open = on_open.clone();
-        btn.connect_clicked(move |_| on_open(id));
-        list_box.append(&btn);
+    let recent_ids = crate::config::load().recent_notebook_ids;
+    if !recent_ids.is_empty() {
+        let recent_notebooks: Vec<&Notebook> = recent_ids
+            .iter()
+            .filter_map(|uid| notebooks.iter().find(|nb| nb.id.0 == *uid))
+            .collect();
+
+        if !recent_notebooks.is_empty() {
+            let recent_label = Label::builder()
+                .label("Recent")
+                .halign(gtk4::Align::Start)
+                .build();
+            recent_label.add_css_class("heading");
+            list_box.append(&recent_label);
+
+            for nb in &recent_notebooks {
+                list_box.append(&notebook_button(nb, on_open.clone()));
+            }
+
+            let sep = Separator::new(Orientation::Horizontal);
+            sep.set_margin_top(8);
+            sep.set_margin_bottom(8);
+            list_box.append(&sep);
+
+            let all_label = Label::builder()
+                .label("All Notebooks")
+                .halign(gtk4::Align::Start)
+                .build();
+            all_label.add_css_class("heading");
+            list_box.append(&all_label);
+        }
+    }
+
+    for nb in &notebooks {
+        list_box.append(&notebook_button(nb, on_open.clone()));
     }
 }

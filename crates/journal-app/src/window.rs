@@ -221,6 +221,16 @@ pub fn show_home(win: &SharedWindow) {
 }
 
 pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
+    {
+        let mut cfg = crate::config::load();
+        cfg.recent_notebook_ids.retain(|id| *id != notebook_id.0);
+        cfg.recent_notebook_ids.insert(0, notebook_id.0);
+        cfg.recent_notebook_ids.truncate(5);
+        if let Err(e) = crate::config::save(&cfg) {
+            tracing::warn!("failed to save recent notebooks: {}", e);
+        }
+    }
+
     let overlay = win.borrow().canvas_overlay.clone();
     if overlay.parent().is_some() {
         overlay.unparent();

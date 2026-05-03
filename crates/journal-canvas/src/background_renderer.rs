@@ -24,6 +24,45 @@ fn pattern_color() -> Color {
     Color { r: 90, g: 90, b: 100, a: 200 }
 }
 
+/// Draw a 1-px screen-space outline around `page_rect` when the visible canvas
+/// extends beyond the page on any side and the config is not a tiling grid.
+/// Must be called while the canvas transform is active (after `paint` sets it up).
+pub fn draw_page_bounds_outline(
+    ctx: &cairo::Context,
+    transform: &ViewportTransform,
+    config: &BackgroundConfig,
+    page_rect: Rect,
+    dark_mode: bool,
+) {
+    if matches!(config, BackgroundConfig::Grid(_)) {
+        return;
+    }
+    let visible = transform.visible_canvas_rect();
+    let page_right = page_rect.x + page_rect.width;
+    let page_bottom = page_rect.y + page_rect.height;
+    let vis_right = visible.x + visible.width;
+    let vis_bottom = visible.y + visible.height;
+    let extends_beyond = visible.x < page_rect.x
+        || visible.y < page_rect.y
+        || vis_right > page_right
+        || vis_bottom > page_bottom;
+    if !extends_beyond {
+        return;
+    }
+    let zoom = transform.zoom().max(1e-6);
+    let line_w = 1.0 / zoom;
+    ctx.save().ok();
+    if dark_mode {
+        ctx.set_source_rgba(0.5, 0.5, 0.5, 0.4);
+    } else {
+        ctx.set_source_rgba(0.6, 0.6, 0.6, 0.5);
+    }
+    ctx.set_line_width(line_w);
+    ctx.rectangle(page_rect.x, page_rect.y, page_rect.width, page_rect.height);
+    let _ = ctx.stroke();
+    ctx.restore().ok();
+}
+
 pub fn draw_background(
     ctx: &cairo::Context,
     transform: &ViewportTransform,

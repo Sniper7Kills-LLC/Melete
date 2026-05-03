@@ -19,7 +19,8 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use gtk4::prelude::*;
-use gtk4::{Application, ApplicationWindow};
+use gtk4::glib;
+use gtk4::{Application, ApplicationWindow, CssProvider};
 use journal_storage::Db;
 use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use tracing_subscriber::EnvFilter;
@@ -39,6 +40,20 @@ fn main() -> Result<()> {
     });
     let exit_code = app.run();
     std::process::exit(exit_code.value());
+}
+
+fn load_css() {
+    let provider = CssProvider::new();
+    provider.load_from_string(
+        ".drag-target { background-color: alpha(@accent_bg_color, 0.2); }"
+    );
+    if let Some(display) = gtk4::gdk::Display::default() {
+        gtk4::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+    }
 }
 
 fn data_dir() -> Result<PathBuf> {
@@ -71,6 +86,21 @@ fn load_templates() -> TemplateRegistry {
 }
 
 fn build_ui(app: &Application) -> Result<()> {
+    load_css();
+
+    gtk4::Window::set_default_icon_name(APP_ID);
+    if let Some(display) = gtk4::gdk::Display::default() {
+        let icon_theme = gtk4::IconTheme::for_display(&display);
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(repo_root) = exe
+                .ancestors()
+                .find(|p| p.join("resources/icons").exists())
+            {
+                icon_theme.add_search_path(repo_root.join("resources/icons"));
+            }
+        }
+    }
+
     let db = Rc::new(RefCell::new(open_db()?));
     let templates = Rc::new(RefCell::new(load_templates()));
     let mut nb_reg = NotebookTemplateRegistry::with_builtins();
@@ -86,12 +116,31 @@ fn build_ui(app: &Application) -> Result<()> {
     let state = state::new_shared_state(db, templates, notebook_templates);
     state::reload_placeholder(&state);
 
+    let startup_cfg = config::load();
+    let default_w = startup_cfg.window_width.unwrap_or(1280);
+    let default_h = startup_cfg.window_height.unwrap_or(800);
+
     let window = ApplicationWindow::builder()
         .application(app)
         .title("Journal")
-        .default_width(1280)
-        .default_height(800)
+        .default_width(default_w)
+        .default_height(default_h)
         .build();
+
+    {
+        let window_for_close = window.clone();
+        window.connect_close_request(move |_| {
+            let w = window_for_close.width();
+            let h = window_for_close.height();
+            let mut cfg = config::load();
+            cfg.window_width = Some(w);
+            cfg.window_height = Some(h);
+            if let Err(e) = config::save(&cfg) {
+                tracing::warn!("failed to save window size: {}", e);
+            }
+            glib::Propagation::Proceed
+        });
+    }
 
     let app_win = window::build(&window, state.clone());
     window.set_child(Some(&app_win.borrow().root));

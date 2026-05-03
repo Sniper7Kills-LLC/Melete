@@ -22,3 +22,8 @@ uuid = { workspace = true }
 dirs = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }
+poppler-rs = { version = "0.24", features = ["v22_7"], optional = true }
+
+[features]
+default = ["pdf"]
+pdf = ["dep:poppler-rs", "journal-canvas/pdf"]
