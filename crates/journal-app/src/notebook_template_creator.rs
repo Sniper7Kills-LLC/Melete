@@ -23,6 +23,103 @@ use uuid::Uuid;
 
 use crate::state::SharedState;
 
+// ─── Bottom layout preview ───────────────────────────────────────────────────
+
+thread_local! {
+    /// The active editor's preview body Box. Set on `build_editor_view`,
+    /// cleared on Back / Save. Slot-rebuild functions call
+    /// `refresh_layout_preview` after every chip add/remove so users can see
+    /// what the planner will actually generate.
+    static LAYOUT_PREVIEW: RefCell<Option<GtkBox>> = const { RefCell::new(None) };
+}
+
+/// Repopulate the preview body with the current state's slot contents,
+/// rendered as a list of "Year start: Cover · Goals", "Daily (Mon Tue Wed):
+/// Daily · Reflection", etc. No-op if the editor isn't currently mounted.
+fn refresh_layout_preview(
+    es: &Rc<RefCell<EditorState>>,
+    page_templates: &Rc<Vec<PageTemplate>>,
+) {
+    LAYOUT_PREVIEW.with(|cell| {
+        let body_opt = cell.borrow().clone();
+        let Some(body) = body_opt else { return };
+        while let Some(c) = body.first_child() {
+            body.remove(&c);
+        }
+        let s = es.borrow();
+        let pts = page_templates.as_ref();
+        let name_for = |tid: &TemplateId| -> String {
+            pts.iter()
+                .find(|t| t.id == *tid)
+                .map(|t| t.name.clone())
+                .unwrap_or_else(|| "(missing template)".into())
+        };
+        let format_line = |label: &str, ids: &[TemplateId]| -> String {
+            if ids.is_empty() {
+                format!("{}: —", label)
+            } else {
+                let names: Vec<String> = ids.iter().map(name_for).collect();
+                format!("{}: {}", label, names.join(" · "))
+            }
+        };
+
+        for (label, ids) in [
+            ("Year start", &s.template.year_start[..]),
+            ("Before each quarter", &s.template.before_quarter[..]),
+            ("Before each month", &s.template.before_month[..]),
+            ("Before each week", &s.template.before_week[..]),
+        ] {
+            let row = Label::builder()
+                .label(format_line(label, ids))
+                .halign(Align::Start)
+                .wrap(true)
+                .build();
+            row.add_css_class("nbtc-preview-row");
+            body.append(&row);
+        }
+
+        if s.template.daily_slots.is_empty() {
+            let row = Label::builder()
+                .label("Daily slots: — (drag templates into the daily area to add)")
+                .halign(Align::Start)
+                .wrap(true)
+                .build();
+            row.add_css_class("nbtc-preview-row");
+            body.append(&row);
+        } else {
+            for (i, slot) in s.template.daily_slots.iter().enumerate() {
+                let day_str = if slot.days.is_empty() {
+                    "no days".to_string()
+                } else {
+                    slot.days
+                        .iter()
+                        .map(|d| match d {
+                            chrono::Weekday::Mon => "Mon",
+                            chrono::Weekday::Tue => "Tue",
+                            chrono::Weekday::Wed => "Wed",
+                            chrono::Weekday::Thu => "Thu",
+                            chrono::Weekday::Fri => "Fri",
+                            chrono::Weekday::Sat => "Sat",
+                            chrono::Weekday::Sun => "Sun",
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                };
+                let row = Label::builder()
+                    .label(format_line(
+                        &format!("Daily slot {} ({})", i + 1, day_str),
+                        &slot.templates,
+                    ))
+                    .halign(Align::Start)
+                    .wrap(true)
+                    .build();
+                row.add_css_class("nbtc-preview-row");
+                body.append(&row);
+            }
+        }
+    });
+}
+
 // ─── key string helpers ──────────────────────────────────────────────────────
 
 fn key_year_start(n: usize) -> String {
@@ -276,10 +373,42 @@ pub fn build_editor_view(
 
     root.append(&outer_paned);
 
+    // ── Bottom layout preview ────────────────────────────────────────────────
+    // Shows what the planner will actually generate for a typical month, so
+    // users can sanity-check their drag-and-drop work without saving.
+    let preview = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_top(4)
+        .margin_start(12)
+        .margin_end(12)
+        .margin_bottom(8)
+        .build();
+    preview.add_css_class("nbtc-preview");
+    let preview_header = Label::builder()
+        .label("What this generates")
+        .halign(Align::Start)
+        .build();
+    preview_header.add_css_class("title-4");
+    preview.append(&preview_header);
+    let preview_body = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(2)
+        .build();
+    preview.append(&preview_body);
+    root.append(&Separator::new(Orientation::Horizontal));
+    root.append(&preview);
+
+    LAYOUT_PREVIEW.with(|cell| *cell.borrow_mut() = Some(preview_body.clone()));
+    refresh_layout_preview(&es, &page_templates);
+
     // ── Back ─────────────────────────────────────────────────────────────────
     {
         let on_done = on_done.clone();
-        back_btn.connect_clicked(move |_| (on_done)());
+        back_btn.connect_clicked(move |_| {
+            LAYOUT_PREVIEW.with(|cell| *cell.borrow_mut() = None);
+            (on_done)();
+        });
     }
 
     // ── Save ─────────────────────────────────────────────────────────────────
@@ -296,7 +425,10 @@ pub fn build_editor_view(
             let on_done = on_done.clone();
             gtk4::glib::timeout_add_local_once(
                 std::time::Duration::from_millis(450),
-                move || (on_done)(),
+                move || {
+                    LAYOUT_PREVIEW.with(|cell| *cell.borrow_mut() = None);
+                    (on_done)();
+                },
             );
         });
     }
@@ -675,55 +807,33 @@ fn build_flat_slot_section(
     header.add_css_class("title-4");
     section.append(&header);
 
-    // Flow box of chips.
-    let flow = gtk4::FlowBox::builder()
+    // Drop zone — wraps the chip list in a min-height GtkBox so drops land
+    // even when the slot is empty. The DropTarget lives on the zone, not
+    // the inner chip container, because GTK4 FlowBox / horizontal Box
+    // collapses to 0 height when empty and never receives the drop.
+    let drop_zone = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .selection_mode(gtk4::SelectionMode::None)
-        .column_spacing(4)
-        .row_spacing(4)
-        .min_children_per_line(1)
-        .max_children_per_line(8)
+        .spacing(6)
+        .height_request(48)
+        .hexpand(true)
+        .build();
+    drop_zone.add_css_class("nbtc-drop-zone");
+    section.append(&drop_zone);
+    let drop_zone_rc = Rc::new(drop_zone.clone());
+
+    // Inner chip container (horizontal, wraps via the GtkBox flow).
+    let flow = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .hexpand(true)
         .build();
     let flow_rc = Rc::new(flow.clone());
-    section.append(&flow);
+    drop_zone.append(&flow);
 
     // Populate from existing template data.
-    {
-        let s = es.borrow();
-        let ids = match slot {
-            FlatSlot::YearStart => &s.template.year_start,
-            FlatSlot::BeforeQuarter => &s.template.before_quarter,
-            FlatSlot::BeforeMonth => &s.template.before_month,
-            FlatSlot::BeforeWeek => &s.template.before_week,
-        };
-        for (n, tid) in ids.iter().enumerate() {
-            if let Some(pt) = page_templates.iter().find(|t| t.id == *tid) {
-                let chip_key = slot.make_key(n);
-                let chip = build_slot_chip(
-                    &pt.name,
-                    &chip_key,
-                    es,
-                    options_panel,
-                    {
-                        let es2 = es.clone();
-                        let flow2 = flow_rc.clone();
-                        let page_templates2 = page_templates.clone();
-                        let opts2 = options_panel.clone();
-                        let n_captured = n;
-                        Box::new(move || {
-                            es2.borrow_mut().remove_from_flat_slot(slot, n_captured);
-                            rebuild_flat_slot_flow(
-                                &flow2, slot, &es2, &page_templates2, &opts2,
-                            );
-                        })
-                    },
-                );
-                flow.append(&chip);
-            }
-        }
-    }
+    rebuild_flat_slot_flow(&flow_rc, slot, es, page_templates, options_panel);
 
-    // Drop target
+    // Drop target on the zone — accepts even when the chip Box is empty.
     let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::COPY);
     {
         let es2 = es.clone();
@@ -751,26 +861,28 @@ fn build_flat_slot_section(
         });
     }
     {
-        let flow2 = flow_rc.clone();
+        let zone2 = drop_zone_rc.clone();
         drop.connect_enter(move |_, _, _| {
-            flow2.add_css_class("drag-target");
+            zone2.add_css_class("drag-target");
             DragAction::COPY
         });
     }
     {
-        let flow2 = flow_rc.clone();
+        let zone2 = drop_zone_rc.clone();
         drop.connect_leave(move |_| {
-            flow2.remove_css_class("drag-target");
+            zone2.remove_css_class("drag-target");
         });
     }
-    flow.add_controller(drop);
+    drop_zone.add_controller(drop);
 
     section
 }
 
-/// Rebuild the contents of a flat-slot FlowBox from the current `EditorState`.
+/// Rebuild the contents of a flat-slot chip container from the current
+/// `EditorState`. Renders an empty-state placeholder when the slot is empty
+/// so the drop zone reads as a target.
 fn rebuild_flat_slot_flow(
-    flow: &Rc<gtk4::FlowBox>,
+    flow: &Rc<GtkBox>,
     slot: FlatSlot,
     es: &Rc<RefCell<EditorState>>,
     page_templates: &Rc<Vec<PageTemplate>>,
@@ -788,6 +900,17 @@ fn rebuild_flat_slot_flow(
             FlatSlot::BeforeWeek => s.template.before_week.clone(),
         }
     };
+    if ids.is_empty() {
+        let placeholder = Label::builder()
+            .label("Drag page templates here")
+            .halign(Align::Start)
+            .valign(Align::Center)
+            .build();
+        placeholder.add_css_class("nbtc-empty-hint");
+        flow.append(&placeholder);
+        crate::notebook_template_creator::refresh_layout_preview(es, page_templates);
+        return;
+    }
     for (n, tid) in ids.iter().enumerate() {
         if let Some(pt) = page_templates.iter().find(|t| t.id == *tid) {
             let chip_key = slot.make_key(n);
@@ -811,6 +934,7 @@ fn rebuild_flat_slot_flow(
             flow.append(&chip);
         }
     }
+    crate::notebook_template_creator::refresh_layout_preview(es, page_templates);
 }
 
 // ─── Daily slot widget ────────────────────────────────────────────────────────
@@ -900,48 +1024,26 @@ fn build_daily_slot_widget(
     outer.append(&day_row);
 
     // Template chip drop zone
-    let flow = gtk4::FlowBox::builder()
+    // Drop zone wraps the chip Box so empty slots have a visible target.
+    let drop_zone = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .selection_mode(gtk4::SelectionMode::None)
-        .column_spacing(4)
-        .row_spacing(4)
-        .min_children_per_line(1)
-        .max_children_per_line(8)
+        .spacing(6)
+        .height_request(48)
+        .hexpand(true)
+        .build();
+    drop_zone.add_css_class("nbtc-drop-zone");
+    let drop_zone_rc = Rc::new(drop_zone.clone());
+
+    let flow = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .hexpand(true)
         .build();
     let flow_rc = Rc::new(flow.clone());
+    drop_zone.append(&flow);
 
-    // Populate existing templates for this slot.
-    {
-        let s = es.borrow();
-        if let Some(slot_data) = s.template.daily_slots.get(slot_idx) {
-            for (n, tid) in slot_data.templates.iter().enumerate() {
-                if let Some(pt) = page_templates.iter().find(|t| t.id == *tid) {
-                    let chip_key = key_daily(slot_idx, n);
-                    let chip = build_slot_chip(
-                        &pt.name,
-                        &chip_key,
-                        es,
-                        options_panel,
-                        {
-                            let es2 = es.clone();
-                            let flow2 = flow_rc.clone();
-                            let pts2 = page_templates.clone();
-                            let opts2 = options_panel.clone();
-                            Box::new(move || {
-                                es2.borrow_mut().remove_from_daily_slot(slot_idx, n);
-                                rebuild_daily_slot_flow(
-                                    &flow2, slot_idx, &es2, &pts2, &opts2,
-                                );
-                            })
-                        },
-                    );
-                    flow.append(&chip);
-                }
-            }
-        }
-    }
+    rebuild_daily_slot_flow(&flow_rc, slot_idx, es, page_templates, options_panel);
 
-    // Drop target for daily slot
     let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::COPY);
     {
         let es2 = es.clone();
@@ -971,27 +1073,29 @@ fn build_daily_slot_widget(
         });
     }
     {
-        let flow2 = flow_rc.clone();
+        let zone2 = drop_zone_rc.clone();
         drop.connect_enter(move |_, _, _| {
-            flow2.add_css_class("drag-target");
+            zone2.add_css_class("drag-target");
             DragAction::COPY
         });
     }
     {
-        let flow2 = flow_rc.clone();
+        let zone2 = drop_zone_rc.clone();
         drop.connect_leave(move |_| {
-            flow2.remove_css_class("drag-target");
+            zone2.remove_css_class("drag-target");
         });
     }
-    flow.add_controller(drop);
+    drop_zone.add_controller(drop);
 
-    outer.append(&flow);
+    outer.append(&drop_zone);
     outer
 }
 
-/// Rebuild the FlowBox for a specific daily slot.
+/// Rebuild the chip container for a specific daily slot. Renders an empty
+/// placeholder when the slot has no templates so the drop zone reads as a
+/// target.
 fn rebuild_daily_slot_flow(
-    flow: &Rc<gtk4::FlowBox>,
+    flow: &Rc<GtkBox>,
     slot_idx: usize,
     es: &Rc<RefCell<EditorState>>,
     page_templates: &Rc<Vec<PageTemplate>>,
@@ -1007,6 +1111,17 @@ fn rebuild_daily_slot_flow(
             .map(|ds| ds.templates.clone())
             .unwrap_or_default()
     };
+    if ids.is_empty() {
+        let placeholder = Label::builder()
+            .label("Drag page templates here")
+            .halign(Align::Start)
+            .valign(Align::Center)
+            .build();
+        placeholder.add_css_class("nbtc-empty-hint");
+        flow.append(&placeholder);
+        crate::notebook_template_creator::refresh_layout_preview(es, page_templates);
+        return;
+    }
     for (n, tid) in ids.iter().enumerate() {
         if let Some(pt) = page_templates.iter().find(|t| t.id == *tid) {
             let chip_key = key_daily(slot_idx, n);
@@ -1030,6 +1145,7 @@ fn rebuild_daily_slot_flow(
             flow.append(&chip);
         }
     }
+    crate::notebook_template_creator::refresh_layout_preview(es, page_templates);
 }
 
 // ─── Slot chip (chip placed in a slot) ───────────────────────────────────────

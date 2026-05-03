@@ -250,6 +250,31 @@ const APP_CSS: &str = r#"
     opacity: 1.0;
     background-color: alpha(@accent_color, 0.20);
 }
+
+/* ── Notebook-template editor: drop zones, hints, preview ───────────── */
+.nbtc-drop-zone {
+    border: 1.5px dashed alpha(@accent_color, 0.45);
+    border-radius: 8px;
+    padding: 6px 8px;
+    transition: background-color 120ms ease, border-color 120ms ease;
+}
+.nbtc-drop-zone:hover {
+    border-color: alpha(@accent_color, 0.70);
+}
+.nbtc-empty-hint {
+    opacity: 0.55;
+    font-style: italic;
+}
+.nbtc-preview {
+    background-color: alpha(@accent_color, 0.06);
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+.nbtc-preview-row {
+    font-family: "Source Code Pro", monospace;
+    font-size: 0.88em;
+    opacity: 0.85;
+}
 "#;
 
 fn load_css() {
