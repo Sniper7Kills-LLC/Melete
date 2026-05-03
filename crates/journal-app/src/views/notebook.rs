@@ -169,6 +169,44 @@ pub fn build_notebook_view(
     }
     root.append(&paned);
 
+    // Auto-collapse the sidebar when the window is in portrait orientation
+    // (height > width). In portrait, drawing space is at a premium and the
+    // sidebar takes a disproportionate slice; switch back to landscape to
+    // reveal it again. User override: drag the Paned divider in either
+    // direction; the auto-collapse only fires when orientation crosses
+    // between portrait and landscape, so a manual position is preserved
+    // until the next rotation.
+    {
+        let paned_for_tick = paned.clone();
+        let last_orientation: Rc<std::cell::Cell<Option<bool>>> =
+            Rc::new(std::cell::Cell::new(None));
+        let last_landscape_position: Rc<std::cell::Cell<i32>> =
+            Rc::new(std::cell::Cell::new(280));
+        paned.add_tick_callback(move |p, _| {
+            let w = p.width();
+            let h = p.height();
+            if w == 0 || h == 0 {
+                return gtk4::glib::ControlFlow::Continue;
+            }
+            let portrait = h > w;
+            let was_portrait = last_orientation.get();
+            if was_portrait != Some(portrait) {
+                if portrait {
+                    let pos = paned_for_tick.position();
+                    if pos > 0 {
+                        last_landscape_position.set(pos);
+                    }
+                    paned_for_tick.set_position(0);
+                } else {
+                    let pos = last_landscape_position.get().max(240);
+                    paned_for_tick.set_position(pos);
+                }
+                last_orientation.set(Some(portrait));
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
+
     NotebookView { root }
 }
 

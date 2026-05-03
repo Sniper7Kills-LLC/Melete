@@ -29,10 +29,12 @@ fn rect_path(ctx: &cairo::Context, r: &WidgetRect) {
     ctx.rectangle(r.x, r.y, r.width, r.height);
 }
 
-fn apply_style_stroke(ctx: &cairo::Context, style: &WidgetStyle, transform: &ViewportTransform) {
-    let zoom = transform.zoom().max(1e-6);
+fn apply_style_stroke(ctx: &cairo::Context, style: &WidgetStyle, _transform: &ViewportTransform) {
+    // Render in canvas space (mm). Lines + text grow with the page when the
+    // user zooms in — that's a deliberate choice so writers can draw inside
+    // letterforms, fill-in priority-list cells, etc.
     set_color(ctx, style.stroke_color);
-    ctx.set_line_width(style.stroke_width_mm / zoom.max(1.0));
+    ctx.set_line_width(style.stroke_width_mm);
 }
 
 fn apply_fill_then_stroke(
@@ -108,18 +110,16 @@ fn draw_widget(
             apply_fill_then_stroke(ctx, style, transform);
         }
         WidgetKind::Line { thickness_mm } => {
-            let zoom = transform.zoom().max(1e-6);
             set_color(ctx, style.stroke_color);
-            ctx.set_line_width(thickness_mm / zoom.max(1.0));
+            ctx.set_line_width(*thickness_mm);
             ctx.move_to(r.x, r.y + r.height * 0.5);
             ctx.line_to(r.x + r.width, r.y + r.height * 0.5);
             let _ = ctx.stroke();
         }
         WidgetKind::TextBlock { text, font_size_mm } => {
-            let zoom = transform.zoom().max(1e-6);
             set_color(ctx, style.stroke_color);
-            ctx.set_font_size(font_size_mm / zoom.max(1.0));
-            ctx.move_to(r.x, r.y + font_size_mm / zoom.max(1.0));
+            ctx.set_font_size(*font_size_mm);
+            ctx.move_to(r.x, r.y + *font_size_mm);
             let date = resolve_date(render_ctx);
             let expanded = render_title(text, &TitleContext::new(date));
             let _ = ctx.show_text(&expanded);
@@ -134,7 +134,7 @@ fn draw_widget(
             draw_dots_region(ctx, transform, r, style, *spacing_mm);
         }
         WidgetKind::CalendarMonth => {
-            draw_calendar_stub(ctx, transform, r, style);
+            draw_calendar_month(ctx, transform, r, style, resolve_date(render_ctx));
         }
         WidgetKind::Timeline { start_hour, end_hour, slot_minutes } => {
             draw_timeline_stub(ctx, transform, r, style, *start_hour, *end_hour, *slot_minutes);
@@ -167,9 +167,9 @@ fn draw_grid_region(
     if spacing_mm <= 0.0 {
         return;
     }
-    let zoom = transform.zoom().max(1e-6);
+    let _ = transform;
     set_color(ctx, style.stroke_color);
-    ctx.set_line_width(style.stroke_width_mm / zoom.max(1.0));
+    ctx.set_line_width(style.stroke_width_mm);
 
     let mut x = r.x;
     while x <= r.x + r.width {
@@ -196,9 +196,9 @@ fn draw_lines_region(
     if spacing_mm <= 0.0 {
         return;
     }
-    let zoom = transform.zoom().max(1e-6);
+    let _ = transform;
     set_color(ctx, style.stroke_color);
-    ctx.set_line_width(style.stroke_width_mm / zoom.max(1.0));
+    ctx.set_line_width(style.stroke_width_mm);
 
     let mut y = r.y;
     while y <= r.y + r.height {
@@ -219,8 +219,8 @@ fn draw_dots_region(
     if spacing_mm <= 0.0 {
         return;
     }
-    let zoom = transform.zoom().max(1e-6);
-    let radius = (1.5 / zoom).clamp(0.05, spacing_mm * 0.25);
+    let _ = transform;
+    let radius = spacing_mm * 0.15;
     set_color(ctx, style.stroke_color);
 
     let mut y = r.y;
@@ -235,77 +235,148 @@ fn draw_dots_region(
     }
 }
 
-fn draw_calendar_stub(
+fn draw_calendar_month(
     ctx: &cairo::Context,
     transform: &ViewportTransform,
     r: &WidgetRect,
     style: &WidgetStyle,
+    target_date: chrono::NaiveDate,
 ) {
-    let zoom = transform.zoom().max(1e-6);
-    let lw = style.stroke_width_mm / zoom.max(1.0);
+    let _ = transform;
+    let lw = style.stroke_width_mm;
     set_color(ctx, style.stroke_color);
     ctx.set_line_width(lw);
 
-    // Outer border
     rect_path(ctx, r);
     let _ = ctx.stroke();
 
+    use chrono::Datelike;
+    let year = target_date.year();
+    let month = target_date.month();
+    let first_of_month = chrono::NaiveDate::from_ymd_opt(year, month, 1)
+        .unwrap_or(target_date);
+    let first_weekday = first_of_month.weekday().num_days_from_sunday() as usize; // 0=Sun
+    let days_in_month = days_in_month(year, month);
+
     let cols = 7usize;
-    let header_h = r.height * 0.12;
-    let body_h = r.height - header_h;
+    let title_h = r.height * 0.10; // "September 2026" band
+    let dow_h = r.height * 0.06;   // S M T W T F S
+    let body_h = r.height - title_h - dow_h;
     let rows = 6usize;
     let col_w = r.width / cols as f64;
     let row_h = body_h / rows as f64;
 
-    // Header row
-    ctx.move_to(r.x, r.y + header_h);
-    ctx.line_to(r.x + r.width, r.y + header_h);
+    // Title: "{Month} {year}"
+    let title = format!("{} {}", month_name(month), year);
+    let title_fs = (title_h * 0.65).min(col_w * 0.75);
+    ctx.set_font_size(title_fs);
+    if let Ok(ext) = ctx.text_extents(&title) {
+        let cx = r.x + r.width * 0.5 - ext.width() * 0.5;
+        let cy = r.y + title_h * 0.8;
+        ctx.move_to(cx, cy);
+        let _ = ctx.show_text(&title);
+    }
+
+    // Title underline
+    ctx.move_to(r.x, r.y + title_h);
+    ctx.line_to(r.x + r.width, r.y + title_h);
     let _ = ctx.stroke();
 
-    // Day-of-week header text
+    // Day-of-week header
     let day_names = ["S", "M", "T", "W", "T", "F", "S"];
-    let fs = (header_h * 0.55).min(col_w * 0.6);
-    ctx.set_font_size(fs);
+    let dow_fs = (dow_h * 0.7).min(col_w * 0.5);
+    ctx.set_font_size(dow_fs);
     for (i, name) in day_names.iter().enumerate() {
         let cx = r.x + col_w * i as f64 + col_w * 0.5;
-        let cy = r.y + header_h * 0.75;
+        let cy = r.y + title_h + dow_h * 0.75;
         if let Ok(ext) = ctx.text_extents(name) {
             ctx.move_to(cx - ext.width() * 0.5, cy);
             let _ = ctx.show_text(name);
         }
     }
+    // DOW underline
+    ctx.move_to(r.x, r.y + title_h + dow_h);
+    ctx.line_to(r.x + r.width, r.y + title_h + dow_h);
+    let _ = ctx.stroke();
 
-    // Vertical grid lines
+    let body_top = r.y + title_h + dow_h;
+
+    // Vertical grid lines (under DOW header)
     for c in 1..cols {
         let x = r.x + col_w * c as f64;
-        ctx.move_to(x, r.y + header_h);
+        ctx.move_to(x, body_top);
         ctx.line_to(x, r.y + r.height);
         let _ = ctx.stroke();
     }
     // Horizontal grid lines
     for rw in 1..rows {
-        let y = r.y + header_h + row_h * rw as f64;
+        let y = body_top + row_h * rw as f64;
         ctx.move_to(r.x, y);
         ctx.line_to(r.x + r.width, y);
         let _ = ctx.stroke();
     }
 
-    // Day numbers (1..28 sample)
-    let num_fs = (row_h * 0.45).min(col_w * 0.5);
+    // Day numbers — laid out starting at `first_weekday` column.
+    let num_fs = (row_h * 0.40).min(col_w * 0.45);
     ctx.set_font_size(num_fs);
-    let mut day = 1u32;
-    'outer: for row in 0..rows {
-        for col in 0..cols {
-            if day > 31 {
-                break 'outer;
-            }
-            let x = r.x + col_w * col as f64 + lw * 2.0;
-            let y = r.y + header_h + row_h * row as f64 + num_fs + lw;
-            let label = format!("{}", day);
-            ctx.move_to(x, y);
-            let _ = ctx.show_text(&label);
-            day += 1;
+    let today = chrono::Local::now().date_naive();
+    let today_in_view = today.year() == year && today.month() == month;
+    for day in 1..=days_in_month {
+        let cell = first_weekday + (day as usize - 1);
+        let row = cell / cols;
+        let col = cell % cols;
+        if row >= rows {
+            break;
         }
+        let x = r.x + col_w * col as f64 + lw * 2.0 + col_w * 0.06;
+        let y = body_top + row_h * row as f64 + num_fs + lw;
+        let label = format!("{}", day);
+        // Highlight today's cell with a small filled circle behind the number.
+        if today_in_view && today.day() == day {
+            ctx.save().ok();
+            let cx = r.x + col_w * (col as f64 + 0.5);
+            let cy = body_top + row_h * (row as f64 + 0.35);
+            let radius = num_fs * 0.85;
+            ctx.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
+            if let Some(fill) = style.fill_color {
+                set_color(ctx, fill);
+            } else {
+                ctx.set_source_rgba(
+                    style.stroke_color.r as f64 / 255.0,
+                    style.stroke_color.g as f64 / 255.0,
+                    style.stroke_color.b as f64 / 255.0,
+                    0.18,
+                );
+            }
+            let _ = ctx.fill();
+            ctx.restore().ok();
+            // Re-apply stroke colour for the number text.
+            set_color(ctx, style.stroke_color);
+            ctx.set_line_width(lw);
+        }
+        ctx.move_to(x, y);
+        let _ = ctx.show_text(&label);
+    }
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    let next = if month == 12 {
+        chrono::NaiveDate::from_ymd_opt(year + 1, 1, 1)
+    } else {
+        chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
+    };
+    match next {
+        Some(d) => d.pred_opt().map(|p| chrono::Datelike::day(&p)).unwrap_or(28),
+        None => 28,
+    }
+}
+
+fn month_name(m: u32) -> &'static str {
+    match m {
+        1 => "January", 2 => "February", 3 => "March", 4 => "April",
+        5 => "May", 6 => "June", 7 => "July", 8 => "August",
+        9 => "September", 10 => "October", 11 => "November", 12 => "December",
+        _ => "",
     }
 }
 
@@ -318,8 +389,8 @@ fn draw_timeline_stub(
     end_hour: u8,
     slot_minutes: u32,
 ) {
-    let zoom = transform.zoom().max(1e-6);
-    let lw = style.stroke_width_mm / zoom.max(1.0);
+    let _ = transform;
+    let lw = style.stroke_width_mm;
     set_color(ctx, style.stroke_color);
     ctx.set_line_width(lw);
 
@@ -361,8 +432,8 @@ fn draw_checklist(
     style: &WidgetStyle,
     items: &[String],
 ) {
-    let zoom = transform.zoom().max(1e-6);
-    let lw = style.stroke_width_mm / zoom.max(1.0);
+    let _ = transform;
+    let lw = style.stroke_width_mm;
     set_color(ctx, style.stroke_color);
     ctx.set_line_width(lw);
 
@@ -391,8 +462,8 @@ fn draw_big_three(
     r: &WidgetRect,
     style: &WidgetStyle,
 ) {
-    let zoom = transform.zoom().max(1e-6);
-    let lw = style.stroke_width_mm / zoom.max(1.0);
+    let _ = transform;
+    let lw = style.stroke_width_mm;
     set_color(ctx, style.stroke_color);
     ctx.set_line_width(lw);
 
@@ -432,8 +503,8 @@ fn draw_priority_list(
     style: &WidgetStyle,
     count: u32,
 ) {
-    let zoom = transform.zoom().max(1e-6);
-    let lw = style.stroke_width_mm / zoom.max(1.0);
+    let _ = transform;
+    let lw = style.stroke_width_mm;
     set_color(ctx, style.stroke_color);
     ctx.set_line_width(lw);
 
@@ -523,8 +594,8 @@ fn draw_daily_appointments(
     start_hour: u8,
     end_hour: u8,
 ) {
-    let zoom = transform.zoom().max(1e-6);
-    let lw = style.stroke_width_mm / zoom.max(1.0);
+    let _ = transform;
+    let lw = style.stroke_width_mm;
     set_color(ctx, style.stroke_color);
     ctx.set_line_width(lw);
 
@@ -581,8 +652,8 @@ fn draw_weekly_compass(
     r: &WidgetRect,
     style: &WidgetStyle,
 ) {
-    let zoom = transform.zoom().max(1e-6);
-    let lw = style.stroke_width_mm / zoom.max(1.0);
+    let _ = transform;
+    let lw = style.stroke_width_mm;
     set_color(ctx, style.stroke_color);
     ctx.set_line_width(lw);
 
