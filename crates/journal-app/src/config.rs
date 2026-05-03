@@ -18,6 +18,14 @@ fn default_pen_presets() -> Vec<PenPreset> {
     ]
 }
 
+fn default_color_slots() -> Vec<[u8; 4]> {
+    vec![
+        [20, 20, 20, 255],
+        [200, 50, 50, 255],
+        [30, 90, 200, 255],
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
@@ -40,6 +48,8 @@ pub struct AppConfig {
     pub toolbar_collapsed: bool,
     #[serde(default = "default_pen_presets")]
     pub pen_presets: Vec<PenPreset>,
+    #[serde(default = "default_color_slots")]
+    pub color_slots: Vec<[u8; 4]>,
 }
 
 impl Default for AppConfig {
@@ -55,6 +65,7 @@ impl Default for AppConfig {
             toolbar_y: None,
             toolbar_collapsed: false,
             pen_presets: default_pen_presets(),
+            color_slots: default_color_slots(),
         }
     }
 }

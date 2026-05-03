@@ -1,12 +1,11 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use gtk4::gdk::RGBA;
 use gtk4::graphene::Point as GraphenePoint;
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, Button, ColorDialog, ColorDialogButton, DrawingArea, GestureDrag, Image,
-    Orientation, PropagationPhase, Scale, Separator, ToggleButton,
+    Box as GtkBox, Button, DrawingArea, GestureDrag, Image, MenuButton, Orientation, Popover,
+    PositionType, PropagationPhase, Scale, Separator, ToggleButton,
 };
 
 use crate::state::{SharedState, Tool};
@@ -44,53 +43,85 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
 
     bar.append(&Separator::new(Orientation::Vertical));
 
-    // ── Tool buttons ──────────────────────────────────────────────────────
-    let pen_btn = ToggleButton::builder()
-        .icon_name("document-edit-symbolic")
-        .tooltip_text("Pen (B)")
-        .active(true)
+    // ── Drawing-tools dropdown ────────────────────────────────────────────
+    // Single MenuButton replaces the old pen/highlighter pair. The icon
+    // mirrors whichever drawing tool is active; clicking opens a popover
+    // with all five drawing tools. The eraser and selection tools stay as
+    // separate top-level buttons because they aren't drawing tools.
+    let initial_tool = state.borrow().tool;
+    let tools_btn = MenuButton::builder()
+        .icon_name(icon_for_tool(initial_tool))
+        .tooltip_text("Drawing tool")
         .build();
-
-    let highlighter_btn = ToggleButton::builder()
-        .icon_name("marker-symbolic")
-        .tooltip_text("Highlighter (H)")
-        .group(&pen_btn)
+    tools_btn.add_css_class("compact-tool");
+    let tools_popover = Popover::new();
+    tools_popover.set_position(PositionType::Bottom);
+    let tools_list = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(2)
+        .margin_top(4)
+        .margin_bottom(4)
+        .margin_start(4)
+        .margin_end(4)
         .build();
+    for (tool, label) in [
+        (Tool::Pen,         "Pen"),
+        (Tool::Pencil,      "Pencil"),
+        (Tool::Highlighter, "Highlighter"),
+        (Tool::Paintbrush,  "Paintbrush"),
+        (Tool::SprayCan,    "Spray can"),
+        (Tool::Calligraphy, "Calligraphy"),
+    ] {
+        let item = Button::builder()
+            .label(label)
+            .icon_name(icon_for_tool(tool))
+            .build();
+        item.add_css_class("flat");
+        item.set_halign(gtk4::Align::Fill);
+        // Force label visible alongside icon (GTK Button with both shows
+        // icon by default).
+        let row = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(8)
+            .build();
+        let icon = Image::from_icon_name(icon_for_tool(tool));
+        let lbl = gtk4::Label::new(Some(label));
+        lbl.set_halign(gtk4::Align::Start);
+        lbl.set_hexpand(true);
+        row.append(&icon);
+        row.append(&lbl);
+        item.set_child(Some(&row));
+        let state_c = state.clone();
+        let popover_c = tools_popover.clone();
+        let tools_btn_c = tools_btn.clone();
+        item.connect_clicked(move |_| {
+            crate::state::set_tool(&state_c, tool);
+            tools_btn_c.set_icon_name(icon_for_tool(tool));
+            popover_c.popdown();
+        });
+        tools_list.append(&item);
+    }
+    tools_popover.set_child(Some(&tools_list));
+    tools_btn.set_popover(Some(&tools_popover));
 
+    // ── Eraser / selection (separate from drawing-tool dropdown) ──────────
     let eraser_btn = ToggleButton::builder()
         .icon_name("edit-clear-symbolic")
         .tooltip_text("Eraser — stroke (Ctrl+E)")
-        .group(&pen_btn)
         .build();
 
     let partial_eraser_btn = ToggleButton::builder()
         .icon_name("edit-cut-symbolic")
         .tooltip_text("Partial Eraser — splits strokes")
-        .group(&pen_btn)
+        .group(&eraser_btn)
         .build();
 
     let selection_btn = ToggleButton::builder()
         .icon_name("edit-select-all-symbolic")
         .tooltip_text("Selection (V)")
-        .group(&pen_btn)
+        .group(&eraser_btn)
         .build();
 
-    {
-        let state = state.clone();
-        pen_btn.connect_toggled(move |btn| {
-            if btn.is_active() {
-                crate::state::set_tool_pen(&state);
-            }
-        });
-    }
-    {
-        let state = state.clone();
-        highlighter_btn.connect_toggled(move |btn| {
-            if btn.is_active() {
-                crate::state::set_tool_highlighter(&state);
-            }
-        });
-    }
     {
         let state = state.clone();
         eraser_btn.connect_toggled(move |btn| {
@@ -118,37 +149,42 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
         });
     }
 
-    for b in [&pen_btn, &highlighter_btn, &eraser_btn, &partial_eraser_btn, &selection_btn] {
+    for b in [&eraser_btn, &partial_eraser_btn, &selection_btn] {
         b.add_css_class("compact-tool");
     }
 
-    // ── Color picker ──────────────────────────────────────────────────────
-    let initial = state.borrow().pen.color;
-    let initial_rgba = RGBA::new(
-        initial.r as f32 / 255.0,
-        initial.g as f32 / 255.0,
-        initial.b as f32 / 255.0,
-        initial.a as f32 / 255.0,
-    );
-
-    let dialog = ColorDialog::builder().with_alpha(true).build();
-    let color_btn = ColorDialogButton::new(Some(dialog));
-    color_btn.set_rgba(&initial_rgba);
+    // Whenever the tool changes from outside the dropdown (keyboard
+    // shortcut, color-slot click that snaps to Pen, etc.), un-toggle the
+    // eraser/selection buttons so the UI matches state.
     {
         let state = state.clone();
-        color_btn.connect_rgba_notify(move |btn| {
-            let rgba = btn.rgba();
-            let color = journal_core::Color {
-                r: (rgba.red() * 255.0) as u8,
-                g: (rgba.green() * 255.0) as u8,
-                b: (rgba.blue() * 255.0) as u8,
-                a: (rgba.alpha() * 255.0) as u8,
-            };
-            let mut s = state.borrow_mut();
-            s.pen.color = color;
-            s.saved_pen_color = color;
+        let eraser = eraser_btn.clone();
+        let partial = partial_eraser_btn.clone();
+        let select = selection_btn.clone();
+        let tools_btn_inner = tools_btn.clone();
+        let last_tool: Rc<Cell<Tool>> = Rc::new(Cell::new(initial_tool));
+        tools_btn.add_tick_callback(move |_, _| {
+            let cur = state.borrow().tool;
+            if cur != last_tool.get() {
+                last_tool.set(cur);
+                use crate::state::EraserMode;
+                eraser.set_active(matches!(cur, Tool::Eraser(EraserMode::Stroke)));
+                partial.set_active(matches!(cur, Tool::Eraser(EraserMode::Partial)));
+                select.set_active(matches!(cur, Tool::Selection));
+                if crate::state::tool_is_drawing(cur) {
+                    tools_btn_inner.set_icon_name(icon_for_tool(cur));
+                }
+            }
+            gtk4::glib::ControlFlow::Continue
         });
     }
+
+    // ── Color slots (replaces standalone color picker) ────────────────────
+    // 2-3 configurable color swatches. Tapping a slot makes it the active
+    // pen color and opens a small inline RGB picker popover so the user
+    // can re-tune that slot's color. Starting a stroke auto-dismisses the
+    // popover (see tick callback below).
+    let color_slots_box = build_color_slots(state.clone(), &cfg.color_slots);
 
     // ── Width scale (compact, no leading "Width" label) ──────────────────
     let scale = Scale::with_range(Orientation::Horizontal, 0.5, 12.0, 0.5);
@@ -162,9 +198,7 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
         let state = state.clone();
         scale.connect_value_changed(move |s| {
             let v = s.value();
-            let mut st = state.borrow_mut();
-            st.pen.base_width = v;
-            st.saved_pen_width = v;
+            state.borrow_mut().pen.base_width = v;
         });
     }
 
@@ -183,105 +217,48 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
         .build();
     chevron_btn.add_css_class("compact-tool");
 
-    // The "extra" box holds everything that should hide when collapsed:
-    // tool buttons, separator, color, scale, separator before chevron.
+    // Always-visible cluster: drawing-tool dropdown + color slots. These
+    // are usable whether the bar is collapsed or expanded — Photoshop-style
+    // tool palette where the primary picks stay reachable at all times.
+    bar.append(&tools_btn);
+    bar.append(&color_slots_box);
+
+    // `extras` holds the secondary controls (eraser/selection toggles +
+    // width slider). Hidden when the user collapses the bar.
     let extras = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(4)
         .build();
 
-    // Pen tool buttons go in extras
-    for b in [&pen_btn, &highlighter_btn, &eraser_btn, &partial_eraser_btn, &selection_btn] {
-        extras.append(b);
-    }
     extras.append(&Separator::new(Orientation::Vertical));
-
-    // ── Pen preset chips ──────────────────────────────────────────────────
-    // Re-read the config so we always have the latest presets when the
-    // toolbar is built.
-    let preset_chips = build_preset_chips(&state, &cfg.pen_presets);
-    extras.append(&preset_chips);
+    extras.append(&eraser_btn);
+    extras.append(&partial_eraser_btn);
+    extras.append(&selection_btn);
     extras.append(&Separator::new(Orientation::Vertical));
-
-    extras.append(&color_btn);
     extras.append(&scale);
 
-    // "Collapsed active tool" icon — shown only when collapsed.
-    // We use a Button so clicking it also expands the toolbar.
-    let collapsed_tool_btn = Button::builder()
-        .icon_name("document-edit-symbolic")
-        .tooltip_text("Active tool — click to expand")
-        .build();
-    collapsed_tool_btn.add_css_class("compact-tool");
-
-    bar.append(&collapsed_tool_btn);
     bar.append(&extras);
     bar.append(&chevron_btn);
 
     // Apply initial visibility based on saved collapsed state.
     extras.set_visible(!cfg.toolbar_collapsed);
-    collapsed_tool_btn.set_visible(cfg.toolbar_collapsed);
-
-    // `icon_for_tool` is defined at the bottom of this module; call it directly.
-
-    // Tick callback to keep the collapsed-tool icon in sync with current tool.
-    {
-        let state = state.clone();
-        let collapsed_btn = collapsed_tool_btn.clone();
-        let collapsed_cell = collapsed.clone();
-        let last_tool: Rc<Cell<Tool>> = Rc::new(Cell::new(state.borrow().tool));
-        bar.add_tick_callback(move |_, _| {
-            let cur = state.borrow().tool;
-            if collapsed_cell.get() && cur != last_tool.get() {
-                last_tool.set(cur);
-                collapsed_btn.set_icon_name(icon_for_tool(cur));
-            }
-            gtk4::glib::ControlFlow::Continue
-        });
-    }
 
     // Toggle collapse on chevron click.
     {
         let extras = extras.clone();
-        let collapsed_tool_btn = collapsed_tool_btn.clone();
         let collapsed = collapsed.clone();
         let chevron_btn2 = chevron_btn.clone();
-        let state = state.clone();
         chevron_btn.connect_clicked(move |_| {
             let now = !collapsed.get();
             collapsed.set(now);
             extras.set_visible(!now);
-            collapsed_tool_btn.set_visible(now);
-            if now {
-                // Update collapsed icon immediately.
-                collapsed_tool_btn.set_icon_name(icon_for_tool(state.borrow().tool));
-                chevron_btn2.set_icon_name("go-previous-symbolic");
+            chevron_btn2.set_icon_name(if now {
+                "go-previous-symbolic"
             } else {
-                chevron_btn2.set_icon_name("go-next-symbolic");
-            }
-            // Persist
+                "go-next-symbolic"
+            });
             let mut cfg = crate::config::load();
             cfg.toolbar_collapsed = now;
-            if let Err(e) = crate::config::save(&cfg) {
-                tracing::warn!("Failed to save toolbar collapsed state: {}", e);
-            }
-        });
-    }
-
-    // Toggle expand on collapsed-tool-btn click.
-    {
-        let extras = extras.clone();
-        let collapsed_tool_btn2 = collapsed_tool_btn.clone();
-        let collapsed = collapsed.clone();
-        let chevron_btn2 = chevron_btn.clone();
-        collapsed_tool_btn.connect_clicked(move |_| {
-            // Always expand.
-            collapsed.set(false);
-            extras.set_visible(true);
-            collapsed_tool_btn2.set_visible(false);
-            chevron_btn2.set_icon_name("go-next-symbolic");
-            let mut cfg = crate::config::load();
-            cfg.toolbar_collapsed = false;
             if let Err(e) = crate::config::save(&cfg) {
                 tracing::warn!("Failed to save toolbar collapsed state: {}", e);
             }
@@ -399,74 +376,224 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
     bar
 }
 
-/// Build a horizontal row of colored preset chip buttons from the given preset list.
-///
-/// Each chip is a small 28×28 `Button` containing a `DrawingArea` that draws a
-/// filled circle in the preset's color.  Clicking a chip:
-///   1. Sets `state.pen.color` + `state.pen.base_width` to the preset values.
-///   2. Updates `saved_pen_color` / `saved_pen_width` so the toolbar color button
-///      stays in sync on the next expansion.
-///   3. Switches the tool to `Pen` so the user can draw immediately.
-fn build_preset_chips(
-    state: &SharedState,
-    presets: &[crate::config::PenPreset],
-) -> GtkBox {
-    let row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(3)
-        .build();
+// (Pen-preset chips removed: color slots cover the same role and the
+// duplicate row was visually noisy.)
 
-    for preset in presets {
-        let [r, g, b, a] = preset.color_rgba;
-        let rf = r as f64 / 255.0;
-        let gf = g as f64 / 255.0;
-        let bf = b as f64 / 255.0;
-        let af = a as f64 / 255.0;
-
-        // Tiny DrawingArea renders the colored circle.
-        let swatch = DrawingArea::new();
-        swatch.set_size_request(16, 16);
-        swatch.set_draw_func(move |_, cr, w, h| {
-            let cx = w as f64 / 2.0;
-            let cy = h as f64 / 2.0;
-            let radius = (cx.min(cy) - 1.0).max(1.0);
-            cr.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
-            cr.set_source_rgba(rf, gf, bf, af);
-            let _ = cr.fill();
-        });
-
-        let chip_btn = Button::builder()
-            .tooltip_text(format!("{} ({:.1} mm)", preset.name, preset.width_mm))
-            .build();
-        chip_btn.add_css_class("pen-preset");
-        chip_btn.set_size_request(28, 28);
-        chip_btn.set_child(Some(&swatch));
-
-        let color = journal_core::Color { r, g, b, a };
-        let width = preset.width_mm;
-        let state_c = state.clone();
-        chip_btn.connect_clicked(move |_| {
-            let mut s = state_c.borrow_mut();
-            s.pen.color = color;
-            s.pen.base_width = width;
-            s.saved_pen_color = color;
-            s.saved_pen_width = width;
-            s.tool = Tool::Pen;
-        });
-
-        row.append(&chip_btn);
-    }
-
-    row
-}
-
-/// Returns the symbolic icon name for the given tool.
+/// Returns the symbolic icon name for the given tool. The names lean on
+/// freedesktop.org symbolic icons that ship with most icon themes; missing
+/// names fall back to a generic image-missing glyph.
 fn icon_for_tool(tool: Tool) -> &'static str {
     match tool {
         Tool::Pen => "document-edit-symbolic",
+        Tool::Pencil => "edit-symbolic",
         Tool::Highlighter => "marker-symbolic",
+        Tool::Paintbrush => "applications-graphics-symbolic",
+        Tool::SprayCan => "weather-fog-symbolic",
+        Tool::Calligraphy => "format-text-italic-symbolic",
         Tool::Eraser(crate::state::EraserMode::Stroke) => "edit-clear-symbolic",
         Tool::Eraser(crate::state::EraserMode::Partial) => "edit-cut-symbolic",
         Tool::Selection => "edit-select-all-symbolic",
     }
+}
+
+/// Build the color-slot row. Each slot is a small button rendering a filled
+/// circle in the slot's color. Tapping a slot:
+///   1. Sets `state.pen.color` to the slot's color (and switches to a
+///      drawing tool if currently on eraser/selection).
+///   2. Opens a small inline RGB picker popover anchored to the slot.
+///      Adjusting the sliders updates both the slot's persisted color and
+///      `state.pen.color` live.
+///   3. The popover auto-dismisses when the user starts a stroke (a tick
+///      callback watches `state.pointer_drawing`).
+fn build_color_slots(state: SharedState, slots: &[[u8; 4]]) -> GtkBox {
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(4)
+        .build();
+
+    // Cell of the currently-open picker popover so the tick callback can
+    // dismiss it on stroke start without owning a reference per-slot.
+    let active_picker: Rc<RefCell<Option<Popover>>> = Rc::new(RefCell::new(None));
+
+    for (idx, raw) in slots.iter().enumerate() {
+        let slot_color: Rc<Cell<[u8; 4]>> = Rc::new(Cell::new(*raw));
+
+        let swatch = DrawingArea::new();
+        swatch.set_size_request(20, 20);
+        {
+            let slot_color = slot_color.clone();
+            swatch.set_draw_func(move |_, cr, w, h| {
+                let [r, g, b, a] = slot_color.get();
+                let cx = w as f64 / 2.0;
+                let cy = h as f64 / 2.0;
+                let radius = (cx.min(cy) - 1.0).max(1.0);
+                cr.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
+                cr.set_source_rgba(
+                    r as f64 / 255.0,
+                    g as f64 / 255.0,
+                    b as f64 / 255.0,
+                    a as f64 / 255.0,
+                );
+                let _ = cr.fill();
+                cr.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.4);
+                cr.set_line_width(0.8);
+                let _ = cr.stroke();
+            });
+        }
+
+        let btn = Button::builder()
+            .tooltip_text(format!("Color slot {} — tap to pick", idx + 1))
+            .build();
+        btn.add_css_class("compact-tool");
+        btn.set_size_request(28, 28);
+        btn.set_child(Some(&swatch));
+
+        // Inline RGB picker popover (small, in-toolbar — no system dialog).
+        let picker = Popover::new();
+        picker.set_position(PositionType::Bottom);
+        picker.set_parent(&btn);
+        picker.set_autohide(true);
+
+        let picker_box = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(6)
+            .margin_top(8)
+            .margin_bottom(8)
+            .margin_start(8)
+            .margin_end(8)
+            .build();
+
+        let preview = DrawingArea::new();
+        preview.set_size_request(180, 22);
+        {
+            let slot_color = slot_color.clone();
+            preview.set_draw_func(move |_, cr, w, h| {
+                let [r, g, b, a] = slot_color.get();
+                cr.set_source_rgba(
+                    r as f64 / 255.0,
+                    g as f64 / 255.0,
+                    b as f64 / 255.0,
+                    a as f64 / 255.0,
+                );
+                cr.rectangle(0.0, 0.0, w as f64, h as f64);
+                let _ = cr.fill();
+            });
+        }
+        picker_box.append(&preview);
+
+        let make_scale = |label: &str, init: u8| -> (GtkBox, Scale) {
+            let row = GtkBox::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(6)
+                .build();
+            let l = gtk4::Label::new(Some(label));
+            l.set_width_chars(2);
+            row.append(&l);
+            let s = Scale::with_range(Orientation::Horizontal, 0.0, 255.0, 1.0);
+            s.set_value(init as f64);
+            s.set_width_request(160);
+            s.set_draw_value(true);
+            s.set_value_pos(PositionType::Right);
+            row.append(&s);
+            (row, s)
+        };
+        let (r_row, r_scale) = make_scale("R", raw[0]);
+        let (g_row, g_scale) = make_scale("G", raw[1]);
+        let (b_row, b_scale) = make_scale("B", raw[2]);
+        picker_box.append(&r_row);
+        picker_box.append(&g_row);
+        picker_box.append(&b_row);
+        picker.set_child(Some(&picker_box));
+
+        let on_change: Rc<dyn Fn()> = {
+            let r_scale = r_scale.clone();
+            let g_scale = g_scale.clone();
+            let b_scale = b_scale.clone();
+            let slot_color = slot_color.clone();
+            let preview = preview.clone();
+            let swatch = swatch.clone();
+            let state = state.clone();
+            Rc::new(move || {
+                let r = r_scale.value().round().clamp(0.0, 255.0) as u8;
+                let g = g_scale.value().round().clamp(0.0, 255.0) as u8;
+                let b = b_scale.value().round().clamp(0.0, 255.0) as u8;
+                slot_color.set([r, g, b, 255]);
+                preview.queue_draw();
+                swatch.queue_draw();
+                {
+                    let mut s = state.borrow_mut();
+                    s.pen.color = journal_core::Color { r, g, b, a: 255 };
+                }
+                let mut cfg = crate::config::load();
+                while cfg.color_slots.len() <= idx {
+                    cfg.color_slots.push([20, 20, 20, 255]);
+                }
+                cfg.color_slots[idx] = [r, g, b, 255];
+                if let Err(e) = crate::config::save(&cfg) {
+                    tracing::warn!("Failed to save color slot {}: {}", idx, e);
+                }
+            })
+        };
+        for s in [&r_scale, &g_scale, &b_scale] {
+            let on_change = on_change.clone();
+            s.connect_value_changed(move |_| (on_change)());
+        }
+
+        // Tap slot → activate slot color + open inline picker.
+        {
+            let state = state.clone();
+            let picker = picker.clone();
+            let slot_color = slot_color.clone();
+            let r_scale = r_scale.clone();
+            let g_scale = g_scale.clone();
+            let b_scale = b_scale.clone();
+            let active_picker = active_picker.clone();
+            btn.connect_clicked(move |_| {
+                let [r, g, b, a] = slot_color.get();
+                {
+                    let mut s = state.borrow_mut();
+                    s.pen.color = journal_core::Color { r, g, b, a };
+                    // Snap back to a drawing tool if the user is mid-erase
+                    // — clicking a color implies they want to draw.
+                    if !crate::state::tool_is_drawing(s.tool) {
+                        s.tool = Tool::Pen;
+                    }
+                }
+                r_scale.set_value(r as f64);
+                g_scale.set_value(g as f64);
+                b_scale.set_value(b as f64);
+                if let Some(prev) = active_picker.borrow_mut().take() {
+                    if prev != picker {
+                        prev.popdown();
+                    }
+                }
+                picker.popup();
+                *active_picker.borrow_mut() = Some(picker.clone());
+            });
+        }
+
+        row.append(&btn);
+    }
+
+    // Tick callback: dismiss the open picker the moment the user starts
+    // drawing, since they've decided "use the color I just picked, don't
+    // keep editing the slot."
+    {
+        let state = state.clone();
+        let active_picker = active_picker.clone();
+        let was_drawing: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        row.add_tick_callback(move |_, _| {
+            let drawing = state.borrow().pointer_drawing;
+            if drawing && !was_drawing.get() {
+                if let Some(p) = active_picker.borrow_mut().take() {
+                    p.popdown();
+                }
+            }
+            was_drawing.set(drawing);
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
+
+    row
 }

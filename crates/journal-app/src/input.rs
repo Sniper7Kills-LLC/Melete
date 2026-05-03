@@ -6,8 +6,8 @@ use gtk4::gdk::ModifierType;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    DrawingArea, EventControllerScroll, EventControllerScrollFlags, GestureDrag, GestureStylus,
-    GestureZoom,
+    DrawingArea, EventControllerMotion, EventControllerScroll, EventControllerScrollFlags,
+    GestureDrag, GestureStylus, GestureZoom,
 };
 use journal_canvas::{hit_test_handle, selection_combined_bbox};
 use journal_core::{Rect, Stroke, StrokePoint};
@@ -154,6 +154,39 @@ pub fn attach_mouse(area: &DrawingArea, state: SharedState) {
     area.add_controller(gesture);
 }
 
+/// Hover-pointer tracker — drives the brush cursor overlay. Stylus + mouse
+/// gestures already update `pointer_screen` while pressed; this controller
+/// fills in the gap when no button is held so the cursor circle follows
+/// the pointer at all times.
+pub fn attach_hover(area: &DrawingArea, state: SharedState) {
+    let motion = EventControllerMotion::new();
+    {
+        let state = state.clone();
+        let area = area.clone();
+        motion.connect_motion(move |_, x, y| {
+            state.borrow_mut().pointer_screen = Some((x, y));
+            area.queue_draw();
+        });
+    }
+    {
+        let state = state.clone();
+        let area = area.clone();
+        motion.connect_enter(move |_, x, y| {
+            state.borrow_mut().pointer_screen = Some((x, y));
+            area.queue_draw();
+        });
+    }
+    {
+        let state = state.clone();
+        let area = area.clone();
+        motion.connect_leave(move |_| {
+            state.borrow_mut().pointer_screen = None;
+            area.queue_draw();
+        });
+    }
+    area.add_controller(motion);
+}
+
 pub fn attach_pan_zoom(area: &DrawingArea, state: SharedState) {
     let pan = GestureDrag::new();
     pan.set_button(gtk4::gdk::BUTTON_MIDDLE);
@@ -285,29 +318,47 @@ pub fn attach_pan_zoom(area: &DrawingArea, state: SharedState) {
 
 fn handle_begin(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, ty: f32) {
     let tool = state.borrow().tool;
+    if crate::state::tool_is_drawing(tool) {
+        begin_stroke(state, sx, sy, pressure, tx, ty);
+        state.borrow_mut().pointer_drawing = true;
+        return;
+    }
     match tool {
-        Tool::Pen | Tool::Highlighter => begin_stroke(state, sx, sy, pressure, tx, ty),
         Tool::Eraser(_) => {}
         Tool::Selection => begin_selection(state, sx, sy),
+        _ => {}
     }
 }
 
 fn handle_motion(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, ty: f32, area: &DrawingArea) {
+    {
+        let mut s = state.borrow_mut();
+        s.pointer_screen = Some((sx, sy));
+    }
     let tool = state.borrow().tool;
+    if crate::state::tool_is_drawing(tool) {
+        extend_stroke(state, sx, sy, pressure, tx, ty);
+        return;
+    }
     match tool {
-        Tool::Pen | Tool::Highlighter => extend_stroke(state, sx, sy, pressure, tx, ty),
         Tool::Eraser(EraserMode::Stroke) => erase_at(state, sx, sy, area),
         Tool::Eraser(EraserMode::Partial) => partial_erase_at(state, sx, sy, area),
         Tool::Selection => extend_selection(state, sx, sy),
+        _ => {}
     }
 }
 
 fn handle_end(state: &SharedState) {
     let tool = state.borrow().tool;
+    state.borrow_mut().pointer_drawing = false;
+    if crate::state::tool_is_drawing(tool) {
+        finish_stroke(state);
+        return;
+    }
     match tool {
-        Tool::Pen | Tool::Highlighter => finish_stroke(state),
         Tool::Eraser(_) => {}
         Tool::Selection => finish_selection(state),
+        _ => {}
     }
 }
 
@@ -328,11 +379,11 @@ fn begin_stroke(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, t
     let bbox = Rect { x: pt.x, y: pt.y, width: 0.0, height: 0.0 };
 
     let mut pen = s.pen;
-    if s.tool == Tool::Highlighter {
-        pen.opacity = 0.35;
-        pen.base_width *= 4.0;
-        pen.blend_mode = journal_core::BlendMode::Multiply;
-    }
+    let (opacity, mult, blend, brush) = crate::state::tool_brush_params(s.tool);
+    pen.opacity = opacity;
+    pen.base_width *= mult;
+    pen.blend_mode = blend;
+    pen.brush_style = brush;
 
     s.current_stroke = Some(Stroke {
         id: Uuid::new_v4(),

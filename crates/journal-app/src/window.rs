@@ -30,11 +30,13 @@ pub struct AppWindow {
     notebook_template_editor_container: GtkBox,
     canvas_overlay: Overlay,
     back_btn: Button,
+    sidebar_toggle_btn: Button,
     notebook_settings_btn: Button,
     title_label: Label,
     state: SharedState,
     parent: ApplicationWindow,
     current_notebook: Rc<RefCell<Option<NotebookId>>>,
+    current_sidebar: Rc<RefCell<Option<GtkBox>>>,
     previous_view: Rc<RefCell<Option<NotebookId>>>,
 }
 
@@ -50,6 +52,11 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     back_btn.set_tooltip_text(Some("Back to notebooks"));
     back_btn.set_visible(false);
     header.pack_start(&back_btn);
+
+    let sidebar_toggle_btn = Button::from_icon_name("sidebar-show-symbolic");
+    sidebar_toggle_btn.set_tooltip_text(Some("Toggle sidebar"));
+    sidebar_toggle_btn.set_visible(false);
+    header.pack_start(&sidebar_toggle_btn);
 
     let notebook_settings_btn = Button::from_icon_name("emblem-system-symbolic");
     notebook_settings_btn.set_tooltip_text(Some("Notebook settings"));
@@ -68,6 +75,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     let canvas = canvas_widget::build_canvas(state.clone());
     input::attach_stylus(&canvas, state.clone());
     input::attach_mouse(&canvas, state.clone());
+    input::attach_hover(&canvas, state.clone());
     input::attach_pan_zoom(&canvas, state.clone());
     let bar = toolbar::build_toolbar(state.clone());
     let canvas_overlay = Overlay::new();
@@ -125,17 +133,29 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         notebook_template_editor_container,
         canvas_overlay,
         back_btn: back_btn.clone(),
+        sidebar_toggle_btn: sidebar_toggle_btn.clone(),
         notebook_settings_btn: notebook_settings_btn.clone(),
         title_label,
         state: state.clone(),
         parent: parent.clone(),
         current_notebook,
+        current_sidebar: Rc::new(RefCell::new(None)),
         previous_view: Rc::new(RefCell::new(None)),
     }));
 
     {
         let win = win.clone();
         back_btn.connect_clicked(move |_| show_home(&win));
+    }
+
+    {
+        let win = win.clone();
+        sidebar_toggle_btn.connect_clicked(move |_| {
+            let sidebar = win.borrow().current_sidebar.borrow().clone();
+            if let Some(sb) = sidebar {
+                sb.set_visible(!sb.is_visible());
+            }
+        });
     }
 
     {
@@ -331,8 +351,10 @@ pub fn show_home(win: &SharedWindow) {
     let w = win.borrow();
     w.stack.set_visible_child_name(HOME_NAME);
     w.back_btn.set_visible(false);
+    w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
     *w.current_notebook.borrow_mut() = None;
+    *w.current_sidebar.borrow_mut() = None;
     w.title_label.set_text("Journal");
 }
 
@@ -397,8 +419,10 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
     };
     win.borrow().title_label.set_text(&title);
     win.borrow().back_btn.set_visible(true);
+    win.borrow().sidebar_toggle_btn.set_visible(true);
     win.borrow().notebook_settings_btn.set_visible(true);
     *win.borrow().current_notebook.borrow_mut() = Some(notebook_id);
+    *win.borrow().current_sidebar.borrow_mut() = Some(view.sidebar_root);
     win.borrow().stack.set_visible_child_name(NOTEBOOK_NAME);
 }
 
@@ -469,6 +493,7 @@ pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
     let w = win.borrow();
     w.title_label.set_text("Template Editor");
     w.back_btn.set_visible(false);
+    w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
     w.stack.set_visible_child_name(TEMPLATE_EDITOR_NAME);
 }
@@ -508,6 +533,7 @@ pub fn show_notebook_template_editor(win: &SharedWindow, edit: Option<NotebookTe
     let w = win.borrow();
     w.title_label.set_text("Notebook Template Editor");
     w.back_btn.set_visible(false);
+    w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
     w.stack.set_visible_child_name(NOTEBOOK_TEMPLATE_EDITOR_NAME);
 }

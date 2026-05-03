@@ -20,6 +20,7 @@ use crate::state::{self, SharedState};
 
 pub struct NotebookView {
     pub root: GtkBox,
+    pub sidebar_root: GtkBox,
 }
 
 #[derive(Clone)]
@@ -207,7 +208,7 @@ pub fn build_notebook_view(
         });
     }
 
-    NotebookView { root }
+    NotebookView { root, sidebar_root }
 }
 
 fn refresh_sections(

@@ -5,13 +5,16 @@ use journal_canvas::{
     paint_with_widgets_ctx, scale_background, selection_combined_bbox, WidgetRenderContext,
 };
 
-use crate::state::SharedState;
+use crate::state::{tool_brush_params, tool_is_drawing, SharedState, Tool};
 
 pub fn build_canvas(state: SharedState) -> DrawingArea {
     let area = DrawingArea::builder()
         .hexpand(true)
         .vexpand(true)
         .build();
+    // Hide the system pointer cursor over the canvas so the custom
+    // brush-circle cursor we draw in `set_draw_func` is the only indicator.
+    area.set_cursor_from_name(Some("none"));
 
     {
         let state = state.clone();
@@ -74,10 +77,89 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
                 ctx.identity_matrix();
                 draw_lasso_overlay(ctx, &lasso_points);
             }
+
+            if let Some((px, py)) = s.pointer_screen {
+                ctx.identity_matrix();
+                draw_brush_cursor(
+                    ctx,
+                    px,
+                    py,
+                    s.tool,
+                    s.pen,
+                    s.pointer_drawing,
+                    dark_mode,
+                );
+            }
         });
     }
 
     area
+}
+
+/// Draw the floating brush cursor at the pointer position. Outlined when
+/// just hovering, filled with the pen color while a stroke is in progress.
+/// Radius matches the tool's effective on-screen brush diameter so the user
+/// sees the actual painted area.
+fn draw_brush_cursor(
+    ctx: &gtk4::cairo::Context,
+    px: f64,
+    py: f64,
+    tool: Tool,
+    pen: journal_core::PenSettings,
+    drawing: bool,
+    dark_mode: bool,
+) {
+    // pen.base_width is in screen px at the zoom the stroke is created at —
+    // tool_brush_params layers a multiplier per tool. Eraser/Selection get
+    // a constant marker so the user still sees a hit indicator.
+    let radius = if tool_is_drawing(tool) {
+        let (_, mult, _, _) = tool_brush_params(tool);
+        (pen.base_width * mult * 0.5).max(2.0)
+    } else {
+        match tool {
+            Tool::Eraser(crate::state::EraserMode::Stroke) => 6.0,
+            Tool::Eraser(crate::state::EraserMode::Partial) => 11.0,
+            _ => 5.0,
+        }
+    };
+
+    ctx.save().ok();
+    ctx.set_operator(gtk4::cairo::Operator::Over);
+
+    if drawing && tool_is_drawing(tool) {
+        let c = pen.color;
+        ctx.set_source_rgba(
+            c.r as f64 / 255.0,
+            c.g as f64 / 255.0,
+            c.b as f64 / 255.0,
+            (pen.opacity as f64).clamp(0.2, 1.0),
+        );
+        ctx.arc(px, py, radius, 0.0, std::f64::consts::TAU);
+        let _ = ctx.fill();
+    }
+
+    // Outline ring — always drawn so the cursor remains visible against the
+    // fill (and is the only mark shown when hovering / for non-drawing tools).
+    if dark_mode {
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.85);
+    } else {
+        ctx.set_source_rgba(0.0, 0.0, 0.0, 0.75);
+    }
+    ctx.set_line_width(1.25);
+    ctx.arc(px, py, radius, 0.0, std::f64::consts::TAU);
+    let _ = ctx.stroke();
+
+    // Contrast halo so the ring stays visible on similar-color backgrounds.
+    if dark_mode {
+        ctx.set_source_rgba(0.0, 0.0, 0.0, 0.4);
+    } else {
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.6);
+    }
+    ctx.set_line_width(0.5);
+    ctx.arc(px, py, radius + 0.9, 0.0, std::f64::consts::TAU);
+    let _ = ctx.stroke();
+
+    ctx.restore().ok();
 }
 
 fn draw_placeholder(

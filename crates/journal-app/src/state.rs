@@ -26,9 +26,45 @@ pub enum HandlePos {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
     Pen,
-    Eraser(EraserMode),
+    Pencil,
     Highlighter,
+    Paintbrush,
+    SprayCan,
+    Calligraphy,
+    Eraser(EraserMode),
     Selection,
+}
+
+/// Per-tool brush parameters layered on top of the base `pen` at stroke
+/// creation (see `input::begin_stroke`). Returns
+/// `(opacity, base_width_multiplier, blend_mode, brush_style)`. Tools that
+/// don't draw (Eraser, Selection) return neutral values + Pen style.
+pub fn tool_brush_params(
+    tool: Tool,
+) -> (f32, f64, journal_core::BlendMode, journal_core::BrushStyle) {
+    use journal_core::{BlendMode, BrushStyle};
+    match tool {
+        Tool::Pen => (1.0, 1.0, BlendMode::Normal, BrushStyle::Pen),
+        Tool::Pencil => (0.85, 0.6, BlendMode::Normal, BrushStyle::Pencil),
+        Tool::Highlighter => (0.35, 4.0, BlendMode::Multiply, BrushStyle::Highlighter),
+        Tool::Paintbrush => (0.5, 3.5, BlendMode::Normal, BrushStyle::Paintbrush),
+        Tool::SprayCan => (0.6, 5.0, BlendMode::Normal, BrushStyle::SprayCan),
+        Tool::Calligraphy => (1.0, 3.0, BlendMode::Normal, BrushStyle::Calligraphy),
+        Tool::Eraser(_) | Tool::Selection => (1.0, 1.0, BlendMode::Normal, BrushStyle::Pen),
+    }
+}
+
+/// True when the tool draws strokes (vs. erase/select).
+pub fn tool_is_drawing(tool: Tool) -> bool {
+    matches!(
+        tool,
+        Tool::Pen
+            | Tool::Pencil
+            | Tool::Highlighter
+            | Tool::Paintbrush
+            | Tool::SprayCan
+            | Tool::Calligraphy
+    )
 }
 
 pub struct CanvasState {
@@ -78,9 +114,6 @@ pub struct CanvasState {
     pub dark_mode: bool,
     pub thumbnail_cache: HashMap<PageId, cairo::ImageSurface>,
 
-    pub saved_pen_color: Color,
-    pub saved_pen_width: f64,
-
     /// Per-app stroke clipboard for copy/paste between pages.
     /// Empty = nothing copied.
     pub stroke_clipboard: Vec<Stroke>,
@@ -88,6 +121,14 @@ pub struct CanvasState {
     pub placeholder_image: Option<cairo::ImageSurface>,
     pub placeholder_text: String,
     pub show_page_bounds: bool,
+
+    /// Last known pointer position in screen coordinates over the canvas.
+    /// `None` when the pointer is not over the canvas. Used by the
+    /// brush-cursor overlay to draw a circle showing the active brush size.
+    pub pointer_screen: Option<(f64, f64)>,
+    /// True while a stroke is being actively drawn — the brush cursor
+    /// renders filled instead of outlined.
+    pub pointer_drawing: bool,
 }
 
 pub type SharedState = Rc<RefCell<CanvasState>>;
@@ -128,6 +169,7 @@ pub fn new_shared_state(
         base_width: 2.0,
         opacity: 1.0,
         blend_mode: journal_core::BlendMode::Normal,
+        brush_style: journal_core::BrushStyle::Pen,
     };
 
     Rc::new(RefCell::new(CanvasState {
@@ -160,12 +202,12 @@ pub fn new_shared_state(
         selection_resize_anchor: (0.0, 0.0),
         dark_mode: false,
         thumbnail_cache: HashMap::new(),
-        saved_pen_color: Color { r: 20, g: 20, b: 20, a: 255 },
-        saved_pen_width: 2.0,
         stroke_clipboard: Vec::new(),
         placeholder_image: None,
         placeholder_text: "Select a page to start drawing".into(),
         show_page_bounds: true,
+        pointer_screen: None,
+        pointer_drawing: false,
     }))
 }
 
@@ -300,27 +342,25 @@ pub fn toggle_tool_eraser(state: &SharedState) {
     };
 }
 
-pub fn set_tool_pen(state: &SharedState) {
+/// Set the active tool. Per-tool stroke effects (opacity / width multiplier
+/// / blend mode) are applied at stroke creation in `input::begin_stroke`,
+/// not here, so `state.pen.color` and `state.pen.base_width` remain the
+/// user-chosen base values across tool switches.
+pub fn set_tool(state: &SharedState, tool: Tool) {
     let mut s = state.borrow_mut();
-    s.tool = Tool::Pen;
-    s.pen.blend_mode = journal_core::BlendMode::Normal;
-    s.pen.opacity = 1.0;
-    s.pen.color = s.saved_pen_color;
-    s.pen.base_width = s.saved_pen_width;
+    s.tool = tool;
+}
+
+pub fn set_tool_pen(state: &SharedState) {
+    set_tool(state, Tool::Pen);
 }
 
 pub fn set_tool_highlighter(state: &SharedState) {
-    let mut s = state.borrow_mut();
-    s.saved_pen_color = s.pen.color;
-    s.saved_pen_width = s.pen.base_width;
-    s.tool = Tool::Highlighter;
-    s.pen.opacity = 0.35;
-    s.pen.blend_mode = journal_core::BlendMode::Multiply;
+    set_tool(state, Tool::Highlighter);
 }
 
 pub fn set_tool_selection(state: &SharedState) {
-    let mut s = state.borrow_mut();
-    s.tool = Tool::Selection;
+    set_tool(state, Tool::Selection);
 }
 
 pub fn clear_selection(state: &SharedState) {
