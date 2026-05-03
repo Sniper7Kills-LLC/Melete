@@ -15,7 +15,8 @@ Personal OneNote/rnote alternative for Linux. Framework 12 laptop, touchscreen +
 - **Language:** Rust
 - **UI Framework:** GTK4 (via gtk4-rs) + libadwaita (`adw::Application` for system color-scheme detection via `adw::StyleManager`)
 - **Canvas Rendering:** Cairo (via gtk4::cairo, on GTK4 DrawingArea). GPU acceleration deferred — GSK paths (GTK 4.14+) is the migration target if/when CPU rendering becomes a bottleneck. Skia via GLArea was attempted in Phase 1 but `direct_contexts::make_gl` fails on GTK4 + Wayland (Mesa) without a clear root cause.
-- **Storage:** SQLite per notebook (one `.journal` file)
+- **Storage:** Single SQLite db at `~/.local/share/journal/journal.db` (the original "one `.journal` per notebook" plan was consolidated). Phase 6 will trait-abstract the store crate so a remote backend (AWS Amplify — Cognito + AppSync + DynamoDB + S3) can host templates first and notebooks later, without touching the GTK client.
+- **Roadmap (Phase 6):** AWS Amplify-backed template sharing (Cognito auth, AppSync GraphQL, DynamoDB metadata, S3 TOML bodies); optional Amplify-Hosting web portal for browsing/forking public templates; eventual notebook sync via the same stack. Linux client stays native; web is for sharing/browsing templates only, never for drawing.
 
 ## Architecture Principles
 

@@ -251,9 +251,104 @@ Home screen (no notebook open) shows notebook grid/list.
 
 - [ ] Calendar integration (Google Calendar, iCal) — display events on template areas
 - [ ] Storage offloading — archive old notebooks to external storage
-- [ ] Sync between devices
 - [ ] Handwriting recognition / search
-- [ ] Collaborative notebooks
+
+---
+
+## Phase 6: Storage Abstraction + Optional Server Backend (Planned)
+
+The Linux client stays native (GTK4) — this phase is about making the
+**storage layer pluggable** so a hosted server can back templates first, and
+notebooks/strokes later, without touching the canvas or UI code.
+
+Existing rejected scope: the **client itself stays native**. Web is only for
+the optional template-sharing portal, not for the journal app.
+
+### 6.1 Trait-based storage abstraction
+
+Today every store module exposes free functions taking `&rusqlite::Connection`.
+The `Connection` type leaks into ~49 call sites across `journal-app`, blocking
+any non-SQLite backend.
+
+- [ ] `journal-storage`: introduce traits per store —
+  `trait NotebookStore`, `trait SectionStore`, `trait PageStore`,
+  `trait StrokeStore`, `trait TemplateStore`, `trait NotebookTemplateStore`.
+  Each method returns `Result<T, StorageError>` (no `Connection` exposed).
+- [ ] `journal-storage`: split current SQLite implementation into
+  `sqlite/` submodules implementing each trait against `rusqlite`.
+- [ ] `journal-storage`: define `pub struct Backend { notebooks: Box<dyn NotebookStore>, ... }`
+  or a single `trait JournalBackend` aggregator the app holds via
+  `Rc<RefCell<dyn JournalBackend>>`.
+- [ ] `journal-app`: replace direct `db.borrow().conn()` calls with trait
+  calls. Drop the `rusqlite` re-export; `Db` becomes private to the SQLite
+  backend impl.
+- [ ] Errors stay typed via `StorageError` (already `thiserror`) — add
+  variants for `Network`, `Auth`, `Conflict` for the future remote backend.
+
+### 6.2 Local backends
+
+- [ ] **SQLite (current)** — keep as the default offline backend.
+- [ ] **File-per-notebook `.journal`** — revisit the original PLAN.md design;
+  may layer over SQLite by giving each notebook its own DB file (so users can
+  copy/share/back-up a single file).
+
+### 6.3 Remote template backend (first network feature) — AWS Amplify
+
+Templates are the lowest-risk thing to host: small TOML blobs, no per-stroke
+write traffic, valuable to share. We do **not** roll our own server — the
+backend is **AWS Amplify** (Cognito + AppSync/REST + DynamoDB + S3).
+
+- [ ] AWS infra (Amplify project alongside the repo, e.g. `amplify/`):
+  - **Auth:** Cognito user pool — email + password, optional federated
+    (Google/Apple) later. Hosted UI not used; client opens the OAuth flow
+    in the system browser via `webbrowser` + a localhost loopback redirect.
+  - **API:** AppSync (GraphQL) preferred over REST — schema models
+    `Template`, `User`, `Visibility { Private | Unlisted | Public }`,
+    `Fork` mutation. Authorization rules per-field via Cognito groups.
+  - **Storage:** DynamoDB for metadata (id, owner, name, description,
+    visibility, fork_of, created_at). S3 bucket for the TOML body
+    (key = `templates/{id}.toml`); lets large/binary attachments grow
+    without DynamoDB row-size pain.
+  - **Render service (later):** Lambda triggered on template upload that
+    runs a headless `journal-canvas` Cairo pass to render a PNG preview
+    into `templates/{id}.png`.
+- [ ] `journal-storage`: add `RemoteTemplateStore` impl. No `reqwest` — use
+  the **AWS Rust SDK** (`aws-sdk-cognitoidentityprovider`,
+  `aws-sdk-dynamodb`, `aws-sdk-s3`) or the AppSync GraphQL endpoint via a
+  thin `reqwest` wrapper that signs requests with SigV4 / Cognito JWT.
+  Cache fetched templates locally so the editor works offline.
+- [ ] `journal-app`: settings pane to log in / log out / pick "sync templates"
+  toggle. Template manager grows tabs for "Local", "My (synced)", "Public".
+
+### 6.4 Optional web template portal — Amplify Hosting
+
+A browser UI for users who want to manage, share, or browse templates
+without launching the desktop app. Hosted on **Amplify Hosting** (static
+SPA against the same AppSync API + Cognito). React/Vue is acceptable here
+because it's a **separate web property** for sharing, not the journal app.
+The "no web client for the journal" rule still holds — drawing stays
+native.
+
+- [ ] Read-mostly: list public templates, preview the Lambda-rendered PNG,
+  fork to "my templates". Authenticated users can rename / set visibility /
+  delete their own.
+- [ ] Out of scope: a web canvas. Drawing remains the native client.
+
+### 6.5 Remote notebook/stroke backend (later, gated on 6.3)
+
+Same Amplify stack scaled to notebooks/strokes:
+
+- [ ] DynamoDB tables: `Notebook`, `Section`, `Page`, `Stroke` (with `pageId`
+  partition key + `id` sort key + a GSI for `(pageId, modifiedAt)`).
+- [ ] Sync engine with conflict resolution (per-stroke is append-only, so
+  last-writer-wins on `Stroke.id` is safe; page reorders need vector clocks
+  or CRDT).
+- [ ] End-to-end encryption option (notebooks are personal — server stores
+  ciphertext, key lives on the client / derived from Cognito identity).
+- [ ] Multi-device sync (replaces the standalone "Sync between devices" item).
+- [ ] Collaborative notebooks (replaces the standalone "Collaborative
+  notebooks" item) — depends on CRDT design above; AppSync subscriptions
+  give us live updates for free.
 
 ---
 
@@ -264,10 +359,11 @@ Journal/
 ├── Cargo.toml                    # Workspace root
 ├── crates/
 │   ├── journal-app/              # GTK4 app shell, views, input
-│   ├── journal-canvas/           # Skia rendering, viewport
+│   ├── journal-canvas/           # Cairo rendering, viewport
 │   ├── journal-core/             # Domain models, business logic
-│   ├── journal-storage/          # SQLite persistence
+│   ├── journal-storage/          # Storage traits + SQLite impl (Phase 6: + RemoteAmplifyStore impl)
 │   └── journal-templates/        # Template definitions, import
+├── amplify/                      # (Phase 6.3+) AWS Amplify project — Cognito auth, AppSync API, DynamoDB, S3
 ├── resources/                    # GTK resources, icons, UI
 └── templates/                    # Built-in template files
 ```
