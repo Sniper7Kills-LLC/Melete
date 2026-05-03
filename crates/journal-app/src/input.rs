@@ -447,6 +447,7 @@ fn begin_selection(state: &SharedState, sx: f64, sy: f64) {
 
     if hit_selected {
         s.selection_drag_start = Some((sx, sy));
+        s.selection_drag_total_canvas = (0.0, 0.0);
     } else {
         s.selected_stroke_ids.clear();
         s.lasso_points = vec![(sx, sy)];
@@ -465,6 +466,8 @@ fn extend_selection(state: &SharedState, sx: f64, sy: f64) {
         let dx_canvas = dx_screen / zoom;
         let dy_canvas = dy_screen / zoom;
         s.selection_drag_start = Some((sx, sy));
+        s.selection_drag_total_canvas.0 += dx_canvas;
+        s.selection_drag_total_canvas.1 += dy_canvas;
 
         let selected_ids: Vec<Uuid> = s.selected_stroke_ids.iter().cloned().collect();
         for st in s.strokes.iter_mut() {
@@ -492,6 +495,12 @@ fn finish_selection(state: &SharedState) {
         } else {
             Vec::new()
         };
+
+        if !moved_ids.is_empty() {
+            let (tx, ty) = s.selection_drag_total_canvas;
+            s.selection_drag_total_canvas = (0.0, 0.0);
+            s.history.push_move(moved_ids.clone(), tx, ty);
+        }
 
         if s.lasso_active && s.lasso_points.len() >= 3 {
             let lasso = s.lasso_points.clone();
@@ -608,6 +617,10 @@ pub fn undo(state: &SharedState, area: &DrawingArea) {
                 }
             }
         }
+        Op::MoveStrokes { ids, dx, dy } => {
+            apply_move(state, &ids, -dx, -dy);
+            state.borrow_mut().history.redo.push(Op::MoveStrokes { ids, dx, dy });
+        }
     }
 
     area.queue_draw();
@@ -648,7 +661,36 @@ pub fn redo(state: &SharedState, area: &DrawingArea) {
                 let _ = pid;
             }
         }
+        Op::MoveStrokes { ids, dx, dy } => {
+            apply_move(state, &ids, dx, dy);
+            state.borrow_mut().history.undo.push(Op::MoveStrokes { ids, dx, dy });
+        }
     }
 
     area.queue_draw();
+}
+
+fn apply_move(state: &SharedState, ids: &[Uuid], dx: f64, dy: f64) {
+    let (db, page_id, updated) = {
+        let mut s = state.borrow_mut();
+        for st in s.strokes.iter_mut() {
+            if ids.contains(&st.id) {
+                for pt in st.points.iter_mut() {
+                    pt.x += dx;
+                    pt.y += dy;
+                }
+                st.bounding_box.x += dx;
+                st.bounding_box.y += dy;
+            }
+        }
+        let updated: Vec<Stroke> = s.strokes.iter().filter(|st| ids.contains(&st.id)).cloned().collect();
+        (s.db.clone(), s.current_page_id, updated)
+    };
+    if let Some(pid) = page_id {
+        for st in &updated {
+            if let Err(e) = stroke_store::update_stroke(db.borrow().conn(), st, pid) {
+                tracing::warn!("apply_move update_stroke {}: {}", st.id, e);
+            }
+        }
+    }
 }

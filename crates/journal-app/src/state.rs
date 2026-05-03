@@ -43,6 +43,7 @@ pub struct CanvasState {
     pub lasso_points: Vec<(f64, f64)>,
     pub lasso_active: bool,
     pub selection_drag_start: Option<(f64, f64)>,
+    pub selection_drag_total_canvas: (f64, f64),
     pub dark_mode: bool,
     pub thumbnail_cache: HashMap<PageId, cairo::ImageSurface>,
 
@@ -111,6 +112,7 @@ pub fn new_shared_state(
         lasso_points: Vec::new(),
         lasso_active: false,
         selection_drag_start: None,
+        selection_drag_total_canvas: (0.0, 0.0),
         dark_mode: false,
         thumbnail_cache: HashMap::new(),
         saved_pen_color: Color { r: 20, g: 20, b: 20, a: 255 },

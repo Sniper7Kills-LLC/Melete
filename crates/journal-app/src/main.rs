@@ -97,8 +97,29 @@ fn build_ui(app: &Application) -> Result<()> {
     window.set_child(Some(&app_win.borrow().root));
 
     let canvas = app_win.borrow().canvas.clone();
-    shortcuts::attach_keyboard_shortcuts(&window, state.clone(), canvas);
+    shortcuts::attach_keyboard_shortcuts(&window, state.clone(), canvas.clone());
+    bind_system_dark_mode(state.clone(), canvas);
 
     window.present();
     Ok(())
+}
+
+fn bind_system_dark_mode(state: state::SharedState, canvas: gtk4::DrawingArea) {
+    let Some(settings) = gtk4::Settings::default() else { return; };
+    let apply = {
+        let state = state.clone();
+        let canvas = canvas.clone();
+        let settings = settings.clone();
+        move || {
+            let dark = settings.is_gtk_application_prefer_dark_theme();
+            state.borrow_mut().dark_mode = dark;
+            canvas.queue_draw();
+        }
+    };
+    apply();
+    settings.connect_gtk_application_prefer_dark_theme_notify(move |s| {
+        let dark = s.is_gtk_application_prefer_dark_theme();
+        state.borrow_mut().dark_mode = dark;
+        canvas.queue_draw();
+    });
 }

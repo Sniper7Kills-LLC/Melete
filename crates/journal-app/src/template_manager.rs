@@ -47,6 +47,9 @@ pub fn open(parent: &ApplicationWindow, state: SharedState) {
     let import_btn = Button::with_label("Import image...");
     import_btn.add_css_class("suggested-action");
     header.append(&import_btn);
+
+    let import_pdf_btn = Button::with_label("Import PDF...");
+    header.append(&import_pdf_btn);
     body.append(&header);
 
     let scroller = ScrolledWindow::builder()
@@ -83,7 +86,88 @@ pub fn open(parent: &ApplicationWindow, state: SharedState) {
         });
     }
 
+    {
+        let parent = parent.clone();
+        let state = state.clone();
+        let list = list_rc.clone();
+        import_pdf_btn.connect_clicked(move |_| {
+            run_pdf_import(&parent, state.clone(), list.clone());
+        });
+    }
+
     win.present();
+}
+
+fn pdfs_dir() -> Option<PathBuf> {
+    Some(templates_dir()?.join("pdfs"))
+}
+
+fn run_pdf_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListBox>) {
+    let dialog = FileDialog::builder().title("Import PDF").modal(true).build();
+    let filter = FileFilter::new();
+    filter.set_name(Some("PDF"));
+    filter.add_mime_type("application/pdf");
+    filter.add_pattern("*.pdf");
+    let filters = gtk4::gio::ListStore::new::<FileFilter>();
+    filters.append(&filter);
+    dialog.set_filters(Some(&filters));
+    dialog.set_default_filter(Some(&filter));
+
+    let parent_for_cb = parent.clone();
+    dialog.open(Some(parent), None::<&gtk4::gio::Cancellable>, move |result| {
+        let file = match result {
+            Ok(f) => f,
+            Err(e) => {
+                if !e.matches(gtk4::gio::IOErrorEnum::Cancelled)
+                    && !e.matches(gtk4::gio::IOErrorEnum::Failed)
+                {
+                    tracing::warn!("pdf dialog error: {}", e);
+                }
+                return;
+            }
+        };
+        let src_path = match file.path() {
+            Some(p) => p,
+            None => { tracing::warn!("pdf file has no local path"); return; }
+        };
+        if let Err(e) = import_pdf(&src_path, state.clone()) {
+            tracing::error!("pdf import: {:#}", e);
+            show_error(&parent_for_cb, &format!("Failed to import PDF: {}", e));
+            return;
+        }
+        refresh_list(&list, state.clone());
+    });
+}
+
+fn import_pdf(src: &std::path::Path, state: SharedState) -> anyhow::Result<()> {
+    let id = Uuid::new_v4();
+    let pdf_dir = pdfs_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
+    std::fs::create_dir_all(&pdf_dir)?;
+    let dst = pdf_dir.join(format!("{}.pdf", id));
+    std::fs::copy(src, &dst)?;
+
+    let name = src.file_stem().and_then(|s| s.to_str()).unwrap_or("PDF").to_string();
+    let template = PageTemplate {
+        id: journal_core::TemplateId(id),
+        name,
+        description: format!("Imported from {}", src.display()),
+        background: BackgroundType::Pdf { path: dst.to_string_lossy().to_string(), page: 0 },
+        size_mm: (215.9, 279.4),
+        tiling: TilingMode::None,
+        default_viewport: None,
+    };
+
+    let tdir = templates_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
+    std::fs::create_dir_all(&tdir)?;
+    let toml_path = tdir.join(format!("{}.toml", id));
+    let file = template_file_from_page_template(&template);
+    let toml_text = serialize_template_toml(&file)
+        .map_err(|e| anyhow::anyhow!("serialize template: {}", e))?;
+    std::fs::write(&toml_path, toml_text)?;
+
+    let s = state.borrow();
+    s.templates.borrow_mut().insert(template);
+    Ok(())
 }
 
 fn refresh_list(list: &Rc<ListBox>, state: SharedState) {

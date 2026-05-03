@@ -17,10 +17,10 @@ pub fn page_template_to_background_config(t: &PageTemplate) -> BackgroundConfig 
             path: PathBuf::from(path),
             size_canvas: (t.size_mm.0, t.size_mm.1),
         },
-        // TODO: PDF rendering deferred — needs poppler bindings.
-        BackgroundType::Pdf { .. } => {
-            tracing::warn!("PDF templates not yet supported");
-            BackgroundConfig::Blank
-        }
+        BackgroundType::Pdf { path, page } => BackgroundConfig::Pdf {
+            path: PathBuf::from(path),
+            page: *page,
+            size_canvas: (t.size_mm.0, t.size_mm.1),
+        },
     }
 }

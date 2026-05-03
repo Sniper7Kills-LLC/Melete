@@ -17,6 +17,7 @@ pub enum BackgroundConfig {
     Lines { spacing: f64 },
     Grid(GridSettings),
     Image { path: PathBuf, size_canvas: (f64, f64) },
+    Pdf { path: PathBuf, page: u32, size_canvas: (f64, f64) },
 }
 
 fn pattern_color() -> Color {
@@ -42,6 +43,12 @@ pub fn draw_background(
         }
         BackgroundConfig::Image { path, size_canvas } => {
             draw_image(ctx, page_rect, path, *size_canvas);
+        }
+        BackgroundConfig::Pdf { path, page, size_canvas } => {
+            #[cfg(feature = "pdf")]
+            draw_pdf(ctx, page_rect, path, *page, *size_canvas);
+            #[cfg(not(feature = "pdf"))]
+            { let _ = (path, page, size_canvas); tracing::warn!("PDF support disabled"); }
         }
     }
 }
@@ -163,6 +170,79 @@ fn with_cached_surface<F: FnOnce(&CachedSurface)>(path: &Path, f: F) {
         }
         if let Some(entry) = map.get(path) {
             f(entry);
+        }
+    });
+}
+
+#[cfg(feature = "pdf")]
+thread_local! {
+    static PDF_CACHE: RefCell<HashMap<(PathBuf, u32), CachedSurface>> = RefCell::new(HashMap::new());
+}
+
+#[cfg(feature = "pdf")]
+fn render_pdf_to_surface(path: &Path, page_idx: u32) -> Option<CachedSurface> {
+    use poppler::Document;
+    let abs = match path.canonicalize() {
+        Ok(p) => p,
+        Err(e) => { tracing::warn!("canonicalize {:?}: {}", path, e); return None; }
+    };
+    let uri = format!("file://{}", abs.display());
+    let doc = match Document::from_file(&uri, None) {
+        Ok(d) => d,
+        Err(e) => { tracing::warn!("poppler open {}: {}", uri, e); return None; }
+    };
+    let page = match doc.page(page_idx as i32) {
+        Some(p) => p,
+        None => { tracing::warn!("pdf page {} missing in {}", page_idx, uri); return None; }
+    };
+    let (w_pts, h_pts) = page.size();
+    // Rasterize at 2x for sharpness on zoom
+    let scale = 2.0;
+    let pw = (w_pts * scale).ceil().max(1.0) as i32;
+    let ph = (h_pts * scale).ceil().max(1.0) as i32;
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, pw, ph).ok()?;
+    {
+        let ctx = cairo::Context::new(&surface).ok()?;
+        ctx.set_source_rgb(1.0, 1.0, 1.0);
+        let _ = ctx.paint();
+        ctx.scale(scale, scale);
+        page.render(&ctx);
+    }
+    Some(CachedSurface { surface, pixel_w: pw, pixel_h: ph })
+}
+
+#[cfg(feature = "pdf")]
+fn draw_pdf(
+    ctx: &cairo::Context,
+    page_rect: Rect,
+    path: &Path,
+    page_idx: u32,
+    size_canvas: (f64, f64),
+) {
+    if size_canvas.0 <= 0.0 || size_canvas.1 <= 0.0 {
+        return;
+    }
+    let key = (path.to_path_buf(), page_idx);
+    PDF_CACHE.with(|cache| {
+        let mut map = cache.borrow_mut();
+        if !map.contains_key(&key) {
+            if let Some(loaded) = render_pdf_to_surface(path, page_idx) {
+                map.insert(key.clone(), loaded);
+            }
+        }
+        if let Some(cached) = map.get(&key) {
+            let target_w = page_rect.width.max(size_canvas.0);
+            let target_h = page_rect.height.max(size_canvas.1);
+            let sx = target_w / cached.pixel_w as f64;
+            let sy = target_h / cached.pixel_h as f64;
+            ctx.save().ok();
+            ctx.rectangle(page_rect.x, page_rect.y, target_w, target_h);
+            ctx.clip();
+            ctx.translate(page_rect.x, page_rect.y);
+            ctx.scale(sx, sy);
+            let _ = ctx.set_source_surface(&cached.surface, 0.0, 0.0);
+            let _ = ctx.paint();
+            ctx.restore().ok();
         }
     });
 }

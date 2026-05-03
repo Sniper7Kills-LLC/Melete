@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, CheckButton, DrawingArea, HeaderBar, Label,
+    ApplicationWindow, Box as GtkBox, Button, DrawingArea, HeaderBar, Label,
     MenuButton, Orientation, Overlay, Popover, Stack, StackTransitionType,
 };
 use journal_core::NotebookId;
@@ -142,20 +142,6 @@ fn build_menu_button(parent: &ApplicationWindow, state: SharedState) -> MenuButt
         .margin_start(8)
         .margin_end(8)
         .build();
-
-    let dark_check = CheckButton::with_label("Dark mode");
-    dark_check.set_active(false);
-    {
-        let state = state.clone();
-        dark_check.connect_toggled(move |btn| {
-            let active = btn.is_active();
-            state.borrow_mut().dark_mode = active;
-            if let Some(gtk_settings) = gtk4::Settings::default() {
-                gtk_settings.set_gtk_application_prefer_dark_theme(active);
-            }
-        });
-    }
-    vbox.append(&dark_check);
 
     let export_btn = Button::with_label("Export page as PDF…");
     {
