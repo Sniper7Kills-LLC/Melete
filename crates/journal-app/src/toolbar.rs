@@ -2,6 +2,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use gtk4::gdk::RGBA;
+use gtk4::graphene::Point as GraphenePoint;
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, ColorDialog, ColorDialogButton, GestureDrag, Image, Label, Orientation,
@@ -185,10 +186,10 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
             // Only position if we haven't been given explicit margins yet.
             if bar_for_map.margin_start() == 0 && bar_for_map.margin_top() == 0 {
                 if let Some(parent) = bar_for_map.parent() {
-                    let pw = parent.allocated_width();
-                    let ph = parent.allocated_height();
-                    let bw = bar_for_map.allocated_width();
-                    let bh = bar_for_map.allocated_height();
+                    let pw = parent.width();
+                    let ph = parent.height();
+                    let bw = bar_for_map.width();
+                    let bh = bar_for_map.height();
                     let x = ((pw - bw) / 2).max(0);
                     let y = (ph - bh - 16).max(0);
                     bar_for_map.set_margin_start(x);
@@ -198,45 +199,82 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
         });
     }
 
-    // ── GestureDrag on the handle only ────────────────────────────────────
+    // ── GestureDrag on the handle ─────────────────────────────────────────
+    //
+    // GestureDrag's (dx, dy) deltas live in the *controller widget's* local
+    // coordinate space.  Because we move the toolbar (and therefore the
+    // handle) on every drag_update, that local frame slides under the
+    // gesture and the deltas oscillate — the bar visibly shakes.
+    //
+    // Workaround: project both the drag's start point and the live cursor
+    // position into the toplevel window's root coordinate space (stable),
+    // then compute the delta there.  GestureDrag's start point (passed to
+    // drag_begin) and `gesture.point()` (live position) are both in
+    // handle-local coords, so we translate via `Widget::compute_point`.
     let drag = GestureDrag::builder()
         .propagation_phase(PropagationPhase::Capture)
         .build();
 
-    // Shared state for drag origin (margin at drag start).
     let origin_x: Rc<Cell<i32>> = Rc::new(Cell::new(0));
     let origin_y: Rc<Cell<i32>> = Rc::new(Cell::new(0));
+    let start_root_x: Rc<Cell<f64>> = Rc::new(Cell::new(0.0));
+    let start_root_y: Rc<Cell<f64>> = Rc::new(Cell::new(0.0));
 
     {
         let bar_ref = bar.clone();
+        let handle_ref = handle.clone();
         let ox = origin_x.clone();
         let oy = origin_y.clone();
-        drag.connect_drag_begin(move |_gesture, _start_x, _start_y| {
+        let srx = start_root_x.clone();
+        let sry = start_root_y.clone();
+        drag.connect_drag_begin(move |_gesture, sx, sy| {
             ox.set(bar_ref.margin_start());
             oy.set(bar_ref.margin_top());
+            if let Some(root) = handle_ref.root() {
+                let p = handle_ref
+                    .compute_point(&root, &GraphenePoint::new(sx as f32, sy as f32))
+                    .unwrap_or_else(|| GraphenePoint::new(sx as f32, sy as f32));
+                srx.set(p.x() as f64);
+                sry.set(p.y() as f64);
+            }
         });
     }
 
     {
         let bar_ref = bar.clone();
+        let handle_ref = handle.clone();
         let ox = origin_x.clone();
         let oy = origin_y.clone();
-        drag.connect_drag_update(move |_gesture, dx, dy| {
-            let new_x = (ox.get() + dx as i32).max(0);
-            let new_y = (oy.get() + dy as i32).max(0);
+        let srx = start_root_x.clone();
+        let sry = start_root_y.clone();
+        drag.connect_drag_update(move |gesture, _dx, _dy| {
+            let (cx, cy) = match gesture.point(None) {
+                Some(p) => p,
+                None => return,
+            };
+            let Some(root) = handle_ref.root() else { return; };
+            let cur = handle_ref
+                .compute_point(&root, &GraphenePoint::new(cx as f32, cy as f32))
+                .unwrap_or_else(|| GraphenePoint::new(cx as f32, cy as f32));
+            let dx_root = cur.x() as f64 - srx.get();
+            let dy_root = cur.y() as f64 - sry.get();
 
-            // Clamp so at least the handle stays on-screen.
-            let (new_x, new_y) = if let Some(parent) = bar_ref.parent() {
-                let pw = parent.allocated_width();
-                let ph = parent.allocated_height();
-                let bw = bar_ref.allocated_width().max(48);
-                let bh = bar_ref.allocated_height().max(32);
+            let mut new_x = (ox.get() as f64 + dx_root).round() as i32;
+            let mut new_y = (oy.get() as f64 + dy_root).round() as i32;
+            if new_x < 0 { new_x = 0; }
+            if new_y < 0 { new_y = 0; }
+
+            // Clamp so the toolbar stays at least partially on-screen.
+            if let Some(parent) = bar_ref.parent() {
+                let pw = parent.width();
+                let ph = parent.height();
+                let bw = bar_ref.width().max(48);
+                let bh = bar_ref.height().max(32);
                 let max_x = (pw - bw.min(pw)).max(0);
                 let max_y = (ph - bh.min(ph)).max(0);
-                (new_x.min(max_x), new_y.min(max_y))
-            } else {
-                (new_x, new_y)
-            };
+                new_x = new_x.min(max_x);
+                new_y = new_y.min(max_y);
+            }
 
             bar_ref.set_margin_start(new_x);
             bar_ref.set_margin_top(new_y);
