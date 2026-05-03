@@ -42,8 +42,15 @@ pub fn build_home(
     title.add_css_class("title-1");
     header.append(&title);
 
+    let settings_btn = Button::from_icon_name("emblem-system-symbolic");
+    settings_btn.set_tooltip_text(Some("App settings"));
+    header.append(&settings_btn);
+
     let templates_btn = Button::with_label("Templates");
     header.append(&templates_btn);
+
+    let nb_template_btn = Button::with_label("New notebook template");
+    header.append(&nb_template_btn);
 
     let new_planner_btn = Button::with_label("New planner");
     header.append(&new_planner_btn);
@@ -58,6 +65,30 @@ pub fn build_home(
         let state = state.clone();
         templates_btn.connect_clicked(move |_| {
             template_manager::open(&parent, state.clone());
+        });
+    }
+
+    {
+        let parent = parent.clone();
+        let state = state.clone();
+        settings_btn.connect_clicked(move |_| {
+            crate::settings_dialogs::open_app_settings(
+                &parent,
+                state.clone(),
+                Box::new(|| {}),
+            );
+        });
+    }
+
+    {
+        let parent = parent.clone();
+        let state = state.clone();
+        nb_template_btn.connect_clicked(move |_| {
+            dialogs::prompt_new_notebook_template(
+                &parent,
+                state.clone(),
+                Box::new(|_id| {}),
+            );
         });
     }
 

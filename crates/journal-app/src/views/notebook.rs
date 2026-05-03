@@ -7,9 +7,9 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, DragSource, DrawingArea, DropTarget, Expander,
-    GestureClick, GestureLongPress, Image, Label, Orientation, Overlay, Paned, PopoverMenu,
-    ScrolledWindow,
+    ApplicationWindow, Box as GtkBox, Button, DrawingArea as GtkDrawingArea, DragSource,
+    DrawingArea, DropTarget, Expander, GestureClick, GestureLongPress, Image, Label, Orientation,
+    Overlay, Paned, PopoverMenu, ScrolledWindow,
 };
 use journal_core::{NotebookId, Page, PageId, Section, SectionId};
 use journal_storage::{page_store, section_store, Db};
@@ -359,6 +359,9 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
     let handle = drag_handle_box();
     row.append(&handle);
 
+    let thumb = build_page_thumbnail(ctx, page);
+    row.append(&thumb);
+
     let label = Label::builder()
         .label(&label_text)
         .halign(gtk4::Align::Start)
@@ -388,6 +391,63 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
     attach_page_drop_target(ctx, &row, page.id, page.section_id, list_index);
 
     row
+}
+
+fn build_page_thumbnail(ctx: &SidebarCtx, page: &Page) -> GtkDrawingArea {
+    let thumb_area = GtkDrawingArea::builder()
+        .width_request(40)
+        .height_request(52)
+        .build();
+
+    let state = ctx.state.clone();
+    let page_id = page.id;
+    let template_id = page.template_id;
+
+    {
+        let state = state.clone();
+        thumb_area.set_draw_func(move |_area, ctx_cairo, _w, _h| {
+            let dark_mode = state.borrow().dark_mode;
+            let template = template_id.and_then(|tid| {
+                state.borrow().templates.borrow().get(tid).cloned()
+            });
+
+            if let Some(surface) = crate::thumbnail::get_or_generate_thumbnail(
+                &state,
+                page_id,
+                template.as_ref(),
+                dark_mode,
+            ) {
+                let mut s = state.borrow_mut();
+                s.thumbnail_cache.insert(page_id, surface);
+            }
+
+            let has_surface = state.borrow().thumbnail_cache.contains_key(&page_id);
+            if has_surface {
+                let s = state.borrow();
+                if let Some(surface) = s.thumbnail_cache.get(&page_id) {
+                    ctx_cairo.save().ok();
+                    ctx_cairo.set_source_surface(surface, 0.0, 0.0).ok();
+                    ctx_cairo.paint().ok();
+                    ctx_cairo.restore().ok();
+
+                    ctx_cairo.set_source_rgba(0.5, 0.5, 0.5, 0.4);
+                    ctx_cairo.set_line_width(0.5);
+                    ctx_cairo.rectangle(0.0, 0.0, 40.0, 52.0);
+                    let _ = ctx_cairo.stroke();
+                }
+            } else {
+                ctx_cairo.set_source_rgba(0.85, 0.85, 0.9, 1.0);
+                ctx_cairo.rectangle(0.0, 0.0, 40.0, 52.0);
+                let _ = ctx_cairo.fill();
+                ctx_cairo.set_source_rgba(0.5, 0.5, 0.5, 0.4);
+                ctx_cairo.set_line_width(0.5);
+                ctx_cairo.rectangle(0.0, 0.0, 40.0, 52.0);
+                let _ = ctx_cairo.stroke();
+            }
+        });
+    }
+
+    thumb_area
 }
 
 fn drag_handle_box() -> GtkBox {

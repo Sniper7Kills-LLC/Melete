@@ -1,9 +1,14 @@
 mod canvas_widget;
+mod config;
 mod dialogs;
+mod history;
 mod input;
+mod pdf_export;
 mod settings_dialogs;
+mod shortcuts;
 mod state;
 mod template_manager;
+mod thumbnail;
 mod toolbar;
 mod views;
 mod window;
@@ -79,6 +84,7 @@ fn build_ui(app: &Application) -> Result<()> {
     }
     let notebook_templates = Rc::new(RefCell::new(nb_reg));
     let state = state::new_shared_state(db, templates, notebook_templates);
+    state::reload_placeholder(&state);
 
     let window = ApplicationWindow::builder()
         .application(app)
@@ -87,8 +93,12 @@ fn build_ui(app: &Application) -> Result<()> {
         .default_height(800)
         .build();
 
-    let app_win = window::build(&window, state);
+    let app_win = window::build(&window, state.clone());
     window.set_child(Some(&app_win.borrow().root));
+
+    let canvas = app_win.borrow().canvas.clone();
+    shortcuts::attach_keyboard_shortcuts(&window, state.clone(), canvas);
+
     window.present();
     Ok(())
 }

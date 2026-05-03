@@ -1,5 +1,5 @@
 use gtk4::cairo;
-use journal_core::{Rect, Stroke};
+use journal_core::{BlendMode, Rect, Stroke};
 
 use crate::viewport_transform::ViewportTransform;
 
@@ -20,6 +20,18 @@ fn set_color(ctx: &cairo::Context, c: journal_core::Color, opacity: f32) {
     );
 }
 
+fn blend_to_operator(mode: BlendMode) -> cairo::Operator {
+    match mode {
+        BlendMode::Normal => cairo::Operator::Over,
+        BlendMode::Multiply => cairo::Operator::Multiply,
+        BlendMode::Screen => cairo::Operator::Screen,
+        BlendMode::Overlay => cairo::Operator::Overlay,
+        BlendMode::Darken => cairo::Operator::Darken,
+        BlendMode::Lighten => cairo::Operator::Lighten,
+        BlendMode::Erase => cairo::Operator::DestOut,
+    }
+}
+
 /// Draw a single stroke. Cairo context must already have viewport transform
 /// applied (canvas-space drawing).
 pub fn draw_stroke(ctx: &cairo::Context, transform: &ViewportTransform, stroke: &Stroke) -> bool {
@@ -35,6 +47,8 @@ pub fn draw_stroke(ctx: &cairo::Context, transform: &ViewportTransform, stroke: 
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let canvas_width_at_full_pressure = pen.base_width / zoc;
 
+    ctx.save().ok();
+    ctx.set_operator(blend_to_operator(pen.blend_mode));
     set_color(ctx, pen.color, pen.opacity);
     ctx.set_line_cap(cairo::LineCap::Round);
     ctx.set_line_join(cairo::LineJoin::Round);
@@ -44,6 +58,7 @@ pub fn draw_stroke(ctx: &cairo::Context, transform: &ViewportTransform, stroke: 
         let r = canvas_width_at_full_pressure * (p.pressure.max(0.05) as f64) * 0.5;
         ctx.arc(p.x, p.y, r, 0.0, std::f64::consts::TAU);
         let _ = ctx.fill();
+        ctx.restore().ok();
         return true;
     }
 
@@ -58,5 +73,6 @@ pub fn draw_stroke(ctx: &cairo::Context, transform: &ViewportTransform, stroke: 
         let _ = ctx.stroke();
     }
 
+    ctx.restore().ok();
     true
 }

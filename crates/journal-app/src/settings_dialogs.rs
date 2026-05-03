@@ -270,3 +270,119 @@ pub fn open_section_settings(
     win.set_child(Some(&body));
     win.present();
 }
+
+pub fn open_app_settings(
+    parent: &ApplicationWindow,
+    state: SharedState,
+    on_saved: Box<dyn Fn()>,
+) {
+    use gtk4::{Entry, FileDialog, FileFilter};
+    use std::path::PathBuf;
+
+    let cfg = crate::config::load();
+    let win = modal(parent, "App settings");
+    let body = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+
+    body.append(&Label::new(Some("No-page placeholder")));
+
+    let path_label = Label::new(
+        cfg.placeholder_image_path
+            .as_ref()
+            .and_then(|p| p.to_str())
+            .or(Some("(no image set)")),
+    );
+    path_label.set_halign(gtk4::Align::Start);
+    path_label.set_wrap(true);
+    body.append(&path_label);
+
+    let path_state: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(cfg.placeholder_image_path.clone()));
+
+    let row1 = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
+    let pick_btn = Button::with_label("Choose image…");
+    let clear_btn = Button::with_label("Clear");
+    row1.append(&pick_btn);
+    row1.append(&clear_btn);
+    body.append(&row1);
+
+    {
+        let parent = parent.clone();
+        let path_state = path_state.clone();
+        let path_label = path_label.clone();
+        pick_btn.connect_clicked(move |_| {
+            let dialog = FileDialog::builder().title("Pick placeholder image").build();
+            let filter = FileFilter::new();
+            filter.add_mime_type("image/*");
+            filter.set_name(Some("Images"));
+            let store = gtk4::gio::ListStore::new::<FileFilter>();
+            store.append(&filter);
+            dialog.set_filters(Some(&store));
+            let path_state = path_state.clone();
+            let path_label = path_label.clone();
+            dialog.open(Some(&parent), gtk4::gio::Cancellable::NONE, move |res| {
+                if let Ok(file) = res {
+                    if let Some(p) = file.path() {
+                        path_label.set_text(p.to_str().unwrap_or(""));
+                        *path_state.borrow_mut() = Some(p);
+                    }
+                }
+            });
+        });
+    }
+    {
+        let path_state = path_state.clone();
+        let path_label = path_label.clone();
+        clear_btn.connect_clicked(move |_| {
+            *path_state.borrow_mut() = None;
+            path_label.set_text("(no image set)");
+        });
+    }
+
+    body.append(&Label::new(Some("Placeholder text (used if no image)")));
+    let text_entry = Entry::builder()
+        .placeholder_text("Select a page to start drawing")
+        .text(cfg.placeholder_text.as_deref().unwrap_or(""))
+        .build();
+    body.append(&text_entry);
+
+    let row2 = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).halign(gtk4::Align::End).build();
+    let cancel = Button::with_label("Cancel");
+    let save = Button::with_label("Save");
+    row2.append(&cancel);
+    row2.append(&save);
+    body.append(&row2);
+
+    {
+        let win = win.clone();
+        cancel.connect_clicked(move |_| win.close());
+    }
+    {
+        let win = win.clone();
+        let state = state.clone();
+        let path_state = path_state.clone();
+        save.connect_clicked(move |_| {
+            let new_cfg = crate::config::AppConfig {
+                placeholder_image_path: path_state.borrow().clone(),
+                placeholder_text: {
+                    let t = text_entry.text().to_string();
+                    if t.trim().is_empty() { None } else { Some(t) }
+                },
+            };
+            if let Err(e) = crate::config::save(&new_cfg) {
+                tracing::error!("save config: {}", e);
+            }
+            crate::state::reload_placeholder(&state);
+            (on_saved)();
+            win.close();
+        });
+    }
+
+    win.set_child(Some(&body));
+    win.present();
+}

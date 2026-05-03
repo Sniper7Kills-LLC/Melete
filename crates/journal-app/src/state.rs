@@ -1,10 +1,28 @@
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use gtk4::cairo;
 use journal_canvas::{BackgroundConfig, GridSettings, ViewportTransform};
 use journal_core::{Color, PageId, PageTemplate, PenSettings, Point, Rect, Stroke, TilingMode, Viewport};
 use journal_storage::{stroke_store, Db};
 use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
+use uuid::Uuid;
+
+use crate::history::History;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EraserMode {
+    Stroke,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tool {
+    Pen,
+    Eraser(EraserMode),
+    Highlighter,
+    Selection,
+}
 
 pub struct CanvasState {
     pub transform: ViewportTransform,
@@ -18,6 +36,21 @@ pub struct CanvasState {
     pub notebook_templates: Rc<RefCell<NotebookTemplateRegistry>>,
     pub current_page_id: Option<PageId>,
     pub current_template: Option<PageTemplate>,
+
+    pub tool: Tool,
+    pub history: History,
+    pub selected_stroke_ids: HashSet<Uuid>,
+    pub lasso_points: Vec<(f64, f64)>,
+    pub lasso_active: bool,
+    pub selection_drag_start: Option<(f64, f64)>,
+    pub dark_mode: bool,
+    pub thumbnail_cache: HashMap<PageId, cairo::ImageSurface>,
+
+    pub saved_pen_color: Color,
+    pub saved_pen_width: f64,
+
+    pub placeholder_image: Option<cairo::ImageSurface>,
+    pub placeholder_text: String,
 }
 
 pub type SharedState = Rc<RefCell<CanvasState>>;
@@ -72,7 +105,53 @@ pub fn new_shared_state(
         notebook_templates,
         current_page_id: None,
         current_template: None,
+        tool: Tool::Pen,
+        history: History::new(),
+        selected_stroke_ids: HashSet::new(),
+        lasso_points: Vec::new(),
+        lasso_active: false,
+        selection_drag_start: None,
+        dark_mode: false,
+        thumbnail_cache: HashMap::new(),
+        saved_pen_color: Color { r: 20, g: 20, b: 20, a: 255 },
+        saved_pen_width: 2.0,
+        placeholder_image: None,
+        placeholder_text: "Select a page to start drawing".into(),
     }))
+}
+
+/// Reload placeholder image + text from on-disk config into the state.
+pub fn reload_placeholder(state: &SharedState) {
+    let cfg = crate::config::load();
+    let mut s = state.borrow_mut();
+    s.placeholder_text = cfg
+        .placeholder_text
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| "Select a page to start drawing".into());
+    s.placeholder_image = cfg.placeholder_image_path.and_then(load_image_surface);
+}
+
+fn load_image_surface(path: std::path::PathBuf) -> Option<cairo::ImageSurface> {
+    let pixbuf = match gtk4::gdk_pixbuf::Pixbuf::from_file(&path) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!("placeholder image load failed {:?}: {}", path, e);
+            return None;
+        }
+    };
+    let w = pixbuf.width();
+    let h = pixbuf.height();
+    if w <= 0 || h <= 0 {
+        return None;
+    }
+    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, w, h).ok()?;
+    {
+        let ctx = cairo::Context::new(&surface).ok()?;
+        use gtk4::prelude::*;
+        ctx.set_source_pixbuf(&pixbuf, 0.0, 0.0);
+        let _ = ctx.paint();
+    }
+    Some(surface)
 }
 
 /// Load strokes for the given page and update current_page_id.
@@ -90,6 +169,10 @@ pub fn set_current_page(state: &SharedState, page_id: PageId) {
     s.strokes = strokes;
     s.current_stroke = None;
     s.current_page_id = Some(page_id);
+    s.history.clear();
+    s.selected_stroke_ids.clear();
+    s.lasso_points.clear();
+    s.lasso_active = false;
 }
 
 /// Apply a template to current canvas state (or clear back to defaults if None).
@@ -117,7 +200,7 @@ pub fn set_current_template(state: &SharedState, template: Option<PageTemplate>)
     s.current_template = template;
 }
 
-fn fit_viewport_to_page(transform: &mut ViewportTransform, page: Rect) {
+pub fn fit_viewport_to_page(transform: &mut ViewportTransform, page: Rect) {
     let (sw, sh) = transform.screen_size();
     if sw <= 0.0 || sh <= 0.0 || page.width <= 0.0 || page.height <= 0.0 {
         return;
@@ -131,4 +214,47 @@ fn fit_viewport_to_page(transform: &mut ViewportTransform, page: Rect) {
         y: page.y + page.height * 0.5,
     };
     transform.set_viewport(viewport);
+}
+
+pub fn fit_viewport_to_page_pub(transform: &mut ViewportTransform, page: Rect) {
+    fit_viewport_to_page(transform, page);
+}
+
+pub fn toggle_tool_eraser(state: &SharedState) {
+    let mut s = state.borrow_mut();
+    s.tool = match s.tool {
+        Tool::Eraser(_) => Tool::Pen,
+        _ => Tool::Eraser(EraserMode::Stroke),
+    };
+}
+
+pub fn set_tool_pen(state: &SharedState) {
+    let mut s = state.borrow_mut();
+    s.tool = Tool::Pen;
+    s.pen.blend_mode = journal_core::BlendMode::Normal;
+    s.pen.opacity = 1.0;
+    s.pen.color = s.saved_pen_color;
+    s.pen.base_width = s.saved_pen_width;
+}
+
+pub fn set_tool_highlighter(state: &SharedState) {
+    let mut s = state.borrow_mut();
+    s.saved_pen_color = s.pen.color;
+    s.saved_pen_width = s.pen.base_width;
+    s.tool = Tool::Highlighter;
+    s.pen.opacity = 0.35;
+    s.pen.blend_mode = journal_core::BlendMode::Multiply;
+}
+
+pub fn set_tool_selection(state: &SharedState) {
+    let mut s = state.borrow_mut();
+    s.tool = Tool::Selection;
+}
+
+pub fn clear_selection(state: &SharedState) {
+    let mut s = state.borrow_mut();
+    s.selected_stroke_ids.clear();
+    s.lasso_points.clear();
+    s.lasso_active = false;
+    s.selection_drag_start = None;
 }

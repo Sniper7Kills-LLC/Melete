@@ -382,25 +382,39 @@ pub fn prompt_new_planner(
     win.present();
 }
 
-/// Stub editor for a custom NotebookTemplate. Currently asks for a name +
-/// grouping + page title format, clones the first built-in template under a
-/// new id, and saves it to the registry. Full slot editing is out of scope
-/// for this PR.
-#[allow(dead_code)]
+/// Full editor for a NotebookTemplate. Lets the user define name, description,
+/// grouping (Month|Week), page title format, section title formats, and a list
+/// of daily slots (each = day-of-week toggles + page template choice).
 pub fn prompt_new_notebook_template(
     parent: &ApplicationWindow,
     state: SharedState,
     on_ok: Box<dyn Fn(TemplateId)>,
 ) {
-    let base = match state.borrow().notebook_templates.borrow().list().first() {
-        Some(t) => (*t).clone(),
-        None => {
-            tracing::warn!("no notebook templates to clone");
-            return;
-        }
-    };
+    use chrono::Weekday;
+    use gtk4::{ScrolledWindow, ToggleButton};
+    use journal_core::{DailySlot, NotebookTemplate, SectionTitleFormats};
 
-    let win = modal(parent, "New Notebook Template");
+    let page_templates: Vec<PageTemplate> = {
+        let s = state.borrow();
+        let reg = s.templates.borrow();
+        let mut v: Vec<PageTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();
+        v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        v
+    };
+    if page_templates.is_empty() {
+        tracing::warn!("no page templates available");
+        return;
+    }
+
+    let win = Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .title("New Notebook Template")
+        .default_width(560)
+        .default_height(640)
+        .build();
+
+    let scroll = ScrolledWindow::builder().hexpand(true).vexpand(true).build();
     let body = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(8)
@@ -409,47 +423,165 @@ pub fn prompt_new_notebook_template(
         .margin_start(16)
         .margin_end(16)
         .build();
+    scroll.set_child(Some(&body));
 
     body.append(&Label::new(Some("Template name")));
-    let name_entry = Entry::builder().text(&base.name).build();
+    let name_entry = Entry::builder().placeholder_text("My Planner").build();
     body.append(&name_entry);
+
+    body.append(&Label::new(Some("Description")));
+    let desc_entry = Entry::builder().build();
+    body.append(&desc_entry);
 
     body.append(&Label::new(Some("Group by")));
     let grouping_model = StringList::new(&["Month", "Week"]);
     let grouping_dropdown = DropDown::builder().model(&grouping_model).selected(0).build();
     body.append(&grouping_dropdown);
 
-    body.append(&Label::new(Some("Page title format")));
-    let title_entry = Entry::builder().text(&base.page_title_format).build();
-    body.append(&title_entry);
+    let vars_hint = "vars: {year} {month} {month_name} {week} {day} {weekday} {date}";
 
-    let on_ok = Rc::new(on_ok);
-    let row = build_button_row(&win, {
-        let state = state.clone();
-        let name_entry = name_entry.clone();
-        let grouping_dropdown = grouping_dropdown.clone();
-        let title_entry = title_entry.clone();
-        let on_ok = on_ok.clone();
-        let base = base.clone();
-        move || {
-            let mut clone = base.clone();
-            clone.id = TemplateId(Uuid::new_v4());
-            clone.name = name_entry.text().to_string();
-            clone.grouping = match grouping_dropdown.selected() {
-                1 => PlannerGrouping::Week,
-                _ => PlannerGrouping::Month,
-            };
-            let pt = title_entry.text().to_string();
-            if !pt.trim().is_empty() {
-                clone.page_title_format = pt;
+    body.append(&Label::new(Some("Page title format")));
+    let title_entry = Entry::builder().text("{weekday} {month_name} {day}").build();
+    body.append(&title_entry);
+    let h = Label::new(Some(vars_hint));
+    h.add_css_class("dim-label");
+    h.set_halign(gtk4::Align::Start);
+    body.append(&h);
+
+    body.append(&Label::new(Some("Year section title")));
+    let year_entry = Entry::builder().text("{year}").build();
+    body.append(&year_entry);
+
+    body.append(&Label::new(Some("Month wrapper title")));
+    let month_entry = Entry::builder().text("{month_name} {year}").build();
+    body.append(&month_entry);
+
+    body.append(&Label::new(Some("Week wrapper title")));
+    let week_entry = Entry::builder().text("Week {week} {year}").build();
+    body.append(&week_entry);
+
+    body.append(&Label::new(Some("Daily slots")));
+    let slots_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(6).build();
+    body.append(&slots_box);
+
+    type SlotRowCtl = (Vec<ToggleButton>, DropDown, GtkBox);
+    let slots: Rc<RefCell<Vec<SlotRowCtl>>> = Rc::new(RefCell::new(Vec::new()));
+
+    let names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    let pt_strings: Vec<String> = page_templates.iter().map(|t| t.name.clone()).collect();
+    let pt_str_refs: Vec<&str> = pt_strings.iter().map(|s| s.as_str()).collect();
+
+    let make_slot = {
+        let pt_str_refs_owned = pt_str_refs.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let slots_box = slots_box.clone();
+        let slots = slots.clone();
+        Rc::new(move |default_all: bool| {
+            let row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
+            let mut day_btns = Vec::with_capacity(7);
+            for (_i, n) in names.iter().enumerate() {
+                let b = ToggleButton::builder().label(*n).active(default_all).build();
+                row.append(&b);
+                day_btns.push(b);
             }
-            let id = clone.id;
-            state.borrow().notebook_templates.borrow_mut().insert(clone);
-            (on_ok)(id);
-        }
-    });
+            let refs: Vec<&str> = pt_str_refs_owned.iter().map(|s| s.as_str()).collect();
+            let model = StringList::new(&refs);
+            let dd = DropDown::builder().model(&model).selected(0).build();
+            row.append(&dd);
+            let remove_btn = Button::from_icon_name("edit-delete-symbolic");
+            row.append(&remove_btn);
+
+            let row_w = row.clone();
+            let slots_box_w = slots_box.clone();
+            let slots_w = slots.clone();
+            remove_btn.connect_clicked(move |_| {
+                slots_box_w.remove(&row_w);
+                slots_w.borrow_mut().retain(|(_, _, r)| !r.eq(&row_w));
+            });
+
+            slots_box.append(&row);
+            slots.borrow_mut().push((day_btns, dd, row));
+        })
+    };
+
+    (make_slot)(true);
+
+    let add_slot_btn = Button::with_label("+ Add slot");
+    body.append(&add_slot_btn);
+    {
+        let make_slot = make_slot.clone();
+        add_slot_btn.connect_clicked(move |_| (make_slot)(false));
+    }
+
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .halign(gtk4::Align::End)
+        .margin_top(8)
+        .build();
+    let cancel = Button::with_label("Cancel");
+    let save = Button::with_label("Save");
+    row.append(&cancel);
+    row.append(&save);
     body.append(&row);
 
-    win.set_child(Some(&body));
+    {
+        let win = win.clone();
+        cancel.connect_clicked(move |_| win.close());
+    }
+    {
+        let win = win.clone();
+        let state = state.clone();
+        let on_ok = Rc::new(on_ok);
+        let page_templates = page_templates.clone();
+        let slots = slots.clone();
+        save.connect_clicked(move |_| {
+            let weekday_list = [
+                Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu,
+                Weekday::Fri, Weekday::Sat, Weekday::Sun,
+            ];
+            let mut daily_slots: Vec<DailySlot> = Vec::new();
+            for (day_btns, dd, _) in slots.borrow().iter() {
+                let days: Vec<Weekday> = day_btns
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, b)| if b.is_active() { Some(weekday_list[i]) } else { None })
+                    .collect();
+                if days.is_empty() {
+                    continue;
+                }
+                let idx = dd.selected() as usize;
+                if let Some(pt) = page_templates.get(idx) {
+                    daily_slots.push(DailySlot { days, templates: vec![pt.id] });
+                }
+            }
+            let nt = NotebookTemplate {
+                id: TemplateId(Uuid::new_v4()),
+                name: name_entry.text().to_string(),
+                description: desc_entry.text().to_string(),
+                year_start: vec![],
+                before_quarter: vec![],
+                before_month: vec![],
+                before_week: vec![],
+                daily_slots,
+                grouping: match grouping_dropdown.selected() {
+                    1 => PlannerGrouping::Week,
+                    _ => PlannerGrouping::Month,
+                },
+                page_title_format: title_entry.text().to_string(),
+                section_title_formats: SectionTitleFormats {
+                    year: year_entry.text().to_string(),
+                    month: month_entry.text().to_string(),
+                    week: week_entry.text().to_string(),
+                },
+            };
+            let id = nt.id;
+            persist_notebook_template(&nt);
+            state.borrow().notebook_templates.borrow_mut().insert(nt);
+            (on_ok)(id);
+            win.close();
+        });
+    }
+
+    win.set_child(Some(&scroll));
     win.present();
 }

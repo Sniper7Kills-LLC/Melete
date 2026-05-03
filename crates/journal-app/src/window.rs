@@ -3,8 +3,8 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, DrawingArea, HeaderBar, Label, Orientation, Overlay,
-    Stack, StackTransitionType,
+    ApplicationWindow, Box as GtkBox, Button, CheckButton, DrawingArea, HeaderBar, Label,
+    MenuButton, Orientation, Overlay, Popover, Stack, StackTransitionType,
 };
 use journal_core::NotebookId;
 use journal_storage::notebook_store;
@@ -49,6 +49,9 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     notebook_settings_btn.set_tooltip_text(Some("Notebook settings"));
     notebook_settings_btn.set_visible(false);
     header.pack_end(&notebook_settings_btn);
+
+    let menu_btn = build_menu_button(parent, state.clone());
+    header.pack_end(&menu_btn);
 
     let canvas = canvas_widget::build_canvas(state.clone());
     input::attach_stylus(&canvas, state.clone());
@@ -129,6 +132,99 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     win
 }
 
+fn build_menu_button(parent: &ApplicationWindow, state: SharedState) -> MenuButton {
+    let popover = Popover::new();
+    let vbox = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(6)
+        .margin_top(8)
+        .margin_bottom(8)
+        .margin_start(8)
+        .margin_end(8)
+        .build();
+
+    let dark_check = CheckButton::with_label("Dark mode");
+    dark_check.set_active(false);
+    {
+        let state = state.clone();
+        dark_check.connect_toggled(move |btn| {
+            let active = btn.is_active();
+            state.borrow_mut().dark_mode = active;
+            if let Some(gtk_settings) = gtk4::Settings::default() {
+                gtk_settings.set_gtk_application_prefer_dark_theme(active);
+            }
+        });
+    }
+    vbox.append(&dark_check);
+
+    let export_btn = Button::with_label("Export page as PDF…");
+    {
+        let state = state.clone();
+        let parent = parent.clone();
+        let popover_clone = popover.clone();
+        export_btn.connect_clicked(move |_| {
+            popover_clone.popdown();
+            do_pdf_export(&parent, state.clone());
+        });
+    }
+    vbox.append(&export_btn);
+
+    popover.set_child(Some(&vbox));
+
+    let menu_btn = MenuButton::builder()
+        .icon_name("open-menu-symbolic")
+        .popover(&popover)
+        .tooltip_text("Menu")
+        .build();
+    menu_btn
+}
+
+fn do_pdf_export(parent: &ApplicationWindow, state: SharedState) {
+    let dialog = gtk4::FileDialog::builder()
+        .title("Export page as PDF")
+        .modal(true)
+        .initial_name("page.pdf")
+        .build();
+
+    let filter = gtk4::FileFilter::new();
+    filter.set_name(Some("PDF files"));
+    filter.add_pattern("*.pdf");
+    filter.add_mime_type("application/pdf");
+    let filters = gtk4::gio::ListStore::new::<gtk4::FileFilter>();
+    filters.append(&filter);
+    dialog.set_filters(Some(&filters));
+
+    let parent_clone = parent.clone();
+    dialog.save(Some(parent), gtk4::gio::Cancellable::NONE, move |result| {
+        let file = match result {
+            Ok(f) => f,
+            Err(_) => return,
+        };
+        let path = match file.path() {
+            Some(p) => p,
+            None => {
+                tracing::warn!("PDF export: no path from file dialog");
+                return;
+            }
+        };
+        let path = if path.extension().map(|e| e != "pdf").unwrap_or(true) {
+            path.with_extension("pdf")
+        } else {
+            path
+        };
+        if let Err(e) = crate::pdf_export::export_page_to_pdf(&state, &path) {
+            tracing::error!("PDF export failed: {:#}", e);
+            let dialog = gtk4::AlertDialog::builder()
+                .message("Export failed")
+                .detail(format!("{:#}", e).as_str())
+                .build();
+            dialog.show(Some(&parent_clone));
+        } else {
+            tracing::info!("PDF exported to {:?}", path);
+        }
+    });
+}
+
 pub fn show_home(win: &SharedWindow) {
     let w = win.borrow();
     w.stack.set_visible_child_name(HOME_NAME);
@@ -139,13 +235,11 @@ pub fn show_home(win: &SharedWindow) {
 }
 
 pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
-    // Detach overlay from any previous parent (the previous notebook view).
     let overlay = win.borrow().canvas_overlay.clone();
     if overlay.parent().is_some() {
         overlay.unparent();
     }
 
-    // Clear the notebook container.
     let container = win.borrow().notebook_container.clone();
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -155,8 +249,6 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
     let state = win.borrow().state.clone();
     let canvas = win.borrow().canvas.clone();
 
-    // Reset canvas: clear strokes + page until user picks one (or the planner
-    // generation below lands on today's page).
     {
         let mut s = state.borrow_mut();
         s.strokes.clear();
@@ -168,15 +260,12 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
     }
     win.borrow().canvas.queue_draw();
 
-    // For planner notebooks, materialize today's section/page tree before we
-    // render the sidebar, so the sidebar shows the freshly created sections.
     let planner_template = planner_nav::resolve_planner_template(&state, notebook_id);
     if let Some(ref template) = planner_template {
         let today = chrono::Local::now().date_naive();
         let _ = planner_nav::goto_date(&state, &canvas, notebook_id, template, today);
     }
 
-    // Build a fresh notebook view containing the persistent overlay.
     let view = notebook_view::build_notebook_view(
         &parent,
         state.clone(),
@@ -186,7 +275,6 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
     );
     container.append(&view.root);
 
-    // Update header.
     let title = match notebook_store::get_notebook(state.borrow().db.borrow().conn(), notebook_id) {
         Ok(nb) => nb.name,
         Err(_) => "Notebook".to_string(),

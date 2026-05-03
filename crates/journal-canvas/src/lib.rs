@@ -4,7 +4,7 @@ pub mod stroke_renderer;
 pub mod grid_renderer;
 pub mod background_renderer;
 
-pub use renderer::paint;
+pub use renderer::{paint, draw_lasso_overlay};
 pub use viewport_transform::ViewportTransform;
 pub use grid_renderer::GridSettings;
 pub use background_renderer::BackgroundConfig;

@@ -57,6 +57,56 @@ pub fn delete_stroke(conn: &Connection, id: uuid::Uuid) -> Result<()> {
     Ok(())
 }
 
+pub fn update_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Result<()> {
+    let blob = pack_points(&stroke.points);
+    let pen_json = serde_json::to_string(&stroke.pen)?;
+    let bbox = stroke.bounding_box;
+
+    let updated = conn.execute(
+        "UPDATE strokes SET points_blob = ?1, pen_json = ?2, zoom_at_creation = ?3,
+         bbox_x = ?4, bbox_y = ?5, bbox_w = ?6, bbox_h = ?7
+         WHERE id = ?8 AND page_id = ?9",
+        params![
+            blob,
+            pen_json,
+            stroke.zoom_at_creation,
+            bbox.x,
+            bbox.y,
+            bbox.width,
+            bbox.height,
+            uuid_to_blob(stroke.id),
+            uuid_to_blob(page_id.0),
+        ],
+    )?;
+    if updated == 0 {
+        return Err(StorageError::NotFound);
+    }
+
+    let rowid: i64 = conn.query_row(
+        "SELECT rowid FROM strokes WHERE id = ?1",
+        params![uuid_to_blob(stroke.id)],
+        |r| r.get(0),
+    )?;
+    conn.execute(
+        "UPDATE strokes_rtree SET min_x = ?1, max_x = ?2, min_y = ?3, max_y = ?4 WHERE id = ?5",
+        params![
+            bbox.x,
+            bbox.x + bbox.width,
+            bbox.y,
+            bbox.y + bbox.height,
+            rowid,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn delete_strokes_batch(conn: &Connection, ids: &[uuid::Uuid]) -> Result<()> {
+    for id in ids {
+        let _ = delete_stroke(conn, *id);
+    }
+    Ok(())
+}
+
 pub fn list_strokes_for_page(conn: &Connection, page_id: PageId) -> Result<Vec<Stroke>> {
     let mut stmt = conn.prepare(
         "SELECT id, points_blob, pen_json, zoom_at_creation, bbox_x, bbox_y, bbox_w, bbox_h

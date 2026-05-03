@@ -202,18 +202,22 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ---
 
-## Phase 5: Polish + Tools
+## Phase 5: Polish + Tools ✅
 
-**Goal:** Full drawing toolkit, quality of life.
+- [x] Undo/redo (Ctrl+Z, Ctrl+Shift+Z)
+- [x] Eraser tool — stroke-level (partial-mode deferred)
+- [x] Selection tool — lasso polygon, bbox-containment selection, move via drag (resize deferred)
+- [x] Highlighter — opacity 0.35, base_width × 4, BlendMode::Multiply
+- [x] Page thumbnails in sidebar (40×52 cached ImageSurface per page)
+- [x] PDF export of active page (Cairo PdfSurface)
+- [x] Dark mode toggle (header menu) — Gtk theme + canvas background recolor
+- [x] Keyboard shortcuts (B/H/V/Ctrl+E/Ctrl+Z/Delete/Esc/Ctrl+0/+/-/F11)
 
-- [ ] Undo/redo
-- [ ] Eraser tool (stroke-level and partial)
-- [ ] Selection tool (lasso, move, resize)
-- [ ] Highlighter / different pen types
-- [ ] Page thumbnails in sidebar
-- [ ] PDF export
-- [ ] Dark mode
-- [ ] Keyboard shortcuts
+## Phase 4.5 finish ✅ (PDF import deferred)
+
+- [x] Configurable no-page placeholder image + text via `~/.config/journal/config.toml`; settings dialog on home
+- [x] Full notebook template editor (name, description, grouping, page title format, year/month/week section formats, daily slots with day-of-week toggles + page template picker, add/remove slots; persisted to disk)
+- [ ] PDF template background import (deferred — poppler-rs crate compatibility with current gtk4-rs/glib generation needs verification; libpoppler-glib is available system-side)
 
 ---
 

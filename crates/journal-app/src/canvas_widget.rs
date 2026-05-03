@@ -1,6 +1,6 @@
 use gtk4::prelude::*;
 use gtk4::DrawingArea;
-use journal_canvas::paint;
+use journal_canvas::{draw_lasso_overlay, paint};
 
 use crate::state::SharedState;
 
@@ -17,18 +17,34 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
             s.transform.set_size(w as f64, h as f64);
 
             if s.current_page_id.is_none() {
-                draw_placeholder(ctx, w as f64, h as f64);
+                draw_placeholder(
+                    ctx,
+                    w as f64,
+                    h as f64,
+                    s.dark_mode,
+                    s.placeholder_image.as_ref(),
+                    &s.placeholder_text,
+                );
                 return;
             }
+
+            let dark_mode = s.dark_mode;
+            let selected_ids = s.selected_stroke_ids.clone();
+            let lasso_points = s.lasso_points.clone();
 
             if let Some(cs) = s.current_stroke.clone() {
                 let mut frame: Vec<journal_core::Stroke> =
                     Vec::with_capacity(s.strokes.len() + 1);
                 frame.extend_from_slice(&s.strokes);
                 frame.push(cs);
-                paint(ctx, &s.transform, &s.background, s.page_rect, &frame);
+                paint(ctx, &s.transform, &s.background, s.page_rect, &frame, &selected_ids, dark_mode);
             } else {
-                paint(ctx, &s.transform, &s.background, s.page_rect, &s.strokes);
+                paint(ctx, &s.transform, &s.background, s.page_rect, &s.strokes, &selected_ids, dark_mode);
+            }
+
+            if !lasso_points.is_empty() {
+                ctx.identity_matrix();
+                draw_lasso_overlay(ctx, &lasso_points);
             }
         });
     }
@@ -36,13 +52,48 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
     area
 }
 
-fn draw_placeholder(ctx: &gtk4::cairo::Context, w: f64, h: f64) {
-    ctx.set_source_rgb(0.97, 0.97, 0.98);
+fn draw_placeholder(
+    ctx: &gtk4::cairo::Context,
+    w: f64,
+    h: f64,
+    dark_mode: bool,
+    image: Option<&gtk4::cairo::ImageSurface>,
+    text: &str,
+) {
+    if dark_mode {
+        ctx.set_source_rgb(0.13, 0.13, 0.15);
+    } else {
+        ctx.set_source_rgb(0.97, 0.97, 0.98);
+    }
     let _ = ctx.paint();
 
-    ctx.set_source_rgba(0.3, 0.3, 0.35, 0.6);
+    if let Some(surface) = image {
+        let iw = surface.width() as f64;
+        let ih = surface.height() as f64;
+        if iw > 0.0 && ih > 0.0 {
+            let max_w = w * 0.6;
+            let max_h = h * 0.6;
+            let scale = (max_w / iw).min(max_h / ih).min(1.0);
+            let dst_w = iw * scale;
+            let dst_h = ih * scale;
+            let x = (w - dst_w) * 0.5;
+            let y = (h - dst_h) * 0.5;
+            ctx.save().ok();
+            ctx.translate(x, y);
+            ctx.scale(scale, scale);
+            let _ = ctx.set_source_surface(surface, 0.0, 0.0);
+            let _ = ctx.paint();
+            ctx.restore().ok();
+            return;
+        }
+    }
+
+    if dark_mode {
+        ctx.set_source_rgba(0.7, 0.7, 0.75, 0.6);
+    } else {
+        ctx.set_source_rgba(0.3, 0.3, 0.35, 0.6);
+    }
     ctx.set_font_size(20.0);
-    let text = "Select a page to start drawing";
     let extents = match ctx.text_extents(text) {
         Ok(e) => e,
         Err(_) => return,
