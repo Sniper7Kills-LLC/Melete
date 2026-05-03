@@ -26,6 +26,8 @@ pub struct TemplateFile {
     pub default_viewport: Option<ViewportFile>,
     #[serde(default)]
     pub widgets: Vec<TemplateWidget>,
+    #[serde(default)]
+    pub category: String,
 }
 
 fn default_size_mm() -> [f64; 2] {
@@ -151,6 +153,7 @@ pub fn template_file_to_page_template(f: TemplateFile) -> PageTemplate {
         tiling: f.tiling.into(),
         default_viewport: f.default_viewport.map(Into::into),
         widgets: f.widgets,
+        category: f.category,
     }
 }
 
@@ -165,6 +168,7 @@ pub fn template_file_from_page_template(t: &PageTemplate) -> TemplateFile {
         background: (&t.background).into(),
         default_viewport: t.default_viewport.map(Into::into),
         widgets: t.widgets.clone(),
+        category: t.category.clone(),
     }
 }
 

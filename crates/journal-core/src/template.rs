@@ -102,6 +102,10 @@ pub struct PageTemplate {
     pub default_viewport: Option<Viewport>,
     #[serde(default)]
     pub widgets: Vec<TemplateWidget>,
+    /// Free-form category label for grouping in the template manager UI.
+    /// Empty string means "Uncategorized".
+    #[serde(default)]
+    pub category: String,
 }
 
 impl Default for PageTemplate {
@@ -115,6 +119,7 @@ impl Default for PageTemplate {
             tiling: TilingMode::None,
             default_viewport: None,
             widgets: Vec::new(),
+            category: String::new(),
         }
     }
 }

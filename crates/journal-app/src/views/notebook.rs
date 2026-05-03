@@ -29,6 +29,9 @@ struct SidebarCtx {
     state: SharedState,
     notebook_id: NotebookId,
     canvas: DrawingArea,
+    /// Planner notebooks own their own page/section structure; we hide the
+    /// "+ New Page" / "+ New Section" affordances when this is true.
+    is_planner: bool,
 }
 
 impl SidebarCtx {
@@ -40,6 +43,7 @@ impl SidebarCtx {
             self.state.clone(),
             self.notebook_id,
             self.canvas.clone(),
+            self.is_planner,
         );
     }
 }
@@ -77,11 +81,20 @@ pub fn build_notebook_view(
     scroller.set_child(Some(&sections_box));
     sidebar_root.append(&scroller);
 
+    // Planner notebooks own their own structure — pages and sections are
+    // generated automatically by date navigation. Free-form section/page
+    // creation is hidden so the user can't drift the structure out of sync.
+    let is_planner = matches!(
+        journal_storage::notebook_store::get_notebook(state.borrow().db.borrow().conn(), notebook_id),
+        Ok(nb) if matches!(nb.kind, journal_core::NotebookKind::Planner { .. })
+    );
+
     let new_section_btn = Button::with_label("+ New Section");
     new_section_btn.set_margin_start(8);
     new_section_btn.set_margin_end(8);
     new_section_btn.set_margin_top(4);
     new_section_btn.set_margin_bottom(8);
+    new_section_btn.set_visible(!is_planner);
     sidebar_root.append(&new_section_btn);
 
     paned.set_start_child(Some(&sidebar_root));
@@ -99,6 +112,7 @@ pub fn build_notebook_view(
         state: state.clone(),
         notebook_id,
         canvas: canvas.clone(),
+        is_planner,
     };
 
     ctx.refresh();
@@ -167,6 +181,7 @@ fn refresh_sections(
     state: SharedState,
     notebook_id: NotebookId,
     canvas: DrawingArea,
+    is_planner: bool,
 ) {
     while let Some(child) = sections_box.first_child() {
         sections_box.remove(&child);
@@ -181,9 +196,15 @@ fn refresh_sections(
     };
 
     if roots.is_empty() {
-        let empty = Label::new(Some("No sections — add one below."));
+        let empty_text = if is_planner {
+            "Pages appear here as you navigate to dates above."
+        } else {
+            "No sections — add one below."
+        };
+        let empty = Label::new(Some(empty_text));
         empty.add_css_class("dim-label");
         empty.set_halign(gtk4::Align::Start);
+        empty.set_wrap(true);
         sections_box.append(&empty);
         return;
     }
@@ -195,6 +216,7 @@ fn refresh_sections(
         state: state.clone(),
         notebook_id,
         canvas: canvas.clone(),
+        is_planner,
     };
 
     for section in roots {
@@ -257,6 +279,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
 
     let new_page_btn = Button::with_label("+ New Page");
     new_page_btn.set_halign(gtk4::Align::Start);
+    new_page_btn.set_visible(!ctx.is_planner);
     inner.append(&new_page_btn);
 
     let section_id = section.id;

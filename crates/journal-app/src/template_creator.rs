@@ -263,6 +263,24 @@ fn build_meta_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
     });
     row.append(&desc_entry);
 
+    let cat_label = Label::new(Some("Category:"));
+    row.append(&cat_label);
+    let cat_entry = Entry::builder()
+        .placeholder_text("e.g. Daily Planner, Basics")
+        .build();
+    cat_entry.set_width_chars(18);
+    {
+        let t = cs.borrow();
+        cat_entry.set_text(&t.template.category);
+    }
+    cat_entry.connect_changed({
+        let cs = cs.clone();
+        move |e| {
+            cs.borrow_mut().template.category = e.text().to_string();
+        }
+    });
+    row.append(&cat_entry);
+
     row
 }
 

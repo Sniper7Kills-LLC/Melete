@@ -148,10 +148,8 @@ pub fn build_home(
     header.append(&settings_btn);
 
     let templates_btn = Button::with_label("Templates");
+    templates_btn.set_tooltip_text(Some("Manage page and notebook templates"));
     header.append(&templates_btn);
-
-    let nb_template_btn = Button::with_label("New notebook template");
-    header.append(&nb_template_btn);
 
     // Single "New notebook" button — picks Standard or Planner via a small
     // chooser dialog. Replaces the old separate "New planner" button.
@@ -177,18 +175,6 @@ pub fn build_home(
                 &parent,
                 state.clone(),
                 Box::new(|| {}),
-            );
-        });
-    }
-
-    {
-        let parent = parent.clone();
-        let state = state.clone();
-        nb_template_btn.connect_clicked(move |_| {
-            dialogs::prompt_new_notebook_template(
-                &parent,
-                state.clone(),
-                Box::new(|_id| {}),
             );
         });
     }

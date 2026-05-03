@@ -30,6 +30,12 @@ pub fn is_builtin(id: journal_core::TemplateId) -> bool {
             | BUILTIN_FRANKLIN_DAILY_ID
     )
 }
+
+/// True if this notebook-template id matches one of the built-in
+/// notebook-template ids.
+pub fn is_builtin_notebook_template(id: journal_core::TemplateId) -> bool {
+    matches!(id.0, BUILTIN_YEARLY_PLANNER_ID)
+}
 pub use canvas_bridge::page_template_to_background_config;
 pub use error::TemplateError;
 pub use format::{
@@ -81,6 +87,7 @@ mod tests {
                     },
                 },
             ],
+            category: String::new(),
         };
         let file = template_file_from_page_template(&t);
         let toml = serialize_template_toml(&file).expect("serialize");
@@ -234,6 +241,7 @@ type = "blank"
             tiling: TilingMode::None,
             default_viewport: None,
             widgets: Vec::new(),
+            category: String::new(),
         };
         match page_template_to_background_config(&t) {
             BackgroundConfig::Image { path, size_canvas } => {
@@ -258,6 +266,7 @@ type = "blank"
             tiling: TilingMode::None,
             default_viewport: None,
             widgets: Vec::new(),
+            category: String::new(),
         };
         match page_template_to_background_config(&t) {
             BackgroundConfig::Pdf { path, page, size_canvas } => {

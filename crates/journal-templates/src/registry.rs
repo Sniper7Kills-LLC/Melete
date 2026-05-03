@@ -115,6 +115,10 @@ impl NotebookTemplateRegistry {
         self.templates.insert(t.id, t);
     }
 
+    pub fn remove(&mut self, id: TemplateId) -> Option<NotebookTemplate> {
+        self.templates.remove(&id)
+    }
+
     pub fn get(&self, id: TemplateId) -> Option<&NotebookTemplate> {
         self.templates.get(&id)
     }

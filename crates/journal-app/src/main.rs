@@ -204,6 +204,24 @@ const APP_CSS: &str = r#"
 .empty-state-icon    { -gtk-icon-size: 96px; color: alpha(@accent_color, 0.55); margin-bottom: 12px; }
 .empty-state-title   { font-size: 1.6em; font-weight: 700; margin-bottom: 6px; }
 .empty-state-subtitle{ opacity: 0.6; font-size: 1.0em; margin-bottom: 24px; }
+
+/* ── Template manager: category dividers + preview frames ─────────── */
+.template-category-header {
+    font-size: 0.75em;
+    font-weight: 700;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    padding: 12px 8px 4px 8px;
+    border-bottom: 1px solid alpha(@borders, 0.5);
+    margin-bottom: 4px;
+}
+.template-preview-frame {
+    background: white;
+    border-radius: 6px;
+    border: 1px solid alpha(@borders, 0.7);
+    box-shadow: 0 1px 2px alpha(black, 0.08);
+}
 "#;
 
 fn load_css() {

@@ -22,6 +22,7 @@ pub fn builtin_blank() -> PageTemplate {
         tiling: TilingMode::None,
         default_viewport: None,
         widgets: Vec::new(),
+        category: "Basics".into(),
     }
 }
 
@@ -35,6 +36,7 @@ pub fn builtin_dotted() -> PageTemplate {
         tiling: TilingMode::None,
         default_viewport: None,
         widgets: Vec::new(),
+        category: "Basics".into(),
     }
 }
 
@@ -48,6 +50,7 @@ pub fn builtin_ruled() -> PageTemplate {
         tiling: TilingMode::None,
         default_viewport: None,
         widgets: Vec::new(),
+        category: "Basics".into(),
     }
 }
 
@@ -61,6 +64,7 @@ pub fn builtin_grid() -> PageTemplate {
         tiling: TilingMode::Repeat,
         default_viewport: None,
         widgets: Vec::new(),
+        category: "Basics".into(),
     }
 }
 
@@ -74,6 +78,7 @@ pub fn builtin_daily_planner() -> PageTemplate {
         tiling: TilingMode::None,
         default_viewport: None,
         widgets: Vec::new(),
+        category: "Daily Planner".into(),
     }
 }
 
@@ -141,6 +146,7 @@ pub fn builtin_fullfocus_daily() -> PageTemplate {
         tiling: TilingMode::None,
         default_viewport: None,
         widgets: vec![big_three, appointments, checklist],
+        category: "Daily Planner".into(),
     }
 }
 
@@ -210,6 +216,7 @@ pub fn builtin_franklin_daily() -> PageTemplate {
         tiling: TilingMode::None,
         default_viewport: None,
         widgets: vec![header, priority, appointments],
+        category: "Daily Planner".into(),
     }
 }
 

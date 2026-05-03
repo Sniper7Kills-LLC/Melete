@@ -3,13 +3,18 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, FileDialog, FileFilter, Image, Label, ListBox,
-    Orientation, ScrolledWindow, Window,
+    Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, FileDialog, FileFilter, Frame,
+    Label, ListBox, ListBoxRow, Orientation, ScrolledWindow, Stack, StackSwitcher, Window,
 };
-use journal_core::{BackgroundType, PageTemplate, TemplateId, TilingMode};
+use journal_canvas::{paint_with_widgets, ViewportTransform};
+use journal_core::{
+    BackgroundType, NotebookTemplate, PageTemplate, Point, Rect, TemplateId, TilingMode, Viewport,
+};
 use journal_templates::{
-    is_builtin, serialize_template_toml, template_file_from_page_template,
+    is_builtin, is_builtin_notebook_template, serialize_template_toml,
+    template_file_from_page_template,
 };
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::state::SharedState;
@@ -23,8 +28,8 @@ pub fn open(parent: &ApplicationWindow, state: SharedState, open_editor: OpenEdi
         .transient_for(parent)
         .modal(false)
         .title("Templates")
-        .default_width(480)
-        .default_height(560)
+        .default_width(720)
+        .default_height(620)
         .build();
 
     let body = GtkBox::builder()
@@ -36,40 +41,34 @@ pub fn open(parent: &ApplicationWindow, state: SharedState, open_editor: OpenEdi
         .margin_end(12)
         .build();
 
-    let header = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .build();
-    let title = Label::builder()
-        .label("Page Templates")
-        .halign(gtk4::Align::Start)
-        .hexpand(true)
-        .build();
-    title.add_css_class("title-3");
-    header.append(&title);
+    let stack = Stack::new();
+    stack.set_hexpand(true);
+    stack.set_vexpand(true);
+    let switcher = StackSwitcher::new();
+    switcher.set_stack(Some(&stack));
+    switcher.set_halign(Align::Center);
+    body.append(&switcher);
+    body.append(&stack);
 
-    let new_btn = Button::with_label("New template...");
-    new_btn.add_css_class("suggested-action");
-    header.append(&new_btn);
+    let close_manager: Rc<dyn Fn()> = {
+        let win = win.clone();
+        Rc::new(move || win.close())
+    };
 
-    let import_btn = Button::with_label("Import image...");
-    header.append(&import_btn);
+    let pages_tab = build_page_templates_tab(
+        parent,
+        state.clone(),
+        open_editor.clone(),
+        close_manager.clone(),
+    );
+    stack.add_titled(&pages_tab, Some("pages"), "Page Templates");
 
-    let import_pdf_btn = Button::with_label("Import PDF...");
-    header.append(&import_pdf_btn);
-    body.append(&header);
-
-    let scroller = ScrolledWindow::builder()
-        .hexpand(true)
-        .vexpand(true)
-        .build();
-    let list = ListBox::builder().build();
-    scroller.set_child(Some(&list));
-    body.append(&scroller);
+    let nb_tab = build_notebook_templates_tab(parent, state.clone());
+    stack.add_titled(&nb_tab, Some("notebooks"), "Notebook Templates");
 
     let close_row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .halign(gtk4::Align::End)
+        .halign(Align::End)
         .build();
     let close = Button::with_label("Close");
     close.connect_clicked({
@@ -80,12 +79,53 @@ pub fn open(parent: &ApplicationWindow, state: SharedState, open_editor: OpenEdi
     body.append(&close_row);
 
     win.set_child(Some(&body));
+    win.present();
+}
+
+fn build_page_templates_tab(
+    parent: &ApplicationWindow,
+    state: SharedState,
+    open_editor: OpenEditorFn,
+    close_manager: Rc<dyn Fn()>,
+) -> GtkBox {
+    let root = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .build();
+
+    let header = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    let title = Label::builder()
+        .label("Page Templates")
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
+    title.add_css_class("title-4");
+    header.append(&title);
+
+    let new_btn = Button::with_label("New template…");
+    new_btn.add_css_class("suggested-action");
+    header.append(&new_btn);
+
+    let import_btn = Button::with_label("Import image…");
+    header.append(&import_btn);
+
+    let import_pdf_btn = Button::with_label("Import PDF…");
+    header.append(&import_pdf_btn);
+    root.append(&header);
+
+    let scroller = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    let list = ListBox::builder().build();
+    list.add_css_class("template-list");
+    scroller.set_child(Some(&list));
+    root.append(&scroller);
 
     let list_rc = Rc::new(list);
-    let close_manager: Rc<dyn Fn()> = {
-        let win = win.clone();
-        Rc::new(move || win.close())
-    };
     refresh_list(
         &list_rc,
         state.clone(),
@@ -95,12 +135,11 @@ pub fn open(parent: &ApplicationWindow, state: SharedState, open_editor: OpenEdi
     );
 
     {
-        let win_close = win.clone();
+        let close_manager = close_manager.clone();
         let open_editor = open_editor.clone();
         new_btn.connect_clicked(move |_| {
-            // Hand off to the full-screen editor; close the manager modal.
             (open_editor)(None);
-            win_close.close();
+            (close_manager)();
         });
     }
 
@@ -123,7 +162,6 @@ pub fn open(parent: &ApplicationWindow, state: SharedState, open_editor: OpenEdi
 
     {
         let parent = parent.clone();
-        let state = state.clone();
         let list = list_rc.clone();
         let open_editor = open_editor.clone();
         let close_manager = close_manager.clone();
@@ -138,7 +176,176 @@ pub fn open(parent: &ApplicationWindow, state: SharedState, open_editor: OpenEdi
         });
     }
 
-    win.present();
+    root
+}
+
+fn build_notebook_templates_tab(
+    parent: &ApplicationWindow,
+    state: SharedState,
+) -> GtkBox {
+    let root = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .build();
+
+    let header = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    let title = Label::builder()
+        .label("Notebook Templates")
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
+    title.add_css_class("title-4");
+    header.append(&title);
+
+    let new_btn = Button::with_label("New notebook template…");
+    new_btn.add_css_class("suggested-action");
+    header.append(&new_btn);
+    root.append(&header);
+
+    let scroller = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    let list = ListBox::builder().build();
+    scroller.set_child(Some(&list));
+    root.append(&scroller);
+
+    let list_rc = Rc::new(list);
+    refresh_notebook_template_list(&list_rc, state.clone());
+
+    {
+        let parent = parent.clone();
+        let state = state.clone();
+        let list = list_rc.clone();
+        new_btn.connect_clicked(move |_| {
+            let list_inner = list.clone();
+            let state_inner = state.clone();
+            crate::dialogs::prompt_new_notebook_template(
+                &parent,
+                state.clone(),
+                Box::new(move |_id| refresh_notebook_template_list(&list_inner, state_inner.clone())),
+            );
+        });
+    }
+
+    root
+}
+
+fn refresh_notebook_template_list(list: &Rc<ListBox>, state: SharedState) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    let templates: Vec<NotebookTemplate> = {
+        let s = state.borrow();
+        let reg = s.notebook_templates.borrow();
+        let mut v: Vec<NotebookTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();
+        v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        v
+    };
+
+    if templates.is_empty() {
+        let empty = Label::builder()
+            .label("No notebook templates yet — click \"New notebook template…\" above.")
+            .halign(Align::Start)
+            .build();
+        empty.add_css_class("dim-label");
+        list.append(&empty);
+        return;
+    }
+
+    for t in templates {
+        let row = build_notebook_template_row(&t, state.clone(), list.clone());
+        list.append(&row);
+    }
+}
+
+fn build_notebook_template_row(
+    t: &NotebookTemplate,
+    state: SharedState,
+    list: Rc<ListBox>,
+) -> GtkBox {
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(10)
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+
+    let icon = gtk4::Image::from_icon_name("x-office-calendar-symbolic");
+    icon.set_pixel_size(28);
+    icon.add_css_class("dim-label");
+    row.append(&icon);
+
+    let text_col = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .hexpand(true)
+        .build();
+    let name = Label::builder().label(&t.name).halign(Align::Start).build();
+    name.add_css_class("title-4");
+    text_col.append(&name);
+    let desc = if t.description.is_empty() {
+        format!(
+            "Grouping: {:?} · {} daily slot(s)",
+            t.grouping,
+            t.daily_slots.len()
+        )
+    } else {
+        t.description.clone()
+    };
+    let desc_lbl = Label::builder().label(&desc).halign(Align::Start).wrap(true).build();
+    desc_lbl.add_css_class("dim-label");
+    text_col.append(&desc_lbl);
+    row.append(&text_col);
+
+    if !is_builtin_notebook_template(t.id) {
+        let del = Button::from_icon_name("edit-delete-symbolic");
+        del.set_tooltip_text(Some("Delete template"));
+        del.add_css_class("destructive-action");
+        let tid = t.id;
+        let state_for_del = state.clone();
+        let list_for_del = list.clone();
+        del.connect_clicked(move |_| {
+            delete_notebook_template(tid, state_for_del.clone());
+            refresh_notebook_template_list(&list_for_del, state_for_del.clone());
+        });
+        row.append(&del);
+    } else {
+        let badge = Label::builder().label("built-in").halign(Align::End).build();
+        badge.add_css_class("dim-label");
+        row.append(&badge);
+    }
+
+    row
+}
+
+fn delete_notebook_template(id: TemplateId, state: SharedState) {
+    let s = state.borrow();
+    let removed = {
+        let mut reg = s.notebook_templates.borrow_mut();
+        reg.remove(id)
+    };
+    if removed.is_none() {
+        return;
+    }
+    if let Some(dir) = notebook_templates_dir() {
+        let p = dir.join(format!("{}.toml", id.0));
+        if p.exists() {
+            if let Err(e) = std::fs::remove_file(&p) {
+                tracing::warn!("remove notebook template file {:?}: {}", p, e);
+            }
+        }
+    }
+}
+
+fn notebook_templates_dir() -> Option<PathBuf> {
+    let base = dirs::data_dir().or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))?;
+    Some(base.join("journal").join("notebook_templates"))
 }
 
 fn pdfs_dir() -> Option<PathBuf> {
@@ -251,6 +458,7 @@ fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: 
         tiling: TilingMode::None,
         default_viewport: None,
         widgets: Vec::new(),
+        category: "Imported".into(),
     };
 
     let tdir = match templates_dir() {
@@ -369,16 +577,24 @@ fn refresh_list(
         list.remove(&child);
     }
 
-    let templates: Vec<PageTemplate> = {
+    let mut templates: Vec<PageTemplate> = {
         let s = state.borrow();
         let reg = s.templates.borrow();
-        let mut v: Vec<PageTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();
-        v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        v
+        reg.list().iter().map(|t| (*t).clone()).collect()
     };
+    // Sort by category, then by name within a category, so the rows arrive
+    // already grouped — the ListBox header function then inserts visual
+    // dividers when the category changes.
+    templates.sort_by(|a, b| {
+        let ca = if a.category.is_empty() { "Uncategorized" } else { a.category.as_str() };
+        let cb = if b.category.is_empty() { "Uncategorized" } else { b.category.as_str() };
+        ca.to_lowercase()
+            .cmp(&cb.to_lowercase())
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
 
     for t in templates {
-        let row = build_row(
+        let row_widget = build_row(
             &t,
             state.clone(),
             list.clone(),
@@ -386,8 +602,36 @@ fn refresh_list(
             open_editor.clone(),
             close_manager.clone(),
         );
+        let row = ListBoxRow::new();
+        row.set_child(Some(&row_widget));
+        let cat = if t.category.is_empty() { "Uncategorized".to_string() } else { t.category.clone() };
+        unsafe {
+            row.set_data::<String>("template-category", cat);
+        }
         list.append(&row);
     }
+
+    // Header function: insert a visible category label above the first row of
+    // each new category. Pulls the per-row category back out via the qdata
+    // we attached above.
+    list.set_header_func(|row: &ListBoxRow, before: Option<&ListBoxRow>| {
+        let cur: String = match unsafe { row.data::<String>("template-category") } {
+            Some(p) => unsafe { p.as_ref() }.clone(),
+            None => return,
+        };
+        if let Some(prev) = before {
+            if let Some(p) = unsafe { prev.data::<String>("template-category") } {
+                let prev_cat: String = unsafe { p.as_ref() }.clone();
+                if prev_cat == cur {
+                    row.set_header(None::<&gtk4::Widget>);
+                    return;
+                }
+            }
+        }
+        let header = Label::builder().label(&cur).halign(Align::Start).build();
+        header.add_css_class("template-category-header");
+        row.set_header(Some(&header));
+    });
 }
 
 fn build_row(
@@ -400,31 +644,31 @@ fn build_row(
 ) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .margin_top(4)
-        .margin_bottom(4)
-        .margin_start(4)
-        .margin_end(4)
+        .spacing(12)
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
         .build();
 
-    let icon = Image::from_icon_name(icon_for(&t.background));
-    icon.set_icon_size(gtk4::IconSize::Large);
-    row.append(&icon);
+    let preview = build_template_preview(t.clone(), state.borrow().dark_mode);
+    row.append(&preview);
 
     let text_col = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(2)
         .hexpand(true)
+        .valign(Align::Center)
         .build();
     let name = Label::builder()
         .label(&t.name)
-        .halign(gtk4::Align::Start)
+        .halign(Align::Start)
         .build();
     name.add_css_class("title-4");
     text_col.append(&name);
     let kind = Label::builder()
         .label(describe(&t.background))
-        .halign(gtk4::Align::Start)
+        .halign(Align::Start)
         .build();
     kind.add_css_class("dim-label");
     text_col.append(&kind);
@@ -474,15 +718,53 @@ fn build_row(
     row
 }
 
-fn icon_for(bg: &BackgroundType) -> &'static str {
-    match bg {
-        BackgroundType::Blank => "view-paged-symbolic",
-        BackgroundType::Dots { .. } => "view-grid-symbolic",
-        BackgroundType::Lines { .. } => "view-list-symbolic",
-        BackgroundType::Grid { .. } => "view-grid-symbolic",
-        BackgroundType::Image { .. } => "image-x-generic-symbolic",
-        BackgroundType::Pdf { .. } => "x-office-document-symbolic",
-    }
+/// Render a small thumbnail of the template (background + widgets) inside a
+/// 64×84 DrawingArea wrapped in a `Frame` for visual separation.
+fn build_template_preview(template: PageTemplate, dark_mode: bool) -> Frame {
+    const PREVIEW_W: i32 = 64;
+    const PREVIEW_H: i32 = 84;
+
+    let area = DrawingArea::builder()
+        .width_request(PREVIEW_W)
+        .height_request(PREVIEW_H)
+        .build();
+
+    area.set_draw_func(move |_a, ctx, w, h| {
+        if w <= 0 || h <= 0 {
+            return;
+        }
+        let page_rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: template.size_mm.0,
+            height: template.size_mm.1,
+        };
+        let margin = 0.95;
+        let zoom_x = w as f64 / page_rect.width;
+        let zoom_y = h as f64 / page_rect.height;
+        let zoom = zoom_x.min(zoom_y) * margin;
+
+        let viewport = Viewport {
+            center: Point {
+                x: page_rect.x + page_rect.width * 0.5,
+                y: page_rect.y + page_rect.height * 0.5,
+            },
+            zoom,
+            rotation: 0.0,
+        };
+        let transform = ViewportTransform::new(viewport, w as f64, h as f64);
+        let bg = journal_templates::page_template_to_background_config(&template);
+        let empty: HashSet<Uuid> = HashSet::new();
+        paint_with_widgets(
+            ctx, &transform, &bg, page_rect,
+            &template.widgets, &[], &empty, dark_mode,
+        );
+    });
+
+    let frame = Frame::builder().build();
+    frame.add_css_class("template-preview-frame");
+    frame.set_child(Some(&area));
+    frame
 }
 
 fn describe(bg: &BackgroundType) -> String {
@@ -617,6 +899,7 @@ fn import_image(src: &std::path::Path, state: SharedState) -> anyhow::Result<()>
         tiling: TilingMode::None,
         default_viewport: None,
         widgets: Vec::new(),
+        category: "Imported".into(),
     };
 
     let tdir = templates_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
