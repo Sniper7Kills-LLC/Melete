@@ -44,11 +44,128 @@ fn main() -> Result<()> {
     std::process::exit(exit_code.value());
 }
 
+const APP_CSS: &str = r#"
+/* ────────────────────────────────────────────────────────────────────
+   Journal — visual identity (paper-journal mood: deep indigo + amber)
+   ──────────────────────────────────────────────────────────────────── */
+
+@define-color accent_bg_color #3a3d6e;
+@define-color accent_color    #5a5e96;
+@define-color accent_fg_color #ffffff;
+@define-color amber_accent    #d6a83a;
+
+.drag-target {
+    background-color: alpha(@accent_bg_color, 0.2);
+    transition: background-color 120ms ease;
+}
+
+.wordmark {
+    font-family: "Cantarell", "Source Sans 3", sans-serif;
+    font-weight: 700;
+    letter-spacing: 0.10em;
+    text-transform: uppercase;
+    font-size: 1.05em;
+}
+
+.section-header-label {
+    font-weight: 700;
+    font-size: 1.05em;
+}
+.section-nested {
+    border-left: 2px solid alpha(@accent_color, 0.35);
+    padding-left: 8px;
+    margin-left: 4px;
+}
+
+.page-row {
+    border-radius: 6px;
+    padding: 4px 6px;
+    min-height: 48px;
+    transition: background-color 120ms ease;
+}
+.page-row:hover  { background-color: alpha(@accent_color, 0.15); }
+.page-row:active { background-color: alpha(@accent_color, 0.30); }
+
+.drag-handle {
+    min-width: 36px;
+    min-height: 44px;
+    border-radius: 6px;
+    transition: background-color 120ms ease;
+}
+.drag-handle:hover { background-color: alpha(@accent_color, 0.18); }
+
+.toolbar button:checked {
+    background-color: alpha(@amber_accent, 0.40);
+    box-shadow: inset 0 -2px 0 @amber_accent;
+}
+.tool-mnemonic {
+    font-size: 0.62em;
+    font-weight: 700;
+    opacity: 0.7;
+    letter-spacing: 0.05em;
+    margin-top: -2px;
+}
+
+.notebook-card {
+    border: 1px solid alpha(@borders, 0.6);
+    border-radius: 12px;
+    padding: 16px;
+    min-width: 200px;
+    min-height: 130px;
+    transition: all 150ms ease;
+}
+.notebook-card:hover {
+    border-color: @accent_color;
+    box-shadow: 0 4px 12px alpha(black, 0.15);
+}
+.notebook-card .card-title    { font-weight: 700; font-size: 1.1em; }
+.notebook-card .card-subtitle { opacity: 0.6; font-size: 0.85em; }
+.notebook-card .card-kind     {
+    color: @accent_color;
+    font-size: 0.75em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.kbd {
+    font-family: "Source Code Pro", "Cantarell", monospace;
+    background-color: alpha(@card_bg_color, 0.8);
+    border: 1px solid alpha(@borders, 0.7);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.85em;
+    min-width: 28px;
+}
+.cheatsheet-grid { padding: 12px; }
+.cheatsheet-grid label { margin: 4px 8px; }
+
+.var-preview {
+    font-family: "Source Code Pro", monospace;
+    font-size: 0.9em;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background-color: alpha(@accent_color, 0.12);
+    margin-bottom: 6px;
+}
+.var-group-header {
+    font-size: 0.75em;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.55;
+    margin: 6px 4px 2px 4px;
+}
+
+.empty-state         { padding: 48px 24px; }
+.empty-state-icon    { -gtk-icon-size: 96px; color: alpha(@accent_color, 0.55); margin-bottom: 12px; }
+.empty-state-title   { font-size: 1.6em; font-weight: 700; margin-bottom: 6px; }
+.empty-state-subtitle{ opacity: 0.6; font-size: 1.0em; margin-bottom: 24px; }
+"#;
+
 fn load_css() {
     let provider = CssProvider::new();
-    provider.load_from_string(
-        ".drag-target { background-color: alpha(@accent_bg_color, 0.2); }"
-    );
+    provider.load_from_string(APP_CSS);
     if let Some(display) = gtk4::gdk::Display::default() {
         gtk4::style_context_add_provider_for_display(
             &display,

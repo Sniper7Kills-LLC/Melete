@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, DrawingArea, HeaderBar, Label,
+    Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Grid, HeaderBar, Label,
     MenuButton, Orientation, Overlay, Popover, Stack, StackTransitionType,
 };
 use journal_core::{NotebookId, PageTemplate};
@@ -41,6 +41,7 @@ pub type SharedWindow = Rc<RefCell<AppWindow>>;
 pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     let header = HeaderBar::new();
     let title_label = Label::new(Some("Journal"));
+    title_label.add_css_class("wordmark");
     header.set_title_widget(Some(&title_label));
 
     let back_btn = Button::from_icon_name("go-previous-symbolic");
@@ -55,6 +56,9 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
 
     let menu_btn = build_menu_button(parent, state.clone());
     header.pack_end(&menu_btn);
+
+    let cheatsheet_btn = build_cheatsheet_button();
+    header.pack_end(&cheatsheet_btn);
 
     let canvas = canvas_widget::build_canvas(state.clone());
     input::attach_stylus(&canvas, state.clone());
@@ -353,4 +357,48 @@ pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
     w.back_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
     w.stack.set_visible_child_name(TEMPLATE_EDITOR_NAME);
+}
+
+fn build_cheatsheet_button() -> MenuButton {
+    let popover = Popover::new();
+    let grid = Grid::builder()
+        .row_spacing(2)
+        .column_spacing(12)
+        .build();
+    grid.add_css_class("cheatsheet-grid");
+
+    let title = Label::builder().label("Keyboard shortcuts").halign(Align::Start).build();
+    title.add_css_class("title-4");
+    grid.attach(&title, 0, 0, 2, 1);
+
+    let entries: &[(&str, &str)] = &[
+        ("B",            "Pen"),
+        ("H",            "Highlighter"),
+        ("E",            "Eraser (cycle)"),
+        ("V",            "Selection"),
+        ("Ctrl+Z",       "Undo"),
+        ("Ctrl+Shift+Z", "Redo"),
+        ("Ctrl+0",       "Fit page"),
+        ("Ctrl++",       "Zoom in"),
+        ("Ctrl+-",       "Zoom out"),
+        ("Ctrl+S",       "Save (template editor)"),
+        ("Esc",          "Clear selection"),
+        ("Delete",       "Delete selection"),
+        ("F11",          "Fullscreen"),
+    ];
+    for (i, (key, action)) in entries.iter().enumerate() {
+        let row = (i + 1) as i32;
+        let key_lbl = Label::builder().label(*key).halign(Align::End).build();
+        key_lbl.add_css_class("kbd");
+        let act_lbl = Label::builder().label(*action).halign(Align::Start).build();
+        grid.attach(&key_lbl, 0, row, 1, 1);
+        grid.attach(&act_lbl, 1, row, 1, 1);
+    }
+    popover.set_child(Some(&grid));
+
+    MenuButton::builder()
+        .icon_name("dialog-question-symbolic")
+        .popover(&popover)
+        .tooltip_text("Keyboard shortcuts")
+        .build()
 }

@@ -11,6 +11,22 @@ use gtk4::{
 
 use crate::state::{SharedState, Tool};
 
+/// Wrap a tool button in a vertical stack with a tiny mnemonic letter
+/// underneath, so users learn the keyboard shortcut without hovering for a
+/// tooltip.
+fn with_mnemonic(btn: &ToggleButton, letter: &str) -> GtkBox {
+    let v = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .halign(gtk4::Align::Center)
+        .spacing(0)
+        .build();
+    v.append(btn);
+    let lbl = Label::new(Some(letter));
+    lbl.add_css_class("tool-mnemonic");
+    v.append(&lbl);
+    v
+}
+
 /// Build the floating pen toolbar.
 ///
 /// The returned widget is a `GtkBox` positioned via `margin_start` / `margin_top`
@@ -30,12 +46,13 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
     bar.add_css_class("osd");
     bar.add_css_class("toolbar");
 
-    // ── Drag handle ───────────────────────────────────────────────────────
+    // ── Drag handle (touch-friendly hit area) ─────────────────────────────
     let handle = Image::from_icon_name("open-menu-symbolic");
     handle.set_tooltip_text(Some("Drag to move toolbar"));
+    handle.add_css_class("drag-handle");
+    handle.set_size_request(36, 44);
     handle.set_margin_start(4);
     handle.set_margin_end(4);
-    // Give the handle a pointer cursor so the user knows it's draggable.
     handle.set_cursor_from_name(Some("grab"));
     bar.append(&handle);
 
@@ -115,11 +132,11 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
         });
     }
 
-    bar.append(&pen_btn);
-    bar.append(&highlighter_btn);
-    bar.append(&eraser_btn);
-    bar.append(&partial_eraser_btn);
-    bar.append(&selection_btn);
+    bar.append(&with_mnemonic(&pen_btn, "B"));
+    bar.append(&with_mnemonic(&highlighter_btn, "H"));
+    bar.append(&with_mnemonic(&eraser_btn, "E"));
+    bar.append(&with_mnemonic(&partial_eraser_btn, "e"));
+    bar.append(&with_mnemonic(&selection_btn, "V"));
 
     bar.append(&Separator::new(Orientation::Vertical));
 

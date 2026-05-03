@@ -69,9 +69,11 @@ pub fn paint_with_widgets_ctx(
     let zoom = transform.zoom().max(1e-6);
 
     if dark_mode {
-        ctx.set_source_rgb(0.15, 0.15, 0.18);
+        // Warm near-black: less harsh than #262629 during long sessions.
+        ctx.set_source_rgb(0.110, 0.106, 0.090);
     } else {
-        ctx.set_source_rgb(1.0, 1.0, 1.0);
+        // Warm cream paper: #FAF7F2.
+        ctx.set_source_rgb(0.980, 0.969, 0.949);
     }
     let _ = ctx.paint();
 

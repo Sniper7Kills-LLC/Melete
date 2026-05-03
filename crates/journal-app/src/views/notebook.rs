@@ -209,17 +209,19 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
         .orientation(Orientation::Vertical)
         .spacing(0)
         .build();
+    if depth > 0 {
+        wrapper.add_css_class("section-nested");
+    }
 
     let expander = Expander::builder()
         .label(&section.name)
         .expanded(true)
         .build();
 
-    // Indent nested levels so the hierarchy reads at a glance.
     let inner = GtkBox::builder()
         .orientation(Orientation::Vertical)
-        .spacing(4)
-        .margin_start(8 + 12 * depth.min(6) as i32)
+        .spacing(6)
+        .margin_start(if depth == 0 { 8 } else { 12 })
         .build();
 
     let pages_box = GtkBox::builder()
@@ -312,6 +314,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
         .halign(gtk4::Align::Start)
         .hexpand(true)
         .build();
+    section_label.add_css_class("section-header-label");
     let gear = Button::from_icon_name("emblem-system-symbolic");
     gear.set_tooltip_text(Some("Section settings"));
     gear.add_css_class("flat");
@@ -395,8 +398,8 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
 
 fn build_page_thumbnail(ctx: &SidebarCtx, page: &Page) -> GtkDrawingArea {
     let thumb_area = GtkDrawingArea::builder()
-        .width_request(40)
-        .height_request(52)
+        .width_request(crate::thumbnail::THUMB_W)
+        .height_request(crate::thumbnail::THUMB_H)
         .build();
 
     let state = ctx.state.clone();
@@ -432,7 +435,7 @@ fn build_page_thumbnail(ctx: &SidebarCtx, page: &Page) -> GtkDrawingArea {
 
                     ctx_cairo.set_source_rgba(0.5, 0.5, 0.5, 0.4);
                     ctx_cairo.set_line_width(0.5);
-                    ctx_cairo.rectangle(0.0, 0.0, 40.0, 52.0);
+                    ctx_cairo.rectangle(0.0, 0.0, crate::thumbnail::THUMB_W as f64, crate::thumbnail::THUMB_H as f64);
                     let _ = ctx_cairo.stroke();
                 }
             } else {
@@ -451,16 +454,22 @@ fn build_page_thumbnail(ctx: &SidebarCtx, page: &Page) -> GtkDrawingArea {
 }
 
 fn drag_handle_box() -> GtkBox {
+    // Touch-friendly hit area (≥44px tall, 36px wide) so a finger or stylus
+    // can grab it reliably; the visible icon stays compact via centring.
     let wrap = GtkBox::builder()
         .orientation(Orientation::Horizontal)
-        .width_request(20)
-        .height_request(20)
+        .width_request(36)
+        .height_request(44)
+        .halign(gtk4::Align::Center)
+        .valign(gtk4::Align::Center)
         .build();
+    wrap.add_css_class("drag-handle");
     let img = Image::from_icon_name("list-drag-handle-symbolic");
     img.set_icon_size(gtk4::IconSize::Normal);
+    img.set_halign(gtk4::Align::Center);
+    img.set_valign(gtk4::Align::Center);
     img.add_css_class("dim-label");
     wrap.append(&img);
-    wrap.set_margin_start(4);
     wrap.set_tooltip_text(Some("Drag to reorder"));
     wrap.set_cursor_from_name(Some("grab"));
     wrap

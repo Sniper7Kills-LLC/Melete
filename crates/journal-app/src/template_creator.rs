@@ -105,8 +105,14 @@ pub fn build_editor_view(
     title.add_css_class("title-3");
     let save_btn = Button::with_label("Save");
     save_btn.add_css_class("suggested-action");
+    let saved_indicator = Label::builder()
+        .label("")
+        .halign(gtk4::Align::End)
+        .build();
+    saved_indicator.add_css_class("dim-label");
     action_row.append(&back_btn);
     action_row.append(&title);
+    action_row.append(&saved_indicator);
     action_row.append(&save_btn);
     root.append(&action_row);
 
@@ -168,18 +174,50 @@ pub fn build_editor_view(
         back_btn.connect_clicked(move |_| (on_done)());
     }
 
-    {
+    let do_save = {
         let cs = cs.clone();
         let state = state.clone();
         let on_done = on_done.clone();
-        save_btn.connect_clicked(move |_| {
+        let indicator = saved_indicator.clone();
+        Rc::new(move || {
             let t = cs.borrow().template.clone();
             if let Err(e) = save_template(&t, &state) {
                 tracing::error!("save template: {:#}", e);
+                indicator.set_text("Save failed");
                 return;
             }
-            (on_done)();
+            indicator.set_text("Saved \u{2713}");
+            // Brief pause so the user can read the confirmation, then return
+            // to the previous view. Use a timeout instead of blocking.
+            let on_done = on_done.clone();
+            gtk4::glib::timeout_add_local_once(
+                std::time::Duration::from_millis(450),
+                move || (on_done)(),
+            );
+        })
+    };
+
+    {
+        let do_save = do_save.clone();
+        save_btn.connect_clicked(move |_| (do_save)());
+    }
+
+    // Ctrl+S → save. Attach to the editor root so it fires anywhere in the
+    // template editor view.
+    {
+        let key = gtk4::EventControllerKey::new();
+        key.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let do_save = do_save.clone();
+        key.connect_key_pressed(move |_c, keyval, _code, mods| {
+            if mods.contains(gtk4::gdk::ModifierType::CONTROL_MASK)
+                && (keyval == gtk4::gdk::Key::s || keyval == gtk4::gdk::Key::S)
+            {
+                (do_save)();
+                return gtk4::glib::Propagation::Stop;
+            }
+            gtk4::glib::Propagation::Proceed
         });
+        root.add_controller(key);
     }
 
     root
@@ -251,10 +289,10 @@ fn build_palette(cs: &Rc<RefCell<CreatorState>>) -> ScrolledWindow {
         ("Rectangle", PlaceTool::Rectangle),
         ("Ellipse", PlaceTool::Ellipse),
         ("Line", PlaceTool::Line),
-        ("Grid", PlaceTool::GridRegion),
-        ("Lines", PlaceTool::LinesRegion),
-        ("Dots", PlaceTool::DotsRegion),
-        ("Calendar", PlaceTool::CalendarMonth),
+        ("Grid Area", PlaceTool::GridRegion),
+        ("Ruled Lines", PlaceTool::LinesRegion),
+        ("Dot Grid", PlaceTool::DotsRegion),
+        ("Calendar Month", PlaceTool::CalendarMonth),
         ("Timeline", PlaceTool::Timeline),
         ("Checklist", PlaceTool::Checklist),
         ("Big Three", PlaceTool::BigThree),
@@ -621,25 +659,57 @@ fn refresh_props_panel(
             }
             vbox.append(&entry);
 
-            // Variable insertion menu
+            // Variable insertion menu — grouped, with a live preview row
+            // so the user sees how their current text expands today.
             let var_btn = MenuButton::builder()
                 .label("Insert variable…")
                 .build();
             let popover = Popover::new();
             let pop_box = GtkBox::builder()
                 .orientation(Orientation::Vertical)
-                .spacing(4)
-                .margin_top(4)
-                .margin_bottom(4)
-                .margin_start(4)
-                .margin_end(4)
+                .spacing(2)
+                .margin_top(6)
+                .margin_bottom(6)
+                .margin_start(6)
+                .margin_end(6)
                 .build();
+
+            // Live preview of the current entry text expanded against today.
+            let preview = Label::builder()
+                .label("")
+                .halign(gtk4::Align::Start)
+                .wrap(true)
+                .build();
+            preview.add_css_class("var-preview");
+            let refresh_preview = {
+                let preview = preview.clone();
+                let entry = entry.clone();
+                move || {
+                    let today = chrono::Local::now().date_naive();
+                    let ctx = journal_core::TitleContext::new(today);
+                    let expanded = journal_core::render_title(&entry.text(), &ctx);
+                    preview.set_text(&format!("Today → {}", expanded));
+                }
+            };
+            refresh_preview();
+            {
+                let refresh_preview = refresh_preview.clone();
+                entry.connect_changed(move |_| refresh_preview());
+            }
+            pop_box.append(&preview);
+
+            let header = Label::builder().label("Date variables").halign(gtk4::Align::Start).build();
+            header.add_css_class("var-group-header");
+            pop_box.append(&header);
+
             for (token, desc) in TEXT_VARIABLES {
                 let row = Button::with_label(&format!("{}  —  {}", token, desc));
                 row.set_halign(gtk4::Align::Fill);
+                row.add_css_class("flat");
                 let entry2 = entry.clone();
                 let pop2 = popover.clone();
                 let token = (*token).to_string();
+                let refresh_preview = refresh_preview.clone();
                 row.connect_clicked(move |_| {
                     let cur = entry2.text().to_string();
                     let pos = entry2.position();
@@ -651,6 +721,7 @@ fn refresh_props_panel(
                     let new_text: String = chars.into_iter().collect();
                     entry2.set_text(&new_text);
                     entry2.set_position((insert_at + token.chars().count()) as i32);
+                    refresh_preview();
                     pop2.popdown();
                 });
                 pop_box.append(&row);

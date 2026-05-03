@@ -3,7 +3,8 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, Label, Orientation, ScrolledWindow, Separator,
+    Align, ApplicationWindow, Box as GtkBox, Button, FlowBox, Image, Label, Orientation,
+    ScrolledWindow, SelectionMode, Separator,
 };
 use journal_core::{Notebook, NotebookId, NotebookKind, PageTemplate};
 use journal_storage::{notebook_store, Db};
@@ -176,15 +177,98 @@ pub fn build_home(
     root
 }
 
-fn notebook_button(nb: &Notebook, on_open: Rc<dyn Fn(NotebookId)>) -> Button {
-    let btn = Button::builder()
-        .label(&nb.name)
-        .hexpand(true)
-        .halign(gtk4::Align::Fill)
+fn notebook_card(nb: &Notebook, on_open: Rc<dyn Fn(NotebookId)>) -> Button {
+    // Outer button so the entire card is a single tap target.
+    let btn = Button::new();
+    btn.add_css_class("notebook-card");
+    btn.add_css_class("flat");
+
+    let body = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(6)
+        .halign(Align::Fill)
+        .valign(Align::Start)
         .build();
+
+    let (kind_text, icon_name) = match &nb.kind {
+        NotebookKind::Standard => ("Notebook", "x-office-address-book-symbolic"),
+        NotebookKind::Planner { .. } => ("Planner", "x-office-calendar-symbolic"),
+    };
+
+    let header_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .halign(Align::Fill)
+        .build();
+    let icon = Image::from_icon_name(icon_name);
+    icon.set_icon_size(gtk4::IconSize::Large);
+    icon.add_css_class("dim-label");
+    header_row.append(&icon);
+    let kind_lbl = Label::builder().label(kind_text).halign(Align::Start).hexpand(true).build();
+    kind_lbl.add_css_class("card-kind");
+    header_row.append(&kind_lbl);
+    body.append(&header_row);
+
+    let title = Label::builder().label(&nb.name).halign(Align::Start).wrap(true).build();
+    title.add_css_class("card-title");
+    body.append(&title);
+
+    let subtitle_text = match &nb.kind {
+        NotebookKind::Planner { creation_date, .. } => format!("Created {}", creation_date),
+        NotebookKind::Standard => "Standard notebook".to_string(),
+    };
+    let subtitle = Label::builder().label(&subtitle_text).halign(Align::Start).build();
+    subtitle.add_css_class("card-subtitle");
+    body.append(&subtitle);
+
+    btn.set_child(Some(&body));
     let id = nb.id;
     btn.connect_clicked(move |_| on_open(id));
     btn
+}
+
+fn build_card_grid(
+    notebooks: &[&Notebook],
+    on_open: Rc<dyn Fn(NotebookId)>,
+) -> FlowBox {
+    let flow = FlowBox::builder()
+        .max_children_per_line(8)
+        .min_children_per_line(1)
+        .selection_mode(SelectionMode::None)
+        .row_spacing(12)
+        .column_spacing(12)
+        .homogeneous(true)
+        .activate_on_single_click(false)
+        .build();
+    for nb in notebooks {
+        flow.append(&notebook_card(nb, on_open.clone()));
+    }
+    flow
+}
+
+fn build_empty_state() -> GtkBox {
+    let v = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .halign(Align::Center)
+        .valign(Align::Center)
+        .vexpand(true)
+        .build();
+    v.add_css_class("empty-state");
+    let icon = Image::from_icon_name("x-office-address-book-symbolic");
+    icon.add_css_class("empty-state-icon");
+    icon.set_pixel_size(96);
+    v.append(&icon);
+    let title = Label::new(Some("Start your first notebook"));
+    title.add_css_class("empty-state-title");
+    v.append(&title);
+    let subtitle = Label::new(Some(
+        "Use the buttons above to create a planner or a free-form notebook.",
+    ));
+    subtitle.add_css_class("empty-state-subtitle");
+    subtitle.set_wrap(true);
+    subtitle.set_justify(gtk4::Justification::Center);
+    v.append(&subtitle);
+    v
 }
 
 fn refresh_list(
@@ -205,10 +289,7 @@ fn refresh_list(
     };
 
     if notebooks.is_empty() {
-        let empty = Label::new(Some("No notebooks yet — create one to get started."));
-        empty.add_css_class("dim-label");
-        empty.set_halign(gtk4::Align::Start);
-        list_box.append(&empty);
+        list_box.append(&build_empty_state());
         return;
     }
 
@@ -222,30 +303,27 @@ fn refresh_list(
         if !recent_notebooks.is_empty() {
             let recent_label = Label::builder()
                 .label("Recent")
-                .halign(gtk4::Align::Start)
+                .halign(Align::Start)
                 .build();
             recent_label.add_css_class("heading");
             list_box.append(&recent_label);
 
-            for nb in &recent_notebooks {
-                list_box.append(&notebook_button(nb, on_open.clone()));
-            }
+            list_box.append(&build_card_grid(&recent_notebooks, on_open.clone()));
 
             let sep = Separator::new(Orientation::Horizontal);
-            sep.set_margin_top(8);
+            sep.set_margin_top(16);
             sep.set_margin_bottom(8);
             list_box.append(&sep);
 
             let all_label = Label::builder()
                 .label("All Notebooks")
-                .halign(gtk4::Align::Start)
+                .halign(Align::Start)
                 .build();
             all_label.add_css_class("heading");
             list_box.append(&all_label);
         }
     }
 
-    for nb in &notebooks {
-        list_box.append(&notebook_button(nb, on_open.clone()));
-    }
+    let all_refs: Vec<&Notebook> = notebooks.iter().collect();
+    list_box.append(&build_card_grid(&all_refs, on_open));
 }

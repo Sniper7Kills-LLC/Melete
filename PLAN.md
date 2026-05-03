@@ -226,6 +226,14 @@ Home screen (no notebook open) shows notebook grid/list.
 - [x] Dark mode — follows system preference automatically via `adw::StyleManager` (libadwaita portal-based detection, works across GNOME/KDE/Hyprland)
 - [x] Keyboard shortcuts (B/H/V/Ctrl+E/Ctrl+Z/Delete/Esc/Ctrl+0/+/-/F11)
 - [x] Floating, draggable pen toolbar (position persisted across restarts)
+- [x] Visual identity refresh — deep indigo + amber accent theme, warm cream/dark canvas background, wordmark headerbar title, hover/active hit-feedback CSS on page rows + drag handles
+- [x] Touch-target enlargement — sidebar drag handles 36×44, page rows 48px min height, toolbar grip 36×44
+- [x] Toolbar tool buttons get tiny mnemonic letter labels (B/H/E/e/V) so users learn the shortcuts without hunting tooltips
+- [x] Home screen card grid (`FlowBox`) with kind badge + subtitle; centred empty state with icon + CTA when zero notebooks
+- [x] Sidebar visual hierarchy — `.section-header-label` heavier/larger, nested sections get a left accent border via `.section-nested`
+- [x] Sidebar page thumbnails bumped 40×52 → 60×78 (`crate::thumbnail::THUMB_W/THUMB_H` reused as the single source of truth)
+- [x] Header `?` button → keyboard cheat-sheet popover with `<kbd>`-styled shortcuts pulled from `shortcuts.rs`
+- [x] Template editor: Ctrl+S to save, "Saved ✓" inline indicator, friendlier palette labels ("Grid Area", "Ruled Lines", "Dot Grid", "Calendar Month"), variable popover gains live "Today → …" preview row + grouped header
 
 ## Phase 4.5 finish ✅ (PDF import deferred)
 
