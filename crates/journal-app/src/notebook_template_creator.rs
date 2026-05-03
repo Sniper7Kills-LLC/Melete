@@ -143,37 +143,63 @@ fn refresh_layout_preview(
             outer
         };
 
+        // Multipliers are nesting-relative:
+        //   Year × 1
+        //   └─ Quarter × 4 per year
+        //      └─ Month × 3 per quarter   (3 × 4 = 12 months/year)
+        //         └─ Week × 4-5 per month (when grouping = Week; ~52/year)
+        //            └─ Day × 7 per week
+        //         └─ Day × 7 per week     (when grouping = Month, no Week wrap)
+        //
         // Build innermost first.
-        let inner_block = match s.template.grouping {
-            journal_core::PlannerGrouping::Month => {
-                // Month wraps Day directly.
-                let (month_card, month_inner) = make_card("Month", 12);
-                let bm = chip_row(&s.template.before_month);
-                let bm_label = Label::builder().label("Before month").halign(Align::Start).build();
-                bm_label.add_css_class("dim-label");
-                let bm_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-                bm_box.append(&bm_label);
-                bm_box.append(&bm);
-                month_inner.append(&bm_box);
-                month_inner.append(&make_day_card());
-                month_card
+        let week_card_for_month = || -> GtkBox {
+            // Month wraps Week (4-5 weeks per month) wraps Day.
+            let (week_card, week_inner) = make_card("Week", 0); // 0 = use custom badge
+            // Replace the auto-generated multiplier with "× 4–5" — week
+            // count varies per month so a single integer is misleading.
+            // Detach the auto header and rebuild it.
+            if let Some(first) = week_card.first_child() {
+                week_card.remove(&first);
             }
-            journal_core::PlannerGrouping::Week => {
-                // Month wraps Week (typical 4-5 weeks per month) wraps Day.
-                let (week_card, week_inner) = make_card("Week", 52);
-                let bw = chip_row(&s.template.before_week);
-                let bw_label = Label::builder().label("Before week").halign(Align::Start).build();
-                bw_label.add_css_class("dim-label");
-                let bw_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-                bw_box.append(&bw_label);
-                bw_box.append(&bw);
-                week_inner.append(&bw_box);
-                week_inner.append(&make_day_card());
-                week_card
-            }
+            let header = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
+            let title_lbl = Label::builder().label("Week").halign(Align::Start).hexpand(true).build();
+            title_lbl.add_css_class("nbtc-preview-title");
+            header.append(&title_lbl);
+            let mult = Label::builder().label("× 4–5").halign(Align::End).build();
+            mult.add_css_class("nbtc-preview-multiplier");
+            header.append(&mult);
+            week_card.prepend(&header);
+
+            let bw = chip_row(&s.template.before_week);
+            let bw_label = Label::builder().label("Before week").halign(Align::Start).build();
+            bw_label.add_css_class("dim-label");
+            let bw_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
+            bw_box.append(&bw_label);
+            bw_box.append(&bw);
+            week_inner.append(&bw_box);
+            week_inner.append(&make_day_card());
+            week_card
         };
 
-        // Quarter wraps Month → Week → Day stack.
+        // Month × 3 per quarter; wraps either Week or Day depending on grouping.
+        let (month_card, month_inner) = make_card("Month", 3);
+        let bm = chip_row(&s.template.before_month);
+        let bm_label = Label::builder().label("Before month").halign(Align::Start).build();
+        bm_label.add_css_class("dim-label");
+        let bm_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
+        bm_box.append(&bm_label);
+        bm_box.append(&bm);
+        month_inner.append(&bm_box);
+        match s.template.grouping {
+            journal_core::PlannerGrouping::Month => {
+                month_inner.append(&make_day_card());
+            }
+            journal_core::PlannerGrouping::Week => {
+                month_inner.append(&week_card_for_month());
+            }
+        }
+
+        // Quarter × 4 per year; wraps Month.
         let (quarter_card, quarter_inner) = make_card("Quarter", 4);
         let bq = chip_row(&s.template.before_quarter);
         let bq_label = Label::builder().label("Before quarter").halign(Align::Start).build();
@@ -182,9 +208,9 @@ fn refresh_layout_preview(
         bq_box.append(&bq_label);
         bq_box.append(&bq);
         quarter_inner.append(&bq_box);
-        quarter_inner.append(&inner_block);
+        quarter_inner.append(&month_card);
 
-        // Year wraps Quarter (so the multiplier story reads cleanly).
+        // Year × 1 wraps Quarter.
         let (year_card, year_inner) = make_card("Year", 1);
         let ys = chip_row(&s.template.year_start);
         let ys_label = Label::builder().label("Year start").halign(Align::Start).build();
