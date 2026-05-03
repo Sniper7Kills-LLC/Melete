@@ -253,6 +253,130 @@ fn key_daily(slot: usize, n: usize) -> String {
     format!("daily:{}:{}", slot, n)
 }
 
+/// Install a per-chip DropTarget on a flat-slot chip so dropping another
+/// chip onto it reorders the dragged chip to *this* chip's position
+/// (insert-before semantics). Cross-slot drops are rejected.
+fn install_flat_chip_reorder_drop(
+    chip: &GtkBox,
+    slot: FlatSlot,
+    target_idx: usize,
+    es: &Rc<RefCell<EditorState>>,
+    flow: &Rc<GtkBox>,
+    page_templates: &Rc<Vec<PageTemplate>>,
+    options_panel: &GtkBox,
+) {
+    let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::MOVE);
+    let es2 = es.clone();
+    let flow2 = flow.clone();
+    let pts2 = page_templates.clone();
+    let opts2 = options_panel.clone();
+    let chip_for_css = chip.clone();
+    let chip_for_leave = chip.clone();
+    drop.connect_enter(move |_, _, _| {
+        chip_for_css.add_css_class("drag-target");
+        DragAction::MOVE
+    });
+    drop.connect_leave(move |_| {
+        chip_for_leave.remove_css_class("drag-target");
+    });
+    drop.connect_drop(move |_target, val, _x, _y| {
+        let s = match val.get::<String>() {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        if let Some(rest) = s.strip_prefix("slot-chip:") {
+            if let Some((src_kind, src_idx)) = parse_flat_chip_key(rest) {
+                if src_kind == slot {
+                    es2.borrow_mut().move_within_flat_slot(slot, src_idx, target_idx);
+                    rebuild_flat_slot_flow(&flow2, slot, &es2, &pts2, &opts2);
+                    return true;
+                }
+            }
+        }
+        false
+    });
+    chip.add_controller(drop);
+}
+
+/// Same idea for daily-slot chips. Reorder is within the same daily
+/// slot only; cross-slot moves rejected.
+fn install_daily_chip_reorder_drop(
+    chip: &GtkBox,
+    slot_idx: usize,
+    target_idx: usize,
+    es: &Rc<RefCell<EditorState>>,
+    flow: &Rc<GtkBox>,
+    page_templates: &Rc<Vec<PageTemplate>>,
+    options_panel: &GtkBox,
+) {
+    let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::MOVE);
+    let es2 = es.clone();
+    let flow2 = flow.clone();
+    let pts2 = page_templates.clone();
+    let opts2 = options_panel.clone();
+    let chip_for_css = chip.clone();
+    let chip_for_leave = chip.clone();
+    drop.connect_enter(move |_, _, _| {
+        chip_for_css.add_css_class("drag-target");
+        DragAction::MOVE
+    });
+    drop.connect_leave(move |_| {
+        chip_for_leave.remove_css_class("drag-target");
+    });
+    drop.connect_drop(move |_target, val, _x, _y| {
+        let s = match val.get::<String>() {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        if let Some(rest) = s.strip_prefix("slot-chip:") {
+            if let Some((src_slot, src_idx)) = parse_daily_chip_key(rest) {
+                if src_slot == slot_idx {
+                    es2.borrow_mut().move_within_daily_slot(slot_idx, src_idx, target_idx);
+                    rebuild_daily_slot_flow(&flow2, slot_idx, &es2, &pts2, &opts2);
+                    return true;
+                }
+            }
+        }
+        false
+    });
+    chip.add_controller(drop);
+}
+
+/// Parse a `"<flat_prefix>:N"` chip key into the `FlatSlot` it belongs to
+/// and its current index. Returns `None` if the key isn't a flat-slot key.
+fn parse_flat_chip_key(rest: &str) -> Option<(FlatSlot, usize)> {
+    let (prefix, idx_str) = rest.rsplit_once(':')?;
+    let idx: usize = idx_str.parse().ok()?;
+    let slot = match prefix {
+        "year_start" => FlatSlot::YearStart,
+        "before_quarter" => FlatSlot::BeforeQuarter,
+        "before_month" => FlatSlot::BeforeMonth,
+        "before_week" => FlatSlot::BeforeWeek,
+        _ => return None,
+    };
+    Some((slot, idx))
+}
+
+/// Parse a `"daily:S:N"` chip key into the slot index and template index.
+fn parse_daily_chip_key(rest: &str) -> Option<(usize, usize)> {
+    let inner = rest.strip_prefix("daily:")?;
+    let (s_str, n_str) = inner.split_once(':')?;
+    Some((s_str.parse().ok()?, n_str.parse().ok()?))
+}
+
+/// Map an old slot index to its new position after one item moved from
+/// `src` to `dst` (post-insert position). Returns the new index for
+/// every other element in the slot.
+fn remap_index_after_move(n: usize, src: usize, dst: usize) -> usize {
+    if n == src {
+        return dst;
+    }
+    // After remove: indices > src shift down by 1.
+    let after_remove = if n > src { n - 1 } else { n };
+    // After insert at dst: indices >= dst shift up by 1.
+    if after_remove >= dst { after_remove + 1 } else { after_remove }
+}
+
 // ─── EditorState ─────────────────────────────────────────────────────────────
 
 /// Mutable working state for the notebook template editor.
@@ -302,6 +426,23 @@ impl EditorState {
         }
     }
 
+    fn flat_slot_len(&self, slot: FlatSlot) -> usize {
+        match slot {
+            FlatSlot::YearStart => self.template.year_start.len(),
+            FlatSlot::BeforeQuarter => self.template.before_quarter.len(),
+            FlatSlot::BeforeMonth => self.template.before_month.len(),
+            FlatSlot::BeforeWeek => self.template.before_week.len(),
+        }
+    }
+
+    fn daily_slot_len(&self, slot_idx: usize) -> usize {
+        self.template
+            .daily_slots
+            .get(slot_idx)
+            .map(|ds| ds.templates.len())
+            .unwrap_or(0)
+    }
+
     fn renumber_flat_keys(&mut self, prefix: &str, removed_idx: usize) {
         let old_map = std::mem::take(&mut self.template.entry_options);
         let mut new_map = HashMap::new();
@@ -320,6 +461,69 @@ impl EditorState {
             } else {
                 new_map.insert(k, v);
             }
+        }
+        self.template.entry_options = new_map;
+    }
+
+    /// Move a template within a flat slot from `src_idx` to `dst_idx`
+    /// (insertion index BEFORE removal of src). Keeps `entry_options`
+    /// keys aligned with the new positions.
+    fn move_within_flat_slot(&mut self, slot: FlatSlot, src_idx: usize, dst_idx: usize) {
+        let vec = self.flat_slot_mut(slot);
+        if src_idx >= vec.len() {
+            return;
+        }
+        let item = vec.remove(src_idx);
+        // After remove, target shifts left if dst > src.
+        let dst_adj = if dst_idx > src_idx { dst_idx - 1 } else { dst_idx };
+        let dst_clamped = dst_adj.min(vec.len());
+        vec.insert(dst_clamped, item);
+
+        // Rewrite entry_options keys for this slot's prefix.
+        let prefix = slot.prefix();
+        let old_map = std::mem::take(&mut self.template.entry_options);
+        let mut new_map = HashMap::new();
+        for (k, v) in old_map {
+            if let Some(rest) = k.strip_prefix(&format!("{}:", prefix)) {
+                if let Ok(n) = rest.parse::<usize>() {
+                    let new_n = remap_index_after_move(n, src_idx, dst_clamped);
+                    new_map.insert(format!("{}:{}", prefix, new_n), v);
+                    continue;
+                }
+            }
+            new_map.insert(k, v);
+        }
+        self.template.entry_options = new_map;
+    }
+
+    /// Move a template within a daily slot from `src_idx` to `dst_idx`.
+    fn move_within_daily_slot(&mut self, slot_idx: usize, src_idx: usize, dst_idx: usize) {
+        let Some(ds) = self.template.daily_slots.get_mut(slot_idx) else { return };
+        if src_idx >= ds.templates.len() {
+            return;
+        }
+        let item = ds.templates.remove(src_idx);
+        let dst_adj = if dst_idx > src_idx { dst_idx - 1 } else { dst_idx };
+        let dst_clamped = dst_adj.min(ds.templates.len());
+        ds.templates.insert(dst_clamped, item);
+
+        // Rewrite daily entry_options keys for THIS slot.
+        let old_map = std::mem::take(&mut self.template.entry_options);
+        let mut new_map = HashMap::new();
+        for (k, v) in old_map {
+            if let Some(rest) = k.strip_prefix("daily:") {
+                let parts: Vec<&str> = rest.splitn(2, ':').collect();
+                if parts.len() == 2 {
+                    if let (Ok(s), Ok(n)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
+                        if s == slot_idx {
+                            let new_n = remap_index_after_move(n, src_idx, dst_clamped);
+                            new_map.insert(key_daily(s, new_n), v);
+                            continue;
+                        }
+                    }
+                }
+            }
+            new_map.insert(k, v);
         }
         self.template.entry_options = new_map;
     }
@@ -956,7 +1160,7 @@ fn build_flat_slot_section(
     rebuild_flat_slot_flow(&flow_rc, slot, es, page_templates, options_panel);
 
     // Drop target on the zone — accepts even when the chip Box is empty.
-    let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::COPY);
+    let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::COPY | DragAction::MOVE);
     {
         let es2 = es.clone();
         let flow2 = flow_rc.clone();
@@ -977,6 +1181,18 @@ fn build_flat_slot_section(
                     }
                     rebuild_flat_slot_flow(&flow2, slot, &es2, &pts2, &opts2);
                     return true;
+                }
+            }
+            // Reorder within the same flat slot: dropping on the trailing
+            // empty area moves the chip to the END of this slot.
+            if let Some(rest) = s.strip_prefix("slot-chip:") {
+                if let Some((src_kind, src_idx)) = parse_flat_chip_key(rest) {
+                    if src_kind == slot {
+                        let dst = es2.borrow().flat_slot_len(slot);
+                        es2.borrow_mut().move_within_flat_slot(slot, src_idx, dst);
+                        rebuild_flat_slot_flow(&flow2, slot, &es2, &pts2, &opts2);
+                        return true;
+                    }
                 }
             }
             false
@@ -1053,6 +1269,9 @@ fn rebuild_flat_slot_flow(
                     })
                 },
             );
+            // Per-chip drop target: dropping a slot-chip onto chip N
+            // moves the dragged chip to position N (insert-before).
+            install_flat_chip_reorder_drop(&chip, slot, n, es, flow, page_templates, options_panel);
             flow.append(&chip);
         }
     }
@@ -1166,7 +1385,7 @@ fn build_daily_slot_widget(
 
     rebuild_daily_slot_flow(&flow_rc, slot_idx, es, page_templates, options_panel);
 
-    let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::COPY);
+    let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::COPY | DragAction::MOVE);
     {
         let es2 = es.clone();
         let flow2 = flow_rc.clone();
@@ -1189,6 +1408,18 @@ fn build_daily_slot_widget(
                     }
                     rebuild_daily_slot_flow(&flow2, si, &es2, &pts2, &opts2);
                     return true;
+                }
+            }
+            // Reorder within the same daily slot — drop on trailing empty
+            // area moves the chip to the end.
+            if let Some(rest) = s.strip_prefix("slot-chip:") {
+                if let Some((src_slot, src_idx)) = parse_daily_chip_key(rest) {
+                    if src_slot == si {
+                        let dst = es2.borrow().daily_slot_len(si);
+                        es2.borrow_mut().move_within_daily_slot(si, src_idx, dst);
+                        rebuild_daily_slot_flow(&flow2, si, &es2, &pts2, &opts2);
+                        return true;
+                    }
                 }
             }
             false
@@ -1264,6 +1495,7 @@ fn rebuild_daily_slot_flow(
                     })
                 },
             );
+            install_daily_chip_reorder_drop(&chip, slot_idx, n, es, flow, page_templates, options_panel);
             flow.append(&chip);
         }
     }
@@ -1287,6 +1519,7 @@ fn build_slot_chip(
         .margin_start(2)
         .margin_end(2)
         .build();
+    chip.add_css_class("nbtc-slot-chip");
 
     let name_btn = Button::with_label(name);
     name_btn.add_css_class("flat");
@@ -1306,6 +1539,18 @@ fn build_slot_chip(
     remove_btn.set_tooltip_text(Some("Remove from slot"));
     remove_btn.connect_clicked(move |_| on_remove());
     chip.append(&remove_btn);
+
+    // Drag source: lets the user reorder the chip within its slot by
+    // dragging it onto another chip (drop-before semantics) or onto the
+    // empty trailing area of the same slot's drop zone.
+    let drag_src = gtk4::DragSource::new();
+    drag_src.set_actions(DragAction::MOVE);
+    let payload = format!("slot-chip:{}", chip_key);
+    drag_src.connect_prepare(move |_src, _x, _y| {
+        let val = payload.clone().to_value();
+        Some(gtk4::gdk::ContentProvider::for_value(&val))
+    });
+    chip.add_controller(drag_src);
 
     chip
 }
