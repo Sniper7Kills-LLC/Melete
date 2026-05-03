@@ -8,17 +8,21 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use std::collections::HashSet as StdHashSet;
+
 use chrono::Weekday;
 use gtk4::gdk::DragAction;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, ApplicationWindow, Box as GtkBox, Button, DropDown, DropTarget, Entry, Label,
-    Orientation, Paned, ScrolledWindow, Separator, StringList, Switch, ToggleButton,
+    Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, DropDown, DropTarget, Entry,
+    Frame, Label, Orientation, Paned, PolicyType, ScrolledWindow, Separator, StringList, Switch,
+    ToggleButton,
 };
+use journal_canvas::{paint_with_widgets, ViewportTransform};
 use journal_core::{
-    DailySlot, NotebookTemplate, PageTemplate, PlannerGrouping, SectionTitleFormats,
-    TemplateId,
+    DailySlot, NotebookTemplate, PageTemplate, PlannerGrouping, Point, Rect, SectionTitleFormats,
+    TemplateId, Viewport,
 };
 use uuid::Uuid;
 
@@ -34,16 +38,94 @@ thread_local! {
     static LAYOUT_PREVIEW: RefCell<Option<GtkBox>> = const { RefCell::new(None) };
 }
 
-/// Repopulate the preview body with a HORIZONTAL nested layout, all sized
-/// to a single page-thumbnail height (~78px) so the preview is a tight
-/// timeline strip rather than a tall stack.
-///
-/// Layout (left → right, with each level nested inside the previous):
-/// ```text
-///  Year × 1 ┃ year-start chips │ Quarter × 4 ┃ bq │ Month × 3 ┃ bm │ Week × 4-5 ┃ bw │ Day × 7 ┃ Mon … Sun
-/// ```
-/// Page chips render as fixed-size mini cards with their template name
-/// centred, the same height as a single-page thumbnail.
+const MINI_W: i32 = 32;
+const MINI_H: i32 = 42;
+
+/// Render a single page template as a small Cairo preview wrapped in a
+/// thin Frame, suitable for the bottom-of-editor preview strip. Tooltip
+/// is set to the page name so users can identify chips on hover.
+fn mini_page_preview(t: &PageTemplate) -> Frame {
+    let area = DrawingArea::builder()
+        .width_request(MINI_W)
+        .height_request(MINI_H)
+        .build();
+    let template = t.clone();
+    area.set_draw_func(move |_a, ctx, w, h| {
+        if w <= 0 || h <= 0 {
+            return;
+        }
+        let page_rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: template.size_mm.0,
+            height: template.size_mm.1,
+        };
+        let margin = 0.92;
+        let zoom = ((w as f64 / page_rect.width).min(h as f64 / page_rect.height)) * margin;
+        let viewport = Viewport {
+            center: Point {
+                x: page_rect.x + page_rect.width * 0.5,
+                y: page_rect.y + page_rect.height * 0.5,
+            },
+            zoom,
+            rotation: 0.0,
+        };
+        let transform = ViewportTransform::new(viewport, w as f64, h as f64);
+        let bg = journal_templates::page_template_to_background_config(&template);
+        let empty: StdHashSet<Uuid> = StdHashSet::new();
+        paint_with_widgets(
+            ctx, &transform, &bg, page_rect,
+            &template.widgets, &[], &empty, false,
+        );
+    });
+    let frame = Frame::builder().build();
+    frame.add_css_class("nbtc-preview-chip-frame");
+    frame.set_tooltip_text(Some(&t.name));
+    frame.set_child(Some(&area));
+    frame
+}
+
+/// A 32×42 dashed-border placeholder shown when a slot has no pages.
+fn mini_empty_placeholder() -> Frame {
+    let frame = Frame::builder()
+        .width_request(MINI_W)
+        .height_request(MINI_H)
+        .build();
+    frame.add_css_class("nbtc-preview-chip-empty");
+    frame.set_tooltip_text(Some("(no pages)"));
+    frame
+}
+
+/// Append a small inline section label like "Year ×1" to the strip.
+/// Title is dim, multiplier is amber. Used between sections in the
+/// flat horizontal preview strip.
+fn append_section_label(strip: &GtkBox, title: &str, mult: &str) {
+    let lbl = Label::builder()
+        .halign(Align::Center)
+        .valign(Align::Center)
+        .use_markup(true)
+        .build();
+    if mult.is_empty() {
+        lbl.set_markup(&format!(
+            "<span weight=\"600\">{}</span>",
+            glib::markup_escape_text(title)
+        ));
+    } else {
+        lbl.set_markup(&format!(
+            "<span weight=\"600\">{}</span> <span foreground=\"#d6a83a\" weight=\"700\">{}</span>",
+            glib::markup_escape_text(title),
+            glib::markup_escape_text(mult),
+        ));
+    }
+    lbl.add_css_class("nbtc-preview-section-label");
+    strip.append(&lbl);
+}
+
+/// Repopulate the preview as a single horizontal strip ~80px tall. Each
+/// page is a mini Cairo render (no inline name; tooltip carries the
+/// page name). Section labels (Year ×1 / Quarter ×4 / …) sit inline-
+/// left of their chips. Wrapped in a horizontal-only ScrolledWindow so
+/// long lists scroll sideways without growing the editor vertically.
 fn refresh_layout_preview(
     es: &Rc<RefCell<EditorState>>,
     page_templates: &Rc<Vec<PageTemplate>>,
@@ -56,158 +138,100 @@ fn refresh_layout_preview(
         }
         let s = es.borrow();
         let pts = page_templates.as_ref();
-        let name_for = |tid: &TemplateId| -> String {
-            pts.iter()
-                .find(|t| t.id == *tid)
-                .map(|t| t.name.clone())
-                .unwrap_or_else(|| "(missing)".into())
-        };
-        let chip_row = |ids: &[TemplateId]| -> GtkBox {
-            let row = GtkBox::builder()
-                .orientation(Orientation::Horizontal)
-                .spacing(4)
-                .valign(Align::Center)
-                .build();
+
+        // Append page chips (mini Cairo previews) for the given ids,
+        // or a single empty placeholder when ids is empty.
+        let append_chips = |strip: &GtkBox, ids: &[TemplateId]| {
             if ids.is_empty() {
-                let dim = Label::builder().label("—").halign(Align::Center).valign(Align::Center).build();
-                dim.add_css_class("dim-label");
-                row.append(&dim);
-            } else {
-                for tid in ids {
-                    let chip = Label::builder()
-                        .label(name_for(tid))
-                        .halign(Align::Center)
-                        .valign(Align::Center)
-                        .justify(gtk4::Justification::Center)
-                        .wrap(true)
-                        .wrap_mode(gtk4::pango::WrapMode::WordChar)
-                        .build();
-                    chip.add_css_class("nbtc-preview-chip");
-                    row.append(&chip);
+                strip.append(&mini_empty_placeholder());
+                return;
+            }
+            for tid in ids {
+                if let Some(t) = pts.iter().find(|t| t.id == *tid) {
+                    strip.append(&mini_page_preview(t));
+                } else {
+                    strip.append(&mini_empty_placeholder());
                 }
             }
-            row
         };
 
-        // Build a horizontal "section card": title + `× N` badge sit on
-        // a single line at the LEFT of the card, contents flow to the
-        // RIGHT in a horizontal row. Whole preview reads as one strip
-        // (Year × 1 ▸ Quarter × 4 ▸ Month × 3 ▸ Week × 4–5 ▸ Mon × 1 …).
-        let make_section = |title: &str, mult: &str| -> (GtkBox, GtkBox) {
-            let outer = GtkBox::builder()
-                .orientation(Orientation::Horizontal)
-                .spacing(6)
-                .valign(Align::Center)
-                .build();
-            outer.add_css_class("nbtc-preview-card");
-
-            let header = Label::builder()
-                .halign(Align::Center)
-                .valign(Align::Center)
-                .justify(gtk4::Justification::Center)
-                .use_markup(true)
-                .build();
-            if mult.is_empty() {
-                header.set_markup(&format!("<b>{}</b>", glib::markup_escape_text(title)));
-            } else {
-                header.set_markup(&format!(
-                    "<b>{}</b> <span foreground=\"#d6a83a\" weight=\"700\">{}</span>",
-                    glib::markup_escape_text(title),
-                    glib::markup_escape_text(mult),
-                ));
-            }
-            header.add_css_class("nbtc-preview-title");
-            outer.append(&header);
-
-            let inner = GtkBox::builder()
-                .orientation(Orientation::Horizontal)
-                .spacing(4)
-                .halign(Align::Center)
-                .valign(Align::Center)
-                .build();
-            outer.append(&inner);
-            (outer, inner)
-        };
-
-        // Pre-slot: a tiny "Before X" group consisting of a label + chips.
-        let make_pre = |label: &str, ids: &[TemplateId]| -> GtkBox {
-            let group = GtkBox::builder()
-                .orientation(Orientation::Vertical)
-                .spacing(1)
-                .halign(Align::Center)
-                .valign(Align::Center)
-                .build();
-            let lbl = Label::builder().label(label).halign(Align::Center).build();
-            lbl.add_css_class("nbtc-preview-prelabel");
-            group.append(&lbl);
-            group.append(&chip_row(ids));
-            group
-        };
-
-        // Daily slot resolution (first matching slot wins, like planner_nav).
-        let day_slot_for = |wd: chrono::Weekday| -> Option<&[TemplateId]> {
-            for slot in &s.template.daily_slots {
-                if slot.days.iter().any(|d| *d == wd) {
-                    return Some(slot.templates.as_slice());
+        // Group multiple Day slots so weekend spreads (e.g. Sat+Sun on
+        // one page) render once with a combined label. Walk daily_slots
+        // in order; first slot covering each weekday "owns" that weekday.
+        let mut weekday_owner: [Option<usize>; 7] = [None; 7];
+        for (i, slot) in s.template.daily_slots.iter().enumerate() {
+            for d in &slot.days {
+                let idx = d.num_days_from_monday() as usize;
+                if weekday_owner[idx].is_none() {
+                    weekday_owner[idx] = Some(i);
                 }
             }
-            None
-        };
-        // Each weekday is its own little card with name + its own repeat
-        // multiplier in the surrounding context. We pass `weekday_mult`
-        // because the count differs by where the day lives:
-        //   - Inside Week × 4–5  → each weekday repeats × 1 per week
-        //   - Inside Month × 3  → each weekday repeats × 4–5 per month
-        let make_weekday_cards = |weekday_mult: &str| -> GtkBox {
-            let row = GtkBox::builder()
-                .orientation(Orientation::Horizontal)
-                .spacing(4)
-                .halign(Align::Center)
-                .valign(Align::Center)
-                .build();
-            for (wd, name) in [
-                (chrono::Weekday::Mon, "Mon"),
-                (chrono::Weekday::Tue, "Tue"),
-                (chrono::Weekday::Wed, "Wed"),
-                (chrono::Weekday::Thu, "Thu"),
-                (chrono::Weekday::Fri, "Fri"),
-                (chrono::Weekday::Sat, "Sat"),
-                (chrono::Weekday::Sun, "Sun"),
-            ] {
-                let (card, inner) = make_section(name, weekday_mult);
-                card.add_css_class("nbtc-preview-day-card");
-                inner.append(&chip_row(day_slot_for(wd).unwrap_or(&[])));
-                row.append(&card);
+        }
+        // Collapse adjacent weekdays sharing the same slot — so a
+        // [Sat, Sun] slot with one template renders as one "Sat–Sun ×1"
+        // chip group instead of two duplicate columns.
+        let weekday_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let mut collapsed: Vec<(String, &[TemplateId])> = Vec::new();
+        let mut wi = 0;
+        while wi < 7 {
+            let owner = weekday_owner[wi];
+            let mut wj = wi + 1;
+            while wj < 7 && weekday_owner[wj] == owner {
+                wj += 1;
             }
-            row
-        };
+            let label = if wj - wi == 1 {
+                weekday_names[wi].to_string()
+            } else {
+                format!("{}–{}", weekday_names[wi], weekday_names[wj - 1])
+            };
+            let ids: &[TemplateId] = match owner {
+                Some(idx) => s.template.daily_slots[idx].templates.as_slice(),
+                None => &[],
+            };
+            collapsed.push((label, ids));
+            wi = wj;
+        }
 
-        // Always wrap days in Week × 4–5, regardless of grouping.
-        // The grouping kind only determines which wrapper section the
-        // planner runtime uses for actual file structure; visually a
-        // week always exists (5–7 days = 1 week), and each weekday
-        // happens × 1 per week. `before_week` pages live at the week
-        // boundary and apply across both grouping kinds.
-        let week_card = || -> GtkBox {
-            let (card, inner) = make_section("Week", "× 4–5");
-            inner.append(&make_pre("Before week", &s.template.before_week));
-            inner.append(&make_weekday_cards("× 1"));
-            card
-        };
+        // ── Build the flat horizontal strip ────────────────────────────
+        let scroll = ScrolledWindow::builder()
+            .hexpand(true)
+            .vexpand(false)
+            .build();
+        scroll.set_policy(PolicyType::Automatic, PolicyType::Never);
+        scroll.add_css_class("nbtc-preview-scroll");
 
-        let (month_card, month_inner) = make_section("Month", "× 3");
-        month_inner.append(&make_pre("Before month", &s.template.before_month));
-        month_inner.append(&week_card());
+        let strip = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(8)
+            .halign(Align::Start)
+            .valign(Align::Center)
+            .build();
+        strip.add_css_class("nbtc-preview-strip");
 
-        let (quarter_card, quarter_inner) = make_section("Quarter", "× 4");
-        quarter_inner.append(&make_pre("Before quarter", &s.template.before_quarter));
-        quarter_inner.append(&month_card);
+        append_section_label(&strip, "Year", "×1");
+        append_chips(&strip, &s.template.year_start);
+        strip.append(&Separator::new(Orientation::Vertical));
 
-        let (year_card, year_inner) = make_section("Year", "× 1");
-        year_inner.append(&make_pre("Year start", &s.template.year_start));
-        year_inner.append(&quarter_card);
+        append_section_label(&strip, "Quarter", "×4");
+        append_chips(&strip, &s.template.before_quarter);
+        strip.append(&Separator::new(Orientation::Vertical));
 
-        body.append(&year_card);
+        append_section_label(&strip, "Month", "×3");
+        append_chips(&strip, &s.template.before_month);
+        strip.append(&Separator::new(Orientation::Vertical));
+
+        append_section_label(&strip, "Week", "×4–5");
+        append_chips(&strip, &s.template.before_week);
+        strip.append(&Separator::new(Orientation::Vertical));
+
+        for (label, ids) in &collapsed {
+            append_section_label(&strip, label, "×1");
+            append_chips(&strip, ids);
+            strip.append(&Separator::new(Orientation::Vertical));
+        }
+
+        scroll.set_child(Some(&strip));
+        body.append(&scroll);
     });
 }
 

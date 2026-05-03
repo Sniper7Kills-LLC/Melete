@@ -24,17 +24,49 @@ use crate::state::{self, SharedState};
 /// Compute the addresses (in render order) for a date under the given
 /// notebook template + grouping. `template_index` is just an enumeration
 /// within the slot.
+///
+/// Multi-day slots (e.g. a weekend spread covering both Saturday and
+/// Sunday on one page) collapse to a SINGLE shared page record:
+/// every weekday in the slot resolves to the same `PlannerPageAddress`,
+/// keyed by the EARLIEST weekday's date in the same calendar week.
+/// Navigating to either day lands on that one page.
 fn addresses_for_date(template: &NotebookTemplate, date: NaiveDate) -> Vec<PlannerPageAddress> {
     let mut out = Vec::new();
     if let Some(slot) = matching_slot(template, date) {
+        let key_date = canonical_slot_date(slot, date);
         for (i, _tid) in slot.templates.iter().enumerate() {
             out.push(PlannerPageAddress::Day {
-                date,
+                date: key_date,
                 template_index: i as u32,
             });
         }
     }
     out
+}
+
+/// For a multi-day slot, return the date of the earliest weekday in
+/// `slot.days` that falls within the same ISO week as `date`. So when a
+/// slot covers `[Sat, Sun]` and the user navigates to Sunday, this
+/// returns the Saturday of the same week. Single-day slots return
+/// `date` unchanged.
+fn canonical_slot_date(slot: &DailySlot, date: NaiveDate) -> NaiveDate {
+    if slot.days.len() <= 1 {
+        return date;
+    }
+    let mon0 = date.weekday().num_days_from_monday() as i64;
+    let week_start = date - chrono::Duration::days(mon0); // Monday of `date`'s week
+    // Earliest weekday (by Monday-relative index) wins.
+    let mut best: Option<NaiveDate> = None;
+    for wd in &slot.days {
+        let off = wd.num_days_from_monday() as i64;
+        let candidate = week_start + chrono::Duration::days(off);
+        match best {
+            None => best = Some(candidate),
+            Some(prev) if candidate < prev => best = Some(candidate),
+            _ => {}
+        }
+    }
+    best.unwrap_or(date)
 }
 
 fn matching_slot<'a>(template: &'a NotebookTemplate, date: NaiveDate) -> Option<&'a DailySlot> {

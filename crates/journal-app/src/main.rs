@@ -269,9 +269,28 @@ const APP_CSS: &str = r#"
     background-color: alpha(@accent_color, 0.06);
     border-radius: 8px;
     padding: 6px 8px;
-    /* Fixed single-page-thumbnail height — keeps the preview a tight
-       horizontal strip instead of a tall stack. */
-    min-height: 100px;
+    min-height: 80px;
+    max-height: 84px;
+}
+.nbtc-preview-strip { padding: 2px 4px; }
+.nbtc-preview-scroll {
+    min-height: 60px;
+}
+.nbtc-preview-section-label {
+    font-size: 0.78em;
+    opacity: 0.78;
+    margin-right: 2px;
+}
+.nbtc-preview-chip-frame {
+    background: white;
+    border-radius: 4px;
+    border: 1px solid alpha(@borders, 0.7);
+    box-shadow: 0 1px 1px alpha(black, 0.05);
+}
+.nbtc-preview-chip-empty {
+    border: 1px dashed alpha(@accent_color, 0.45);
+    border-radius: 4px;
+    background: alpha(@accent_color, 0.04);
 }
 .nbtc-preview-row {
     font-family: "Source Code Pro", monospace;
