@@ -268,7 +268,10 @@ const APP_CSS: &str = r#"
 .nbtc-preview {
     background-color: alpha(@accent_color, 0.06);
     border-radius: 8px;
-    padding: 8px 12px;
+    padding: 6px 8px;
+    /* Fixed single-page-thumbnail height — keeps the preview a tight
+       horizontal strip instead of a tall stack. */
+    min-height: 100px;
 }
 .nbtc-preview-row {
     font-family: "Source Code Pro", monospace;
@@ -302,6 +305,20 @@ const APP_CSS: &str = r#"
     font-weight: 700;
     min-width: 28px;
     opacity: 0.7;
+}
+.nbtc-preview-prelabel {
+    font-size: 0.65em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    opacity: 0.55;
+}
+.nbtc-preview-day-card {
+    border-color: alpha(@accent_color, 0.3);
+    background-color: alpha(@accent_color, 0.03);
+}
+.nbtc-preview-chip {
+    font-size: 0.78em;
 }
 .nbtc-palette-chip {
     border: 1px solid alpha(@borders, 0.45);

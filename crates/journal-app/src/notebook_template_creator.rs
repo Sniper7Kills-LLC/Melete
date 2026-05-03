@@ -33,24 +33,16 @@ thread_local! {
     static LAYOUT_PREVIEW: RefCell<Option<GtkBox>> = const { RefCell::new(None) };
 }
 
-/// Repopulate the preview body with a nested visual structure:
+/// Repopulate the preview body with a HORIZONTAL nested layout, all sized
+/// to a single page-thumbnail height (~78px) so the preview is a tight
+/// timeline strip rather than a tall stack.
 ///
+/// Layout (left → right, with each level nested inside the previous):
 /// ```text
-/// Year × 1
-///  ├─ Year-start chips
-///  ├─ Quarter × 4
-///  │   ├─ Before-quarter chips
-///  │   └─ Month × 3
-///  │       ├─ Before-month chips
-///  │       └─ Week × ~4   (only when grouping = Week)
-///  │           ├─ Before-week chips
-///  │           └─ Day × 7  (one chip set per weekday from daily_slots)
-///  │       └─ Day × ~30   (only when grouping = Month)
+///  Year × 1 ┃ year-start chips │ Quarter × 4 ┃ bq │ Month × 3 ┃ bm │ Week × 4-5 ┃ bw │ Day × 7 ┃ Mon … Sun
 /// ```
-///
-/// Each level draws ONE representative box with an `× N` multiplier in
-/// its header so the user sees "what repeats how many times" without
-/// pasting 12 month boxes side-by-side.
+/// Page chips render as fixed-size mini cards with their template name
+/// centred, the same height as a single-page thumbnail.
 fn refresh_layout_preview(
     es: &Rc<RefCell<EditorState>>,
     page_templates: &Rc<Vec<PageTemplate>>,
@@ -67,52 +59,85 @@ fn refresh_layout_preview(
             pts.iter()
                 .find(|t| t.id == *tid)
                 .map(|t| t.name.clone())
-                .unwrap_or_else(|| "(missing template)".into())
+                .unwrap_or_else(|| "(missing)".into())
         };
         let chip_row = |ids: &[TemplateId]| -> GtkBox {
-            let row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(4).build();
+            let row = GtkBox::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(4)
+                .valign(Align::Center)
+                .build();
             if ids.is_empty() {
-                let dim = Label::builder().label("—").halign(Align::Start).build();
+                let dim = Label::builder().label("—").halign(Align::Center).valign(Align::Center).build();
                 dim.add_css_class("dim-label");
                 row.append(&dim);
             } else {
                 for tid in ids {
-                    let chip = Label::builder().label(name_for(tid)).halign(Align::Start).build();
+                    let chip = Label::builder()
+                        .label(name_for(tid))
+                        .halign(Align::Center)
+                        .valign(Align::Center)
+                        .justify(gtk4::Justification::Center)
+                        .wrap(true)
+                        .wrap_mode(gtk4::pango::WrapMode::WordChar)
+                        .build();
                     chip.add_css_class("nbtc-preview-chip");
                     row.append(&chip);
                 }
             }
             row
         };
-        let make_card = |title: &str, count: u32| -> (GtkBox, GtkBox) {
+
+        // Build a horizontal "section card": header with title + `× N`
+        // badge pinned at the top, then a horizontal row of contents
+        // underneath. Header and contents both centred horizontally.
+        let make_section = |title: &str, mult: &str| -> (GtkBox, GtkBox) {
             let outer = GtkBox::builder()
                 .orientation(Orientation::Vertical)
-                .spacing(4)
-                .margin_start(4)
-                .margin_end(4)
-                .margin_top(4)
-                .margin_bottom(4)
+                .spacing(2)
+                .valign(Align::Center)
                 .build();
             outer.add_css_class("nbtc-preview-card");
-            let header = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
-            let title_lbl = Label::builder().label(title).halign(Align::Start).hexpand(true).build();
+            let header = GtkBox::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(4)
+                .halign(Align::Center)
+                .build();
+            let title_lbl = Label::builder().label(title).halign(Align::Center).build();
             title_lbl.add_css_class("nbtc-preview-title");
             header.append(&title_lbl);
-            if count > 1 {
-                let mult = Label::builder().label(format!("× {}", count)).halign(Align::End).build();
-                mult.add_css_class("nbtc-preview-multiplier");
-                header.append(&mult);
+            if !mult.is_empty() {
+                let mult_lbl = Label::builder().label(mult).halign(Align::Center).build();
+                mult_lbl.add_css_class("nbtc-preview-multiplier");
+                header.append(&mult_lbl);
             }
             outer.append(&header);
-            let inner = GtkBox::builder().orientation(Orientation::Vertical).spacing(4).build();
+            let inner = GtkBox::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(4)
+                .halign(Align::Center)
+                .valign(Align::Center)
+                .build();
             outer.append(&inner);
             (outer, inner)
         };
 
-        // Daily slots — render as one Day card showing each weekday's
-        // matching slot. We pick whichever slot covers each weekday from
-        // the user's daily_slots list (first match wins, matching the
-        // planner's `matching_slot` rule).
+        // Pre-slot: a tiny "Before X" group consisting of a label + chips.
+        let make_pre = |label: &str, ids: &[TemplateId]| -> GtkBox {
+            let group = GtkBox::builder()
+                .orientation(Orientation::Vertical)
+                .spacing(1)
+                .halign(Align::Center)
+                .valign(Align::Center)
+                .build();
+            let lbl = Label::builder().label(label).halign(Align::Center).build();
+            lbl.add_css_class("nbtc-preview-prelabel");
+            group.append(&lbl);
+            group.append(&chip_row(ids));
+            group
+        };
+
+        // Daily slot resolution (first matching slot wins, like planner_nav).
         let day_slot_for = |wd: chrono::Weekday| -> Option<&[TemplateId]> {
             for slot in &s.template.daily_slots {
                 if slot.days.iter().any(|d| *d == wd) {
@@ -121,8 +146,18 @@ fn refresh_layout_preview(
             }
             None
         };
-        let make_day_card = || -> GtkBox {
-            let (outer, inner) = make_card("Day", 7);
+        // Each weekday is its own little card with name + its own repeat
+        // multiplier in the surrounding context. We pass `weekday_mult`
+        // because the count differs by where the day lives:
+        //   - Inside Week × 4–5  → each weekday repeats × 1 per week
+        //   - Inside Month × 3  → each weekday repeats × 4–5 per month
+        let make_weekday_cards = |weekday_mult: &str| -> GtkBox {
+            let row = GtkBox::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(4)
+                .halign(Align::Center)
+                .valign(Align::Center)
+                .build();
             for (wd, name) in [
                 (chrono::Weekday::Mon, "Mon"),
                 (chrono::Weekday::Tue, "Tue"),
@@ -132,93 +167,41 @@ fn refresh_layout_preview(
                 (chrono::Weekday::Sat, "Sat"),
                 (chrono::Weekday::Sun, "Sun"),
             ] {
-                let row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
-                let day_lbl = Label::builder().label(name).halign(Align::Start).build();
-                day_lbl.add_css_class("nbtc-preview-day");
-                row.append(&day_lbl);
-                let pages = day_slot_for(wd).unwrap_or(&[]);
-                row.append(&chip_row(pages));
-                inner.append(&row);
+                let (card, inner) = make_section(name, weekday_mult);
+                card.add_css_class("nbtc-preview-day-card");
+                inner.append(&chip_row(day_slot_for(wd).unwrap_or(&[])));
+                row.append(&card);
             }
-            outer
+            row
         };
 
-        // Multipliers are nesting-relative:
-        //   Year × 1
-        //   └─ Quarter × 4 per year
-        //      └─ Month × 3 per quarter   (3 × 4 = 12 months/year)
-        //         └─ Week × 4-5 per month (when grouping = Week; ~52/year)
-        //            └─ Day × 7 per week
-        //         └─ Day × 7 per week     (when grouping = Month, no Week wrap)
-        //
-        // Build innermost first.
+        // Build innermost-first; nest left → right.
         let week_card_for_month = || -> GtkBox {
-            // Month wraps Week (4-5 weeks per month) wraps Day.
-            let (week_card, week_inner) = make_card("Week", 0); // 0 = use custom badge
-            // Replace the auto-generated multiplier with "× 4–5" — week
-            // count varies per month so a single integer is misleading.
-            // Detach the auto header and rebuild it.
-            if let Some(first) = week_card.first_child() {
-                week_card.remove(&first);
-            }
-            let header = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
-            let title_lbl = Label::builder().label("Week").halign(Align::Start).hexpand(true).build();
-            title_lbl.add_css_class("nbtc-preview-title");
-            header.append(&title_lbl);
-            let mult = Label::builder().label("× 4–5").halign(Align::End).build();
-            mult.add_css_class("nbtc-preview-multiplier");
-            header.append(&mult);
-            week_card.prepend(&header);
-
-            let bw = chip_row(&s.template.before_week);
-            let bw_label = Label::builder().label("Before week").halign(Align::Start).build();
-            bw_label.add_css_class("dim-label");
-            let bw_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-            bw_box.append(&bw_label);
-            bw_box.append(&bw);
-            week_inner.append(&bw_box);
-            week_inner.append(&make_day_card());
-            week_card
+            let (card, inner) = make_section("Week", "× 4–5");
+            inner.append(&make_pre("Before week", &s.template.before_week));
+            // Inside Week, each weekday lands once per week.
+            inner.append(&make_weekday_cards("× 1"));
+            card
         };
 
-        // Month × 3 per quarter; wraps either Week or Day depending on grouping.
-        let (month_card, month_inner) = make_card("Month", 3);
-        let bm = chip_row(&s.template.before_month);
-        let bm_label = Label::builder().label("Before month").halign(Align::Start).build();
-        bm_label.add_css_class("dim-label");
-        let bm_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-        bm_box.append(&bm_label);
-        bm_box.append(&bm);
-        month_inner.append(&bm_box);
+        let (month_card, month_inner) = make_section("Month", "× 3");
+        month_inner.append(&make_pre("Before month", &s.template.before_month));
         match s.template.grouping {
             journal_core::PlannerGrouping::Month => {
-                month_inner.append(&make_day_card());
+                // No Week wrapper — each weekday lands ~4–5 times per month.
+                month_inner.append(&make_weekday_cards("× 4–5"));
             }
             journal_core::PlannerGrouping::Week => {
                 month_inner.append(&week_card_for_month());
             }
         }
 
-        // Quarter × 4 per year; wraps Month.
-        let (quarter_card, quarter_inner) = make_card("Quarter", 4);
-        let bq = chip_row(&s.template.before_quarter);
-        let bq_label = Label::builder().label("Before quarter").halign(Align::Start).build();
-        bq_label.add_css_class("dim-label");
-        let bq_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-        bq_box.append(&bq_label);
-        bq_box.append(&bq);
-        quarter_inner.append(&bq_box);
+        let (quarter_card, quarter_inner) = make_section("Quarter", "× 4");
+        quarter_inner.append(&make_pre("Before quarter", &s.template.before_quarter));
         quarter_inner.append(&month_card);
 
-        // Year × 1 wraps Quarter.
-        let (year_card, year_inner) = make_card("Year", 1);
-        let ys = chip_row(&s.template.year_start);
-        let ys_label = Label::builder().label("Year start").halign(Align::Start).build();
-        ys_label.add_css_class("dim-label");
-        let ys_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-        ys_box.append(&ys_label);
-        ys_box.append(&ys);
-        year_inner.append(&ys_box);
+        let (year_card, year_inner) = make_section("Year", "× 1");
+        year_inner.append(&make_pre("Year start", &s.template.year_start));
         year_inner.append(&quarter_card);
 
         body.append(&year_card);
