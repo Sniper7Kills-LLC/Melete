@@ -129,37 +129,6 @@ pub fn prompt_new_section(parent: &ApplicationWindow, on_ok: Box<dyn Fn(String)>
     win.present();
 }
 
-pub fn prompt_rename(
-    parent: &ApplicationWindow,
-    title: &str,
-    current_name: &str,
-    on_ok: Box<dyn Fn(String)>,
-) {
-    let win = modal(parent, title);
-    let body = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(8)
-        .margin_top(16)
-        .margin_bottom(16)
-        .margin_start(16)
-        .margin_end(16)
-        .build();
-
-    body.append(&Label::new(Some("Name")));
-    let entry = Entry::builder().text(current_name).build();
-    body.append(&entry);
-
-    let entry_for_ok = entry.clone();
-    let row = build_button_row(&win, move || {
-        let name = entry_for_ok.text().to_string();
-        on_ok(name);
-    });
-    body.append(&row);
-
-    win.set_child(Some(&body));
-    win.present();
-}
-
 /// Prompt for new page template choice. The dropdown shows "Blank (no template)"
 /// at the top, followed by the templates allowed for `section_id`.
 ///

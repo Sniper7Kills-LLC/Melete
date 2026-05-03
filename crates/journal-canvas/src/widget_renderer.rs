@@ -446,7 +446,7 @@ fn draw_priority_list(
     let x_pri = r.x;
     let x_seq = r.x + pri_col_w;
     let x_body = r.x + pri_col_w + seq_col_w;
-    let body_w = r.width - pri_col_w - seq_col_w;
+    let _body_w = r.width - pri_col_w - seq_col_w;
 
     // Outer border
     rect_path(ctx, r);

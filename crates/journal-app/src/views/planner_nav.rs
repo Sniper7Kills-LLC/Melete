@@ -8,8 +8,7 @@ use std::rc::Rc;
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, Button, Calendar, DrawingArea, GestureClick, Label, MenuButton, Orientation,
-    Popover,
+    Box as GtkBox, Button, Calendar, DrawingArea, Label, MenuButton, Orientation, Popover,
 };
 use uuid::Uuid;
 
