@@ -284,7 +284,7 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ---
 
-## Phase 6: Storage Abstraction + Optional Server Backend (Planned)
+## Phase 6: Storage Abstraction + Optional Server Backend
 
 The Linux client stays native (GTK4) — this phase is about making the
 **storage layer pluggable** so a hosted server can back templates first, and
@@ -293,26 +293,12 @@ notebooks/strokes later, without touching the canvas or UI code.
 Existing rejected scope: the **client itself stays native**. Web is only for
 the optional template-sharing portal, not for the journal app.
 
-### 6.1 Trait-based storage abstraction
+### 6.1 Trait-based storage abstraction ✅
 
-Today every store module exposes free functions taking `&rusqlite::Connection`.
-The `Connection` type leaks into ~49 call sites across `journal-app`, blocking
-any non-SQLite backend.
-
-- [ ] `journal-storage`: introduce traits per store —
-  `trait NotebookStore`, `trait SectionStore`, `trait PageStore`,
-  `trait StrokeStore`, `trait TemplateStore`, `trait NotebookTemplateStore`.
-  Each method returns `Result<T, StorageError>` (no `Connection` exposed).
-- [ ] `journal-storage`: split current SQLite implementation into
-  `sqlite/` submodules implementing each trait against `rusqlite`.
-- [ ] `journal-storage`: define `pub struct Backend { notebooks: Box<dyn NotebookStore>, ... }`
-  or a single `trait JournalBackend` aggregator the app holds via
-  `Rc<RefCell<dyn JournalBackend>>`.
-- [ ] `journal-app`: replace direct `db.borrow().conn()` calls with trait
-  calls. Drop the `rusqlite` re-export; `Db` becomes private to the SQLite
-  backend impl.
-- [ ] Errors stay typed via `StorageError` (already `thiserror`) — add
-  variants for `Network`, `Auth`, `Conflict` for the future remote backend.
+- [x] `journal-storage::backend`: traits per store — `NotebookStore`, `SectionStore`, `PageStore`, `StrokeStore`, plus the aggregator `JournalBackend: NotebookStore + SectionStore + PageStore + StrokeStore`. `PlannerQueries` adds default-impl `pages_in_date_range` for future remote pushdown. No `Connection` in any signature.
+- [x] `journal-storage::sqlite_backend::SqliteBackend` wraps `Db` and delegates each method to the existing free functions in the `*_store` modules (back-compat retained).
+- [x] `journal-app` holds `Rc<RefCell<dyn JournalBackend>>` instead of `Rc<RefCell<Db>>` (`state::CanvasState.backend`); ~50 call sites migrated from `db.borrow().conn(); store::fn(conn, ...)` to `backend.borrow_mut().fn(...)`. Planner helpers (`ensure_planner_pages`, `min_day_date_in_section`, `reorder_sections_chronologically`, `chronological_target_position`) take `&mut dyn JournalBackend`.
+- [x] `StorageError` gains `Network` / `Auth` / `Conflict` variants reserved for the future remote backend.
 
 ### 6.2 Local backends
 
