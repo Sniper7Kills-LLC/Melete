@@ -233,6 +233,18 @@ Home screen (no notebook open) shows notebook grid/list.
 - [x] Full notebook template editor (name, description, grouping, page title format, year/month/week section formats, daily slots with day-of-week toggles + page template picker, add/remove slots; persisted to disk)
 - [ ] PDF template background import (deferred — poppler-rs crate compatibility with current gtk4-rs/glib generation needs verification; libpoppler-glib is available system-side)
 
+## Phase 3.7: Template Editor Polish ✅
+
+- [x] Template editor is now a full-screen stack page (`TEMPLATE_EDITOR_NAME`) — no longer a modal `Window`. Opens from "Templates" → "New template…"/"Edit"; back/save returns to wherever the user came from (home or notebook canvas).
+- [x] Properties side panel rebuilds dynamically when the selection changes (driven by `add_tick_callback` watching `selected_idx`):
+  - Stroke colour picker (`ColorDialogButton`)
+  - Fill colour picker + on/off `Switch`
+  - Stroke width spinner (mm)
+  - Per-kind editors: text + font size + variable popover for `TextBlock`; thickness for `Line`; spacing for grid/lines/dots regions; start/end hour for `Timeline` and `DailyAppointments`; row count for `PriorityList`; pipe-separated items for `Checklist`
+- [x] `WidgetKind::TextBlock` text now runs through `journal_core::title_format::render` so `{date}/{weekday}/{month_name}/{year}/{week}/{day}/{month}` expand at draw time. The template editor preview binds today's date; the planner canvas binds the page's calendar date.
+- [x] `title_format` engine moved from `journal_templates` to `journal_core` (re-exported from `journal_templates` for back-compat) so `journal_canvas` can call it without a circular dep.
+- [x] Variable insertion popover in the editor: pick `{date}`, `{year}`, `{month}`, `{month_name}`, `{week}`, `{day}`, `{weekday}` and it inserts at the entry caret.
+
 ---
 
 ## Future (Not Now)

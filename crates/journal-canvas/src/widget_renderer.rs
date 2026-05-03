@@ -1,7 +1,20 @@
 use gtk4::cairo;
-use journal_core::{Color, Rect, TemplateWidget, WidgetKind, WidgetRect, WidgetStyle};
+use journal_core::{
+    render_title, Color, Rect, TemplateWidget, TitleContext, WidgetKind, WidgetRect, WidgetStyle,
+};
 
 use crate::viewport_transform::ViewportTransform;
+
+/// Date used to expand `{date}/{weekday}/{month}/...` placeholders inside
+/// `WidgetKind::TextBlock` text. `None` means "today (local)".
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WidgetRenderContext {
+    pub date: Option<chrono::NaiveDate>,
+}
+
+fn resolve_date(ctx: &WidgetRenderContext) -> chrono::NaiveDate {
+    ctx.date.unwrap_or_else(|| chrono::Local::now().date_naive())
+}
 
 fn set_color(ctx: &cairo::Context, c: Color) {
     ctx.set_source_rgba(
@@ -39,7 +52,20 @@ pub fn draw_widgets(
     ctx: &cairo::Context,
     transform: &ViewportTransform,
     widgets: &[TemplateWidget],
+    page_rect: Rect,
+) {
+    draw_widgets_with_context(ctx, transform, widgets, page_rect, &WidgetRenderContext::default());
+}
+
+/// Like [`draw_widgets`] but allows the caller to bind a date for
+/// `WidgetKind::TextBlock` placeholder substitution (e.g. the planner page's
+/// own date in production, or today's date for the template editor preview).
+pub fn draw_widgets_with_context(
+    ctx: &cairo::Context,
+    transform: &ViewportTransform,
+    widgets: &[TemplateWidget],
     _page_rect: Rect,
+    render_ctx: &WidgetRenderContext,
 ) {
     for widget in widgets {
         ctx.save().ok();
@@ -50,12 +76,17 @@ pub fn draw_widgets(
             widget.rect.height,
         );
         ctx.clip();
-        draw_widget(ctx, transform, widget);
+        draw_widget(ctx, transform, widget, render_ctx);
         ctx.restore().ok();
     }
 }
 
-fn draw_widget(ctx: &cairo::Context, transform: &ViewportTransform, widget: &TemplateWidget) {
+fn draw_widget(
+    ctx: &cairo::Context,
+    transform: &ViewportTransform,
+    widget: &TemplateWidget,
+    render_ctx: &WidgetRenderContext,
+) {
     let r = &widget.rect;
     let style = &widget.style;
 
@@ -89,7 +120,9 @@ fn draw_widget(ctx: &cairo::Context, transform: &ViewportTransform, widget: &Tem
             set_color(ctx, style.stroke_color);
             ctx.set_font_size(font_size_mm / zoom.max(1.0));
             ctx.move_to(r.x, r.y + font_size_mm / zoom.max(1.0));
-            let _ = ctx.show_text(text);
+            let date = resolve_date(render_ctx);
+            let expanded = render_title(text, &TitleContext::new(date));
+            let _ = ctx.show_text(&expanded);
         }
         WidgetKind::GridRegion { spacing_mm } => {
             draw_grid_region(ctx, transform, r, style, *spacing_mm);

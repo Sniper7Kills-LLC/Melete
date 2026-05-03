@@ -5,7 +5,7 @@ use gtk4::prelude::*;
 use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, Label, Orientation, ScrolledWindow, Separator,
 };
-use journal_core::{Notebook, NotebookId, NotebookKind};
+use journal_core::{Notebook, NotebookId, NotebookKind, PageTemplate};
 use journal_storage::{notebook_store, Db};
 use uuid::Uuid;
 
@@ -20,6 +20,7 @@ pub fn build_home(
     state: SharedState,
     db: Rc<RefCell<Db>>,
     on_open: Rc<dyn Fn(NotebookId)>,
+    on_open_template_editor: Rc<dyn Fn(Option<PageTemplate>)>,
 ) -> GtkBox {
     let root = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -63,8 +64,9 @@ pub fn build_home(
     {
         let parent = parent.clone();
         let state = state.clone();
+        let opener = on_open_template_editor.clone();
         templates_btn.connect_clicked(move |_| {
-            template_manager::open(&parent, state.clone());
+            template_manager::open(&parent, state.clone(), opener.clone());
         });
     }
 

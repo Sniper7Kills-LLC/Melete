@@ -14,7 +14,11 @@ use uuid::Uuid;
 
 use crate::state::SharedState;
 
-pub fn open(parent: &ApplicationWindow, state: SharedState) {
+/// Callback type used to open the full-screen template editor.
+/// `Some(template)` edits an existing template; `None` creates a new one.
+pub type OpenEditorFn = Rc<dyn Fn(Option<PageTemplate>)>;
+
+pub fn open(parent: &ApplicationWindow, state: SharedState, open_editor: OpenEditorFn) {
     let win = Window::builder()
         .transient_for(parent)
         .modal(false)
@@ -78,19 +82,25 @@ pub fn open(parent: &ApplicationWindow, state: SharedState) {
     win.set_child(Some(&body));
 
     let list_rc = Rc::new(list);
-    refresh_list(&list_rc, state.clone(), parent);
+    let close_manager: Rc<dyn Fn()> = {
+        let win = win.clone();
+        Rc::new(move || win.close())
+    };
+    refresh_list(
+        &list_rc,
+        state.clone(),
+        parent,
+        open_editor.clone(),
+        close_manager.clone(),
+    );
 
     {
-        let parent = parent.clone();
-        let state = state.clone();
-        let list = list_rc.clone();
+        let win_close = win.clone();
+        let open_editor = open_editor.clone();
         new_btn.connect_clicked(move |_| {
-            let list2 = list.clone();
-            let state2 = state.clone();
-            let parent2 = parent.clone();
-            crate::template_creator::open(&parent, state.clone(), None, move || {
-                refresh_list(&list2, state2.clone(), &parent2);
-            });
+            // Hand off to the full-screen editor; close the manager modal.
+            (open_editor)(None);
+            win_close.close();
         });
     }
 
@@ -98,8 +108,16 @@ pub fn open(parent: &ApplicationWindow, state: SharedState) {
         let parent = parent.clone();
         let state = state.clone();
         let list = list_rc.clone();
+        let open_editor = open_editor.clone();
+        let close_manager = close_manager.clone();
         import_btn.connect_clicked(move |_| {
-            run_import(&parent, state.clone(), list.clone());
+            run_import(
+                &parent,
+                state.clone(),
+                list.clone(),
+                open_editor.clone(),
+                close_manager.clone(),
+            );
         });
     }
 
@@ -107,8 +125,16 @@ pub fn open(parent: &ApplicationWindow, state: SharedState) {
         let parent = parent.clone();
         let state = state.clone();
         let list = list_rc.clone();
+        let open_editor = open_editor.clone();
+        let close_manager = close_manager.clone();
         import_pdf_btn.connect_clicked(move |_| {
-            run_pdf_import(&parent, state.clone(), list.clone());
+            run_pdf_import(
+                &parent,
+                state.clone(),
+                list.clone(),
+                open_editor.clone(),
+                close_manager.clone(),
+            );
         });
     }
 
@@ -119,7 +145,13 @@ fn pdfs_dir() -> Option<PathBuf> {
     Some(templates_dir()?.join("pdfs"))
 }
 
-fn run_pdf_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListBox>) {
+fn run_pdf_import(
+    parent: &ApplicationWindow,
+    state: SharedState,
+    list: Rc<ListBox>,
+    open_editor: OpenEditorFn,
+    close_manager: Rc<dyn Fn()>,
+) {
     let dialog = FileDialog::builder().title("Import PDF").modal(true).build();
     let filter = FileFilter::new();
     filter.set_name(Some("PDF"));
@@ -147,7 +179,14 @@ fn run_pdf_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListB
             Some(p) => p,
             None => { tracing::warn!("pdf file has no local path"); return; }
         };
-        if let Err(e) = import_pdf(&parent_for_cb, &src_path, state.clone(), list.clone()) {
+        if let Err(e) = import_pdf(
+            &parent_for_cb,
+            &src_path,
+            state.clone(),
+            list.clone(),
+            open_editor.clone(),
+            close_manager.clone(),
+        ) {
             tracing::error!("pdf import: {:#}", e);
             show_error(&parent_for_cb, &format!("Failed to import PDF: {}", e));
         }
@@ -171,7 +210,14 @@ fn pdf_page_count(path: &std::path::Path) -> u32 {
     1
 }
 
-fn import_pdf(parent: &ApplicationWindow, src: &std::path::Path, state: SharedState, list: Rc<ListBox>) -> anyhow::Result<()> {
+fn import_pdf(
+    parent: &ApplicationWindow,
+    src: &std::path::Path,
+    state: SharedState,
+    list: Rc<ListBox>,
+    open_editor: OpenEditorFn,
+    close_manager: Rc<dyn Fn()>,
+) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
     let pdf_dir = pdfs_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
     std::fs::create_dir_all(&pdf_dir)?;
@@ -184,12 +230,14 @@ fn import_pdf(parent: &ApplicationWindow, src: &std::path::Path, state: SharedSt
 
     if n_pages <= 1 {
         finalize_pdf_template(id, name, dst_str, 0, state.clone());
-        refresh_list(&list, state, parent);
+        refresh_list(&list, state, parent, open_editor, close_manager);
         return Ok(());
     }
 
     // Ask the user which page to use (1-based display, 0-based storage).
-    show_pdf_page_picker(parent, id, name, dst_str, n_pages, state, list);
+    show_pdf_page_picker(
+        parent, id, name, dst_str, n_pages, state, list, open_editor, close_manager,
+    );
     Ok(())
 }
 
@@ -228,7 +276,17 @@ fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: 
     s.templates.borrow_mut().insert(template);
 }
 
-fn show_pdf_page_picker(parent: &ApplicationWindow, id: Uuid, name: String, dst: String, n_pages: u32, state: SharedState, list: Rc<ListBox>) {
+fn show_pdf_page_picker(
+    parent: &ApplicationWindow,
+    id: Uuid,
+    name: String,
+    dst: String,
+    n_pages: u32,
+    state: SharedState,
+    list: Rc<ListBox>,
+    open_editor: OpenEditorFn,
+    close_manager: Rc<dyn Fn()>,
+) {
     let parent_for_refresh = parent.clone();
     use gtk4::{Adjustment, Align, SpinButton, Window};
 
@@ -281,10 +339,18 @@ fn show_pdf_page_picker(parent: &ApplicationWindow, id: Uuid, name: String, dst:
     {
         let win = win.clone();
         let spin = spin.clone();
+        let open_editor = open_editor.clone();
+        let close_manager = close_manager.clone();
         ok_btn.connect_clicked(move |_| {
             let page = (spin.value() as u32).saturating_sub(1);
             finalize_pdf_template(id, name.clone(), dst.clone(), page, state.clone());
-            refresh_list(&list, state.clone(), &parent_for_refresh);
+            refresh_list(
+                &list,
+                state.clone(),
+                &parent_for_refresh,
+                open_editor.clone(),
+                close_manager.clone(),
+            );
             win.close();
         });
     }
@@ -292,7 +358,13 @@ fn show_pdf_page_picker(parent: &ApplicationWindow, id: Uuid, name: String, dst:
     win.present();
 }
 
-fn refresh_list(list: &Rc<ListBox>, state: SharedState, parent: &ApplicationWindow) {
+fn refresh_list(
+    list: &Rc<ListBox>,
+    state: SharedState,
+    parent: &ApplicationWindow,
+    open_editor: OpenEditorFn,
+    close_manager: Rc<dyn Fn()>,
+) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
@@ -306,12 +378,26 @@ fn refresh_list(list: &Rc<ListBox>, state: SharedState, parent: &ApplicationWind
     };
 
     for t in templates {
-        let row = build_row(&t, state.clone(), list.clone(), parent);
+        let row = build_row(
+            &t,
+            state.clone(),
+            list.clone(),
+            parent,
+            open_editor.clone(),
+            close_manager.clone(),
+        );
         list.append(&row);
     }
 }
 
-fn build_row(t: &PageTemplate, state: SharedState, list: Rc<ListBox>, parent: &ApplicationWindow) -> GtkBox {
+fn build_row(
+    t: &PageTemplate,
+    state: SharedState,
+    list: Rc<ListBox>,
+    parent: &ApplicationWindow,
+    open_editor: OpenEditorFn,
+    close_manager: Rc<dyn Fn()>,
+) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
@@ -348,21 +434,11 @@ fn build_row(t: &PageTemplate, state: SharedState, list: Rc<ListBox>, parent: &A
         let edit_btn = Button::from_icon_name("document-edit-symbolic");
         edit_btn.set_tooltip_text(Some("Edit template"));
         let template_for_edit = t.clone();
-        let state_for_edit = state.clone();
-        let list_for_edit = list.clone();
-        let parent_for_edit = parent.clone();
+        let open_editor_btn = open_editor.clone();
+        let close_manager_btn = close_manager.clone();
         edit_btn.connect_clicked(move |_| {
-            let list2 = list_for_edit.clone();
-            let state2 = state_for_edit.clone();
-            let parent2 = parent_for_edit.clone();
-            crate::template_creator::open(
-                &parent_for_edit,
-                state_for_edit.clone(),
-                Some(template_for_edit.clone()),
-                move || {
-                    refresh_list(&list2, state2.clone(), &parent2);
-                },
-            );
+            (open_editor_btn)(Some(template_for_edit.clone()));
+            (close_manager_btn)();
         });
         row.append(&edit_btn);
 
@@ -373,9 +449,17 @@ fn build_row(t: &PageTemplate, state: SharedState, list: Rc<ListBox>, parent: &A
         let state_for_del = state.clone();
         let list_for_del = list.clone();
         let parent_for_del = parent.clone();
+        let open_editor_del = open_editor.clone();
+        let close_manager_del = close_manager.clone();
         del.connect_clicked(move |_| {
             delete_template(tid, state_for_del.clone());
-            refresh_list(&list_for_del, state_for_del.clone(), &parent_for_del);
+            refresh_list(
+                &list_for_del,
+                state_for_del.clone(),
+                &parent_for_del,
+                open_editor_del.clone(),
+                close_manager_del.clone(),
+            );
         });
         row.append(&del);
     } else {
@@ -450,7 +534,13 @@ fn images_dir() -> Option<PathBuf> {
     Some(templates_dir()?.join("images"))
 }
 
-fn run_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListBox>) {
+fn run_import(
+    parent: &ApplicationWindow,
+    state: SharedState,
+    list: Rc<ListBox>,
+    open_editor: OpenEditorFn,
+    close_manager: Rc<dyn Fn()>,
+) {
     let dialog = FileDialog::builder().title("Import image").modal(true).build();
 
     let filter = FileFilter::new();
@@ -487,7 +577,13 @@ fn run_import(parent: &ApplicationWindow, state: SharedState, list: Rc<ListBox>)
             show_error(&parent_for_cb, &format!("Failed to import image: {}", e));
             return;
         }
-        refresh_list(&list, state.clone(), &parent_for_ref);
+        refresh_list(
+            &list,
+            state.clone(),
+            &parent_for_ref,
+            open_editor.clone(),
+            close_manager.clone(),
+        );
     });
 }
 

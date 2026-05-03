@@ -26,9 +26,9 @@ Personal OneNote/rnote alternative for Linux. Framework 12 laptop, touchscreen +
 - Templates = background layers rendered behind strokes
 - Notebook templates = programmatic page generation rules
 - Template widgets = vector regions (calendar/timeline/checklist + Franklin priority list / Full Focus big-three / weekly compass / day-schedule) painted between background and strokes
-- `WidgetKind::TextBlock` text runs through the `title_format` engine — `{date}/{weekday}/{month_name}/{year}/{week}/{day}/{month}` expand using the page's bound date (today's date in the template editor preview)
-- Floating, draggable pen toolbar — overlay child positioned via `Fixed`/dynamic margins, drag handle persists `(x, y)` to `~/.config/journal/config.toml`
-- Template editor lives as a full-screen stack page (not a modal), matching the notebook canvas shell
+- `WidgetKind::TextBlock` text runs through the `title_format` engine — `{date}/{weekday}/{month_name}/{year}/{week}/{day}/{month}` expand using the page's bound date (today's date in the template editor preview). Engine lives in `journal_core::title_format`; `journal_templates` re-exports for back-compat
+- Floating, draggable pen toolbar — overlay child positioned via dynamic margins, drag handle persists `(x, y)` to `~/.config/journal/config.toml`
+- Template editor lives as a full-screen stack page (`TEMPLATE_EDITOR_NAME` in `window.rs`), not a modal — opens from `template_manager` via an `Rc<dyn Fn(Option<PageTemplate>)>` opener closure, returns to home or notebook canvas via `previous_view`
 
 ## Building
 

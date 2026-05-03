@@ -43,6 +43,10 @@ pub struct CanvasState {
     pub notebook_templates: Rc<RefCell<NotebookTemplateRegistry>>,
     pub current_page_id: Option<PageId>,
     pub current_template: Option<PageTemplate>,
+    /// Calendar date bound to the current page, used by widget renderers to
+    /// expand `{date}/{weekday}/...` placeholders in template `TextBlock`s.
+    /// `None` when the current page is not a planner page.
+    pub current_page_date: Option<chrono::NaiveDate>,
 
     pub tool: Tool,
     pub history: History,
@@ -119,6 +123,7 @@ pub fn new_shared_state(
         notebook_templates,
         current_page_id: None,
         current_template: None,
+        current_page_date: None,
         tool: Tool::Pen,
         history: History::new(),
         selected_stroke_ids: HashSet::new(),
@@ -187,10 +192,19 @@ pub fn set_current_page(state: &SharedState, page_id: PageId) {
             Vec::new()
         }
     };
+    // Resolve the page's calendar date if it has a planner address (Day variant).
+    let page_date = match journal_storage::page_store::get_page(db.borrow().conn(), page_id) {
+        Ok(p) => match p.planner_address {
+            Some(journal_core::CalendarPageAddress::Day { date, .. }) => Some(date),
+            _ => None,
+        },
+        Err(_) => None,
+    };
     let mut s = state.borrow_mut();
     s.strokes = strokes;
     s.current_stroke = None;
     s.current_page_id = Some(page_id);
+    s.current_page_date = page_date;
     s.history.clear();
     s.selected_stroke_ids.clear();
     s.lasso_points.clear();

@@ -2,15 +2,15 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gtk4::cairo;
+use gtk4::gdk::RGBA;
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, DrawingArea, Entry, Label, Orientation,
-    Paned, ScrolledWindow, Window,
+    ApplicationWindow, Box as GtkBox, Button, ColorDialog, ColorDialogButton, DrawingArea, Entry,
+    Label, MenuButton, Orientation, Paned, Popover, ScrolledWindow, SpinButton, Switch,
 };
-use journal_canvas::{draw_widgets, ViewportTransform};
+use journal_canvas::{draw_widgets_with_context, ViewportTransform, WidgetRenderContext};
 use journal_core::{
-    PageTemplate, Rect, TemplateWidget, WidgetKind, WidgetRect,
-    WidgetStyle,
+    Color, PageTemplate, Rect, TemplateWidget, WidgetKind, WidgetRect, WidgetStyle,
 };
 use journal_templates::{serialize_template_toml, template_file_from_page_template};
 use uuid::Uuid;
@@ -66,87 +66,123 @@ impl CreatorState {
     }
 }
 
-pub fn open(
-    parent: &ApplicationWindow,
+/// Build the full-screen template editor view (root widget tree).
+///
+/// The caller is responsible for placing the returned `GtkBox` into the app
+/// stack and routing back-navigation through `on_done` (called from both
+/// Save and Cancel).
+pub fn build_editor_view(
+    _parent: &ApplicationWindow,
     state: SharedState,
     edit: Option<PageTemplate>,
-    on_save: impl Fn() + 'static,
-) {
+    on_done: Rc<dyn Fn()>,
+) -> GtkBox {
     let template = edit.unwrap_or_else(PageTemplate::default);
-
-    let win = Window::builder()
-        .transient_for(parent)
-        .modal(true)
-        .title("Template Creator")
-        .default_width(1000)
-        .default_height(700)
-        .build();
-
     let cs = Rc::new(RefCell::new(CreatorState::new(template)));
 
     let root = GtkBox::builder()
         .orientation(Orientation::Vertical)
+        .hexpand(true)
+        .vexpand(true)
         .build();
+
+    // ── Top action bar (back / save) ────────────────────────────────────
+    let action_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .margin_top(8)
+        .margin_bottom(4)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    let back_btn = Button::from_icon_name("go-previous-symbolic");
+    back_btn.set_tooltip_text(Some("Back (cancel)"));
+    let title = Label::builder()
+        .label("Template Editor")
+        .halign(gtk4::Align::Start)
+        .hexpand(true)
+        .build();
+    title.add_css_class("title-3");
+    let save_btn = Button::with_label("Save");
+    save_btn.add_css_class("suggested-action");
+    action_row.append(&back_btn);
+    action_row.append(&title);
+    action_row.append(&save_btn);
+    root.append(&action_row);
 
     let meta_row = build_meta_row(&cs);
     root.append(&meta_row);
 
     let palette = build_palette(&cs);
     let canvas_area = build_canvas_area(&cs);
-    let (props_scroll, _props_box) = build_props_panel();
+    let props_scroll = ScrolledWindow::builder()
+        .width_request(260)
+        .vexpand(true)
+        .build();
+    let props_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .margin_top(8)
+        .margin_start(8)
+        .margin_end(8)
+        .margin_bottom(8)
+        .build();
+    props_scroll.set_child(Some(&props_box));
+    let props_box_rc = Rc::new(props_box);
+
+    // Initial render + future re-renders driven by selection changes.
+    refresh_props_panel(&props_box_rc, &cs, &canvas_area);
+    {
+        let cs2 = cs.clone();
+        let props2 = props_box_rc.clone();
+        let area2 = canvas_area.clone();
+        // Wrap the canvas's existing draw to also refresh the props panel
+        // when the selected widget changes. We piggy-back on a tick callback
+        // that reads selected_idx and rebuilds when it differs.
+        let last_sel: Rc<RefCell<Option<usize>>> =
+            Rc::new(RefCell::new(cs.borrow().selected_idx));
+        canvas_area.add_tick_callback(move |_, _| {
+            let cur = cs2.borrow().selected_idx;
+            if cur != *last_sel.borrow() {
+                *last_sel.borrow_mut() = cur;
+                refresh_props_panel(&props2, &cs2, &area2);
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
 
     let inner_paned = Paned::new(Orientation::Horizontal);
     inner_paned.set_start_child(Some(&canvas_area));
     inner_paned.set_end_child(Some(&props_scroll));
-    inner_paned.set_position(620);
+    inner_paned.set_position(720);
 
     let paned = Paned::new(Orientation::Horizontal);
     paned.set_start_child(Some(&palette));
     paned.set_end_child(Some(&inner_paned));
-    paned.set_position(140);
+    paned.set_position(160);
 
     root.append(&paned);
 
-    let action_row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .halign(gtk4::Align::End)
-        .spacing(8)
-        .margin_top(8)
-        .margin_bottom(8)
-        .margin_end(12)
-        .build();
-    let cancel_btn = Button::with_label("Cancel");
-    let save_btn = Button::with_label("Save");
-    save_btn.add_css_class("suggested-action");
-    action_row.append(&cancel_btn);
-    action_row.append(&save_btn);
-    root.append(&action_row);
+    {
+        let on_done = on_done.clone();
+        back_btn.connect_clicked(move |_| (on_done)());
+    }
 
-    win.set_child(Some(&root));
-
-    cancel_btn.connect_clicked({
-        let win = win.clone();
-        move |_| win.close()
-    });
-
-    save_btn.connect_clicked({
+    {
         let cs = cs.clone();
         let state = state.clone();
-        let win = win.clone();
-        move |_| {
-            let cs_ref = cs.borrow();
-            let t = cs_ref.template.clone();
-            drop(cs_ref);
+        let on_done = on_done.clone();
+        save_btn.connect_clicked(move |_| {
+            let t = cs.borrow().template.clone();
             if let Err(e) = save_template(&t, &state) {
                 tracing::error!("save template: {:#}", e);
-            } else {
-                on_save();
-                win.close();
+                return;
             }
-        }
-    });
+            (on_done)();
+        });
+    }
 
-    win.present();
+    root
 }
 
 fn build_meta_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
@@ -408,23 +444,388 @@ fn build_canvas_area(cs: &Rc<RefCell<CreatorState>>) -> DrawingArea {
     area
 }
 
-fn build_props_panel() -> (ScrolledWindow, GtkBox) {
-    let scroller = ScrolledWindow::builder()
-        .width_request(200)
-        .vexpand(true)
+fn color_to_rgba(c: Color) -> RGBA {
+    RGBA::new(
+        c.r as f32 / 255.0,
+        c.g as f32 / 255.0,
+        c.b as f32 / 255.0,
+        c.a as f32 / 255.0,
+    )
+}
+
+fn rgba_to_color(rgba: RGBA) -> Color {
+    Color {
+        r: (rgba.red() * 255.0) as u8,
+        g: (rgba.green() * 255.0) as u8,
+        b: (rgba.blue() * 255.0) as u8,
+        a: (rgba.alpha() * 255.0) as u8,
+    }
+}
+
+const TEXT_VARIABLES: &[(&str, &str)] = &[
+    ("{date}", "ISO date — 2026-05-02"),
+    ("{year}", "Year — 2026"),
+    ("{month}", "Month number — 05"),
+    ("{month_name}", "Month name — May"),
+    ("{week}", "ISO week — 18"),
+    ("{day}", "Day of month — 02"),
+    ("{weekday}", "Weekday name — Saturday"),
+];
+
+/// Rebuild the properties side panel based on the currently-selected widget.
+/// `area` is queue_draw'd whenever a property changes so the canvas reflects
+/// the edit immediately.
+fn refresh_props_panel(
+    vbox: &Rc<GtkBox>,
+    cs: &Rc<RefCell<CreatorState>>,
+    area: &DrawingArea,
+) {
+    while let Some(child) = vbox.first_child() {
+        vbox.remove(&child);
+    }
+
+    let header = Label::builder().label("Properties").halign(gtk4::Align::Start).build();
+    header.add_css_class("title-4");
+    vbox.append(&header);
+
+    let sel_idx = cs.borrow().selected_idx;
+    let Some(idx) = sel_idx else {
+        let hint = Label::builder()
+            .label("Select a widget to edit its properties.")
+            .halign(gtk4::Align::Start)
+            .wrap(true)
+            .build();
+        hint.add_css_class("dim-label");
+        vbox.append(&hint);
+        return;
+    };
+
+    let widget_kind_clone = match cs.borrow().template.widgets.get(idx) {
+        Some(w) => Some(w.kind.clone()),
+        None => None,
+    };
+    let Some(kind) = widget_kind_clone else { return; };
+
+    // Kind label
+    let kind_lbl = Label::builder()
+        .label(kind_label(&kind))
+        .halign(gtk4::Align::Start)
         .build();
-    let vbox = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(6)
-        .margin_top(8)
-        .margin_start(8)
-        .margin_end(8)
+    kind_lbl.add_css_class("heading");
+    vbox.append(&kind_lbl);
+
+    // ── Stroke color ─────────────────────────────────────────────────────
+    let style = cs.borrow().template.widgets[idx].style.clone();
+    vbox.append(&Label::builder().label("Stroke color").halign(gtk4::Align::Start).build());
+    let stroke_dialog = ColorDialog::builder().with_alpha(true).build();
+    let stroke_btn = ColorDialogButton::new(Some(stroke_dialog));
+    stroke_btn.set_rgba(&color_to_rgba(style.stroke_color));
+    {
+        let cs2 = cs.clone();
+        let area2 = area.clone();
+        stroke_btn.connect_rgba_notify(move |b| {
+            let c = rgba_to_color(b.rgba());
+            if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                w.style.stroke_color = c;
+            }
+            area2.queue_draw();
+        });
+    }
+    vbox.append(&stroke_btn);
+
+    // ── Fill color (with on/off toggle) ──────────────────────────────────
+    let fill_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
         .build();
-    let label = Label::builder().label("Properties").halign(gtk4::Align::Start).build();
-    label.add_css_class("title-4");
-    vbox.append(&label);
-    scroller.set_child(Some(&vbox));
-    (scroller, vbox)
+    fill_row.append(&Label::new(Some("Fill")));
+    let fill_switch = Switch::new();
+    fill_switch.set_active(style.fill_color.is_some());
+    fill_row.append(&fill_switch);
+    vbox.append(&fill_row);
+
+    let fill_dialog = ColorDialog::builder().with_alpha(true).build();
+    let fill_btn = ColorDialogButton::new(Some(fill_dialog));
+    let fill_seed = style.fill_color.unwrap_or(Color { r: 240, g: 240, b: 240, a: 255 });
+    fill_btn.set_rgba(&color_to_rgba(fill_seed));
+    fill_btn.set_sensitive(style.fill_color.is_some());
+    {
+        let cs2 = cs.clone();
+        let area2 = area.clone();
+        let fill_btn2 = fill_btn.clone();
+        fill_switch.connect_active_notify(move |sw| {
+            let on = sw.is_active();
+            fill_btn2.set_sensitive(on);
+            if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                w.style.fill_color = if on {
+                    Some(rgba_to_color(fill_btn2.rgba()))
+                } else {
+                    None
+                };
+            }
+            area2.queue_draw();
+        });
+    }
+    {
+        let cs2 = cs.clone();
+        let area2 = area.clone();
+        fill_btn.connect_rgba_notify(move |b| {
+            let c = rgba_to_color(b.rgba());
+            if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                if w.style.fill_color.is_some() {
+                    w.style.fill_color = Some(c);
+                }
+            }
+            area2.queue_draw();
+        });
+    }
+    vbox.append(&fill_btn);
+
+    // ── Stroke width (mm) ─────────────────────────────────────────────────
+    vbox.append(&Label::builder().label("Stroke width (mm)").halign(gtk4::Align::Start).build());
+    let width_spin = SpinButton::with_range(0.05, 5.0, 0.05);
+    width_spin.set_digits(2);
+    width_spin.set_value(style.stroke_width_mm);
+    {
+        let cs2 = cs.clone();
+        let area2 = area.clone();
+        width_spin.connect_value_changed(move |sb| {
+            if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                w.style.stroke_width_mm = sb.value();
+            }
+            area2.queue_draw();
+        });
+    }
+    vbox.append(&width_spin);
+
+    // ── Per-kind controls ────────────────────────────────────────────────
+    match kind {
+        WidgetKind::TextBlock { text, font_size_mm } => {
+            vbox.append(&Label::builder().label("Text").halign(gtk4::Align::Start).build());
+            let entry = Entry::builder().text(&text).hexpand(true).build();
+            entry.set_tooltip_text(Some(
+                "Use {date} {weekday} {month_name} {year} {week} {day} {month}",
+            ));
+            {
+                let cs2 = cs.clone();
+                let area2 = area.clone();
+                entry.connect_changed(move |e| {
+                    let s = e.text().to_string();
+                    if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                        if let WidgetKind::TextBlock { text, .. } = &mut w.kind {
+                            *text = s;
+                        }
+                    }
+                    area2.queue_draw();
+                });
+            }
+            vbox.append(&entry);
+
+            // Variable insertion menu
+            let var_btn = MenuButton::builder()
+                .label("Insert variable…")
+                .build();
+            let popover = Popover::new();
+            let pop_box = GtkBox::builder()
+                .orientation(Orientation::Vertical)
+                .spacing(4)
+                .margin_top(4)
+                .margin_bottom(4)
+                .margin_start(4)
+                .margin_end(4)
+                .build();
+            for (token, desc) in TEXT_VARIABLES {
+                let row = Button::with_label(&format!("{}  —  {}", token, desc));
+                row.set_halign(gtk4::Align::Fill);
+                let entry2 = entry.clone();
+                let pop2 = popover.clone();
+                let token = (*token).to_string();
+                row.connect_clicked(move |_| {
+                    let cur = entry2.text().to_string();
+                    let pos = entry2.position();
+                    let mut chars: Vec<char> = cur.chars().collect();
+                    let insert_at = (pos as usize).min(chars.len());
+                    for (i, ch) in token.chars().enumerate() {
+                        chars.insert(insert_at + i, ch);
+                    }
+                    let new_text: String = chars.into_iter().collect();
+                    entry2.set_text(&new_text);
+                    entry2.set_position((insert_at + token.chars().count()) as i32);
+                    pop2.popdown();
+                });
+                pop_box.append(&row);
+            }
+            popover.set_child(Some(&pop_box));
+            var_btn.set_popover(Some(&popover));
+            vbox.append(&var_btn);
+
+            vbox.append(&Label::builder().label("Font size (mm)").halign(gtk4::Align::Start).build());
+            let font_spin = SpinButton::with_range(1.0, 80.0, 0.5);
+            font_spin.set_digits(1);
+            font_spin.set_value(font_size_mm);
+            {
+                let cs2 = cs.clone();
+                let area2 = area.clone();
+                font_spin.connect_value_changed(move |sb| {
+                    if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                        if let WidgetKind::TextBlock { font_size_mm, .. } = &mut w.kind {
+                            *font_size_mm = sb.value();
+                        }
+                    }
+                    area2.queue_draw();
+                });
+            }
+            vbox.append(&font_spin);
+        }
+        WidgetKind::Line { thickness_mm } => {
+            vbox.append(&Label::builder().label("Thickness (mm)").halign(gtk4::Align::Start).build());
+            let spin = SpinButton::with_range(0.05, 10.0, 0.1);
+            spin.set_digits(2);
+            spin.set_value(thickness_mm);
+            let cs2 = cs.clone();
+            let area2 = area.clone();
+            spin.connect_value_changed(move |sb| {
+                if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                    if let WidgetKind::Line { thickness_mm } = &mut w.kind {
+                        *thickness_mm = sb.value();
+                    }
+                }
+                area2.queue_draw();
+            });
+            vbox.append(&spin);
+        }
+        WidgetKind::GridRegion { spacing_mm }
+        | WidgetKind::LinesRegion { spacing_mm }
+        | WidgetKind::DotsRegion { spacing_mm } => {
+            vbox.append(&Label::builder().label("Spacing (mm)").halign(gtk4::Align::Start).build());
+            let spin = SpinButton::with_range(1.0, 50.0, 0.5);
+            spin.set_digits(1);
+            spin.set_value(spacing_mm);
+            let cs2 = cs.clone();
+            let area2 = area.clone();
+            spin.connect_value_changed(move |sb| {
+                if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                    let v = sb.value();
+                    match &mut w.kind {
+                        WidgetKind::GridRegion { spacing_mm }
+                        | WidgetKind::LinesRegion { spacing_mm }
+                        | WidgetKind::DotsRegion { spacing_mm } => *spacing_mm = v,
+                        _ => {}
+                    }
+                }
+                area2.queue_draw();
+            });
+            vbox.append(&spin);
+        }
+        WidgetKind::Timeline { .. } | WidgetKind::DailyAppointments { .. } => {
+            // Render a small editor for hour bounds.
+            vbox.append(&Label::builder().label("Start hour").halign(gtk4::Align::Start).build());
+            let start_spin = SpinButton::with_range(0.0, 23.0, 1.0);
+            start_spin.set_digits(0);
+            let cur_start = match &cs.borrow().template.widgets[idx].kind {
+                WidgetKind::Timeline { start_hour, .. } => *start_hour as f64,
+                WidgetKind::DailyAppointments { start_hour, .. } => *start_hour as f64,
+                _ => 8.0,
+            };
+            start_spin.set_value(cur_start);
+            {
+                let cs2 = cs.clone();
+                let area2 = area.clone();
+                start_spin.connect_value_changed(move |sb| {
+                    let v = sb.value() as u8;
+                    if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                        match &mut w.kind {
+                            WidgetKind::Timeline { start_hour, .. } => *start_hour = v,
+                            WidgetKind::DailyAppointments { start_hour, .. } => *start_hour = v,
+                            _ => {}
+                        }
+                    }
+                    area2.queue_draw();
+                });
+            }
+            vbox.append(&start_spin);
+
+            vbox.append(&Label::builder().label("End hour").halign(gtk4::Align::Start).build());
+            let end_spin = SpinButton::with_range(1.0, 24.0, 1.0);
+            end_spin.set_digits(0);
+            let cur_end = match &cs.borrow().template.widgets[idx].kind {
+                WidgetKind::Timeline { end_hour, .. } => *end_hour as f64,
+                WidgetKind::DailyAppointments { end_hour, .. } => *end_hour as f64,
+                _ => 20.0,
+            };
+            end_spin.set_value(cur_end);
+            {
+                let cs2 = cs.clone();
+                let area2 = area.clone();
+                end_spin.connect_value_changed(move |sb| {
+                    let v = sb.value() as u8;
+                    if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                        match &mut w.kind {
+                            WidgetKind::Timeline { end_hour, .. } => *end_hour = v,
+                            WidgetKind::DailyAppointments { end_hour, .. } => *end_hour = v,
+                            _ => {}
+                        }
+                    }
+                    area2.queue_draw();
+                });
+            }
+            vbox.append(&end_spin);
+        }
+        WidgetKind::PriorityList { count } => {
+            vbox.append(&Label::builder().label("Rows").halign(gtk4::Align::Start).build());
+            let spin = SpinButton::with_range(1.0, 60.0, 1.0);
+            spin.set_digits(0);
+            spin.set_value(count as f64);
+            let cs2 = cs.clone();
+            let area2 = area.clone();
+            spin.connect_value_changed(move |sb| {
+                if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                    if let WidgetKind::PriorityList { count } = &mut w.kind {
+                        *count = sb.value() as u32;
+                    }
+                }
+                area2.queue_draw();
+            });
+            vbox.append(&spin);
+        }
+        WidgetKind::Checklist { items } => {
+            vbox.append(&Label::builder().label("Items (one per line)").halign(gtk4::Align::Start).build());
+            let entry = Entry::builder().text(&items.join(" | ")).hexpand(true).build();
+            entry.set_tooltip_text(Some("Separator: ' | '"));
+            let cs2 = cs.clone();
+            let area2 = area.clone();
+            entry.connect_changed(move |e| {
+                let parts: Vec<String> = e.text().split('|').map(|s| s.trim().to_string()).collect();
+                if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                    if let WidgetKind::Checklist { items } = &mut w.kind {
+                        *items = parts;
+                    }
+                }
+                area2.queue_draw();
+            });
+            vbox.append(&entry);
+        }
+        _ => {}
+    }
+}
+
+fn kind_label(k: &WidgetKind) -> &'static str {
+    match k {
+        WidgetKind::TextBlock { .. } => "Text Block",
+        WidgetKind::Rectangle => "Rectangle",
+        WidgetKind::Ellipse => "Ellipse",
+        WidgetKind::Line { .. } => "Line",
+        WidgetKind::GridRegion { .. } => "Grid Region",
+        WidgetKind::LinesRegion { .. } => "Lines Region",
+        WidgetKind::DotsRegion { .. } => "Dots Region",
+        WidgetKind::CalendarMonth => "Calendar Month",
+        WidgetKind::Timeline { .. } => "Timeline",
+        WidgetKind::Checklist { .. } => "Checklist",
+        WidgetKind::BigThree => "Big Three",
+        WidgetKind::PriorityList { .. } => "Priority List",
+        WidgetKind::DailyAppointments { .. } => "Day Schedule",
+        WidgetKind::WeeklyCompass => "Weekly Compass",
+    }
 }
 
 fn get_area_size(area: &DrawingArea) -> (f64, f64) {
@@ -533,7 +934,10 @@ fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) 
     let transform = ViewportTransform::new(viewport, tw * scale, th * scale);
 
     if !template.widgets.is_empty() {
-        draw_widgets(ctx, &transform, &template.widgets, page_rect);
+        let render_ctx = WidgetRenderContext {
+            date: Some(chrono::Local::now().date_naive()),
+        };
+        draw_widgets_with_context(ctx, &transform, &template.widgets, page_rect, &render_ctx);
     }
 
     if let Some(idx) = cs.selected_idx {

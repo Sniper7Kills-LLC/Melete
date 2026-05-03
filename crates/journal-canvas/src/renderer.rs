@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::background_renderer::{draw_background, BackgroundConfig};
 use crate::stroke_renderer::draw_stroke;
 use crate::viewport_transform::ViewportTransform;
-use crate::widget_renderer::draw_widgets;
+use crate::widget_renderer::{draw_widgets_with_context, WidgetRenderContext};
 
 const HANDLE_SIZE: f64 = 8.0;
 
@@ -37,6 +37,33 @@ pub fn paint_with_widgets(
     selected_ids: &HashSet<Uuid>,
     dark_mode: bool,
 ) {
+    paint_with_widgets_ctx(
+        ctx,
+        transform,
+        background,
+        page_rect,
+        widgets,
+        strokes,
+        selected_ids,
+        dark_mode,
+        &WidgetRenderContext::default(),
+    );
+}
+
+/// Like [`paint_with_widgets`] but accepts a [`WidgetRenderContext`] so the
+/// caller can bind the page's date for `WidgetKind::TextBlock` placeholder
+/// substitution.
+pub fn paint_with_widgets_ctx(
+    ctx: &cairo::Context,
+    transform: &ViewportTransform,
+    background: &BackgroundConfig,
+    page_rect: Rect,
+    widgets: &[TemplateWidget],
+    strokes: &[Stroke],
+    selected_ids: &HashSet<Uuid>,
+    dark_mode: bool,
+    render_ctx: &WidgetRenderContext,
+) {
     let (sw, sh) = transform.screen_size();
     let center = transform.center();
     let zoom = transform.zoom().max(1e-6);
@@ -54,7 +81,7 @@ pub fn paint_with_widgets(
 
     draw_background(ctx, transform, background, page_rect);
     if !widgets.is_empty() {
-        draw_widgets(ctx, transform, widgets, page_rect);
+        draw_widgets_with_context(ctx, transform, widgets, page_rect, render_ctx);
     }
     for stroke in strokes {
         draw_stroke(ctx, transform, stroke);

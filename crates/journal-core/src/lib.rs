@@ -5,6 +5,7 @@ pub mod page;
 pub mod notebook;
 pub mod template;
 pub mod calendar;
+pub mod title_format;
 
 pub use stroke::{Stroke, StrokePoint};
 pub use viewport::Viewport;
@@ -17,6 +18,7 @@ pub use template::{
     TemplateWidget, WidgetKind, WidgetRect, WidgetStyle,
 };
 pub use calendar::{CalendarPageAddress, PlannerPageAddress};
+pub use title_format::{render as render_title, TitleContext};
 
 /// A simple 2D point.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]

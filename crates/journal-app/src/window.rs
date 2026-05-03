@@ -6,7 +6,7 @@ use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, DrawingArea, HeaderBar, Label,
     MenuButton, Orientation, Overlay, Popover, Stack, StackTransitionType,
 };
-use journal_core::NotebookId;
+use journal_core::{NotebookId, PageTemplate};
 use journal_storage::notebook_store;
 
 use crate::canvas_widget;
@@ -17,6 +17,7 @@ use crate::views::{home, notebook as notebook_view, planner_nav};
 
 const HOME_NAME: &str = "home";
 const NOTEBOOK_NAME: &str = "notebook";
+const TEMPLATE_EDITOR_NAME: &str = "template_editor";
 
 pub struct AppWindow {
     pub root: GtkBox,
@@ -24,6 +25,7 @@ pub struct AppWindow {
     stack: Stack,
     home_container: GtkBox,
     notebook_container: GtkBox,
+    template_editor_container: GtkBox,
     canvas_overlay: Overlay,
     back_btn: Button,
     notebook_settings_btn: Button,
@@ -31,6 +33,7 @@ pub struct AppWindow {
     state: SharedState,
     parent: ApplicationWindow,
     current_notebook: Rc<RefCell<Option<NotebookId>>>,
+    previous_view: Rc<RefCell<Option<NotebookId>>>,
 }
 
 pub type SharedWindow = Rc<RefCell<AppWindow>>;
@@ -72,6 +75,11 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         .hexpand(true)
         .vexpand(true)
         .build();
+    let template_editor_container = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
 
     let stack = Stack::new();
     stack.set_transition_type(StackTransitionType::SlideLeftRight);
@@ -79,6 +87,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     stack.set_vexpand(true);
     stack.add_named(&home_container, Some(HOME_NAME));
     stack.add_named(&notebook_container, Some(NOTEBOOK_NAME));
+    stack.add_named(&template_editor_container, Some(TEMPLATE_EDITOR_NAME));
 
     parent.set_titlebar(Some(&header));
 
@@ -93,6 +102,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         stack,
         home_container,
         notebook_container,
+        template_editor_container,
         canvas_overlay,
         back_btn: back_btn.clone(),
         notebook_settings_btn: notebook_settings_btn.clone(),
@@ -100,6 +110,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         state: state.clone(),
         parent: parent.clone(),
         current_notebook: Rc::new(RefCell::new(None)),
+        previous_view: Rc::new(RefCell::new(None)),
     }));
 
     {
@@ -295,7 +306,51 @@ fn build_home_into(win: &SharedWindow) {
     let on_open: Rc<dyn Fn(NotebookId)> = Rc::new(move |id| {
         show_notebook(&win_for_open, id);
     });
+    let win_for_editor = win.clone();
+    let on_open_template_editor: Rc<dyn Fn(Option<PageTemplate>)> = Rc::new(move |edit| {
+        show_template_editor(&win_for_editor, edit);
+    });
 
-    let home = home::build_home(&parent, state, db, on_open);
+    let home = home::build_home(&parent, state, db, on_open, on_open_template_editor);
     container.append(&home);
+}
+
+/// Switch the stack to the full-screen template editor for `edit` (Some => edit
+/// existing template, None => new template). When the editor closes (save or
+/// cancel) we navigate back to the previous view (notebook canvas or home).
+pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
+    let container = win.borrow().template_editor_container.clone();
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+
+    // Remember where we came from so Back/Save can return to it.
+    let return_notebook = *win.borrow().current_notebook.borrow();
+    *win.borrow().previous_view.borrow_mut() = return_notebook;
+
+    let state = win.borrow().state.clone();
+    let parent = win.borrow().parent.clone();
+
+    let win_for_done = win.clone();
+    let on_done: Rc<dyn Fn()> = Rc::new(move || {
+        let prev = *win_for_done.borrow().previous_view.borrow();
+        match prev {
+            Some(nb_id) => show_notebook(&win_for_done, nb_id),
+            None => show_home(&win_for_done),
+        }
+    });
+
+    let view = crate::template_creator::build_editor_view(
+        &parent,
+        state,
+        edit,
+        on_done.clone(),
+    );
+    container.append(&view);
+
+    let w = win.borrow();
+    w.title_label.set_text("Template Editor");
+    w.back_btn.set_visible(false);
+    w.notebook_settings_btn.set_visible(false);
+    w.stack.set_visible_child_name(TEMPLATE_EDITOR_NAME);
 }

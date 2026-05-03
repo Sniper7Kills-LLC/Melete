@@ -9,6 +9,7 @@ gtk4 = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
+chrono = { workspace = true }
 poppler-rs = { version = "0.24", features = ["v22_7"], optional = true }
 
 [features]
