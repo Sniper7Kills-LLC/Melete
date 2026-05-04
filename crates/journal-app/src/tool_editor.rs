@@ -760,27 +760,46 @@ fn blend_from_idx(idx: u32) -> BlendMode {
 fn geometry_description(g: &Geometry) -> &'static str {
     match g {
         Geometry::Smooth { .. } => {
-            "Smooth: paints one continuous curve along the input path. \
-             Width comes from the Width mode; tip from the Tip shape."
+            "Smooth — one continuous curve along the path. The most common \
+             choice. Pick this for pens, pencils, highlighters, markers, \
+             and any brush that should feel like a single trace.\n\n\
+             Pick something else when you need: a polygon outline that \
+             responds to direction (use Outline) · noisy scatter (use \
+             Scatter) · a chain of discrete stamps (use Dab stamp) · \
+             fan-bristle effect (use Fan offset)."
         }
         Geometry::Outline { .. } => {
-            "Outline: builds a variable-width filled polygon (offset \
-             left + right of the path). Best for calligraphy nibs and \
-             pressure-fed shapes."
+            "Outline — a variable-width filled polygon, offset left and \
+             right of the path. Use this for real calligraphy: pair with \
+             Direction-angled width to get italic-nib behaviour, or with \
+             Pressure for soft brush nibs.\n\n\
+             Pick Smooth instead for normal pen-style strokes; Outline \
+             is heavier and only pays off when width genuinely varies \
+             along the stroke."
         }
         Geometry::Scatter { .. } => {
-            "Scatter: stamps the tip many times per input point at \
-             randomized offsets. Good for spray cans and noisy \
-             texture brushes."
+            "Scatter — N tip stamps per input point at randomised \
+             offsets. The mechanism behind spray cans and noisy texture \
+             brushes (chalk, charcoal, stipple).\n\n\
+             Tweak: `density` for how many dots per point; `spread` for \
+             how far they fly; `falloff` for centre-bias; the \
+             directional cone biases the spread along the stylus tilt \
+             (cone-airbrush feel)."
         }
         Geometry::DabStamp { .. } => {
-            "Dab stamp: stamps the tip at fixed intervals along the \
-             path. Use this with non-circular tips (Star, Custom) when \
-             you want a chain of stamps rather than a continuous curve."
+            "Dab stamp — stamps the tip at fixed intervals along the \
+             path. Use this when the tip itself IS the visual signature \
+             (custom polygon, leaf, arrow) and you want a chain of those \
+             stamps rather than a continuous curve.\n\n\
+             Smooth + non-circular tip auto-stamps too, but Dab stamp \
+             gives explicit control over the step interval."
         }
         Geometry::FanOffset { .. } => {
-            "Fan offset: emits multiple thin parallel offset strokes \
-             spread perpendicular to the path — fan-bristle hair effect."
+            "Fan offset — multiple thin parallel offset strokes spread \
+             perpendicular to the path. Reads as bristle hair on a fan \
+             brush.\n\n\
+             Increase `count` for a denser fan; increase `spread` for a \
+             wider fan. Replaces the legacy Paintbrush-Fan tool."
         }
     }
 }
@@ -788,48 +807,93 @@ fn geometry_description(g: &Geometry) -> &'static str {
 fn width_mode_description(w: &WidthMode) -> &'static str {
     match w {
         WidthMode::Constant { .. } => {
-            "Constant: width × the brush base width, regardless of \
-             pressure. Marker / fixed-tip pens."
+            "Constant — width = base × multiplier. Pressure has zero \
+             effect.\n\n\
+             Pick this for permanent-marker / chunky-tip pens where \
+             every stroke should look the same regardless of how the \
+             user pressed."
         }
         WidthMode::ClampedConstant { .. } => {
-            "Clamped constant: width × base, then clamped between \
-             min/max in mm. Sharp pencil cores live here."
+            "Clamped constant — same as Constant, but clipped between \
+             a min and a max in millimetres. Used by sharp pencil cores: \
+             the line never gets thinner than `min` or thicker than \
+             `max` even if the user is at extreme zoom.\n\n\
+             Pick over Constant when you want a hard absolute bound on \
+             stroke thickness."
         }
         WidthMode::Pressure { .. } => {
-            "Pressure: width = base × (floor + amp × pressure). \
-             Floor is the unpressured-touch width; amp scales how \
-             much pressure adds."
+            "Pressure — width = base × (floor + amp × pressure). The \
+             default for natural pen/pencil/paintbrush feel.\n\n\
+             `floor` = how thick a feather-touch stroke is. \
+             `amp` = how much extra pressure adds. floor=0.6, amp=0.4 \
+             feels like a fountain pen. floor=0, amp=1 is fully \
+             pressure-driven."
         }
         WidthMode::DirectionAngled { .. } => {
-            "Direction-angled: width modulates by stroke direction \
-             relative to a fixed nib axis. Real italic-nib calligraphy \
-             behaviour."
+            "Direction-angled — width modulates by stroke direction \
+             relative to a fixed nib axis (`nib°`). The real \
+             italic-nib calligraphy formula: down-strokes are thick, \
+             cross-strokes are thin.\n\n\
+             Only meaningful with Outline geometry; on Smooth it \
+             degrades to constant base width. `min ratio` is the \
+             thinnest fraction the nib ever shrinks to."
         }
         WidthMode::TiltBand { .. } => {
-            "Tilt band: emits *additional* per-segment overlay paint \
-             only where stylus tilt exceeds the threshold. Designed \
-             to layer on top of a constant-width core (Pencil pattern)."
+            "Tilt band — emits *additional* paint only where stylus \
+             tilt exceeds `threshold`. Designed to layer on top of a \
+             constant-width core (the standard Pencil composition).\n\n\
+             By itself it produces nothing visible at low tilt — pair \
+             it with another layer that handles the core line. \
+             `band×` controls how wide the shading is; `alpha scale` \
+             how dark."
         }
     }
 }
 
 fn tip_shape_description(t: &TipShape) -> &'static str {
     match t {
-        TipShape::Round => "Round: circular tip. Standard pen feel.",
-        TipShape::Square => "Square: square tip with sharp corners.",
-        TipShape::FlatNib { .. } => {
-            "Flat nib: rectangular tip rotated by `angle°` and \
-             squished by `aspect`. The classic angled italic nib."
+        TipShape::Round => {
+            "Round — circular tip. Standard pen / pencil feel; works \
+             with every Geometry (strokes cleanly, dabs cleanly, \
+             scatters cleanly).\n\n\
+             Pick over Square when you want soft caps. Pick over \
+             Diamond/Star/Custom when you want a normal trace, not a \
+             chain of stamps."
         }
-        TipShape::Diamond => "Diamond: 4-point rhombus.",
+        TipShape::Square => {
+            "Square — axis-aligned square tip. Sharp corners give a \
+             chunky pixel-art feel.\n\n\
+             Pick over Round for hard-edge highlighters, blocky \
+             markers. Note: when used with Smooth geometry the corners \
+             are still applied at stroke caps + joins."
+        }
+        TipShape::FlatNib { .. } => {
+            "Flat nib — rectangular tip rotated by `angle°` and \
+             squished by `aspect`. The classic italic / chisel nib.\n\n\
+             Pair with Smooth+Pressure for marker calligraphy, or with \
+             Outline+Direction-angled for real broad-edge calligraphy. \
+             Aspect: 1.0 = square, 0.2 = thin chisel."
+        }
+        TipShape::Diamond => {
+            "Diamond — 4-point rhombus, points up/down/left/right.\n\n\
+             Decorative tip — best with Dab stamp geometry so the \
+             individual diamonds read clearly. On Smooth the renderer \
+             auto-stamps them along the path."
+        }
         TipShape::StarN { .. } => {
-            "Star N: N-pointed star. `inner_ratio` is the inner/outer \
-             radius ratio — lower = pointier."
+            "Star N — N-pointed star. `inner ratio` controls how \
+             pointy: 0.4 is sharp, 0.7 is soft. Best with Dab stamp \
+             so the stars read individually.\n\n\
+             On Smooth the renderer stamps stars along the path \
+             automatically — picking Star = chain of stars."
         }
         TipShape::Custom { .. } => {
-            "Custom polygon: user-designed shape. Drag the orange \
-             handles in the editor below to move points; use the \
-             buttons to add/remove/reset vertices."
+            "Custom polygon — user-designed shape. Drag the orange \
+             handles in the editor below to move vertices; +Vertex / \
+             −Vertex / Reset buttons control the count.\n\n\
+             Pair with Dab stamp for distinct stamps, or Smooth for an \
+             auto-stamped chain. The Nib preview swatch above shows the \
+             current shape."
         }
     }
 }
@@ -838,35 +902,82 @@ fn cursor_shape_description(c: &journal_core::CursorShape) -> &'static str {
     use journal_core::CursorShape as CS;
     match c {
         CS::Auto => {
-            "Auto: hover cursor matches the first layer's tip shape \
-             at the active brush size."
+            "Auto — hover cursor mirrors the first layer's tip shape \
+             at the brush's active size. The default; works for most \
+             brushes since the cursor naturally hints at what will \
+             paint.\n\n\
+             Switch to Circle if Auto reads as visually noisy (e.g. a \
+             star tip makes a star cursor that's hard to aim). \
+             Switch to Exact tip for calligraphy nibs where the angle \
+             really matters while hovering."
         }
-        CS::Circle => "Circle: fixed circular outline regardless of tip.",
+        CS::Circle => {
+            "Circle — fixed circular outline regardless of tip.\n\n\
+             Calmest, most predictable cursor. Pick this when the tip \
+             is non-circular but you'd rather see a clean ring while \
+             aiming."
+        }
         CS::Oval { .. } => {
-            "Oval: ellipse with the given height : width aspect ratio. \
-             1.0 = circle; <1 = wider, >1 = taller."
+            "Oval — ellipse with a given height : width aspect ratio. \
+             0.5 = wide and flat (good cursor for flat-nib calligraphy \
+             without the angle). 1.0 = circle. >1 = taller than wide.\n\n\
+             Pick over Auto when you want the cursor to hint at the \
+             nib's aspect without baking in the rotation."
         }
         CS::ExactTip => {
-            "Exact tip: cursor mirrors the first layer's tip exactly. \
-             Useful so the calligraphy nib angle is visible while \
-             hovering."
+            "Exact tip — cursor mirrors the first layer's tip exactly, \
+             rotation and all. Use this for italic / broad-edge \
+             calligraphy so the user can see the nib angle while \
+             hovering, before the stroke even starts."
         }
         CS::Custom { .. } => {
-            "Custom polygon: user-designed cursor (independent of \
-             what the brush actually paints). Edit below."
+            "Custom polygon — user-designed cursor outline, \
+             independent of the brush's tip. Useful for crosshair / \
+             reticle / brush-silhouette cursors that don't match what \
+             the brush paints."
         }
     }
 }
 
 fn blend_description(b: BlendMode) -> &'static str {
     match b {
-        BlendMode::Normal => "Normal: alpha-over compositing (default).",
-        BlendMode::Multiply => "Multiply: darkens — colour × destination. Highlighter mode.",
-        BlendMode::Screen => "Screen: brightens — inverse-multiply.",
-        BlendMode::Overlay => "Overlay: multiply if dest is dark, screen if light. High-contrast.",
-        BlendMode::Darken => "Darken: keeps the darker of source/dest.",
-        BlendMode::Lighten => "Lighten: keeps the lighter of source/dest.",
-        BlendMode::Erase => "Erase: subtracts paint (rubs out underlying strokes).",
+        BlendMode::Normal => {
+            "Normal — alpha-over compositing. New paint covers what's \
+             beneath, weighted by opacity. The default for every \
+             everyday tool."
+        }
+        BlendMode::Multiply => {
+            "Multiply — colour × destination. Always darkens; never \
+             lightens. The classic highlighter mode: yellow over text \
+             stays readable.\n\n\
+             Pair with low opacity for translucent overlap. Pure white \
+             paint disappears in Multiply (white × anything = anything)."
+        }
+        BlendMode::Screen => {
+            "Screen — inverse-multiply, always lightens. Good for \
+             glow effects, light overlays, sparks.\n\n\
+             Pure black paint disappears in Screen. Opposite of \
+             Multiply."
+        }
+        BlendMode::Overlay => {
+            "Overlay — multiply if the destination is dark, screen if \
+             light. High-contrast, exaggerates whatever's beneath. \
+             Used for highlight-and-shadow passes on photo-style art."
+        }
+        BlendMode::Darken => {
+            "Darken — keeps whichever is darker per channel. Subtle \
+             shadow-builder. Where stroke overlaps existing dark \
+             areas, no change; over light areas it deepens them."
+        }
+        BlendMode::Lighten => {
+            "Lighten — keeps whichever is lighter per channel. Subtle \
+             highlight-builder. Opposite of Darken."
+        }
+        BlendMode::Erase => {
+            "Erase — subtracts paint (rubs out underlying strokes). \
+             Pair with high opacity for a hard erase, low opacity for \
+             a soft fade."
+        }
     }
 }
 
@@ -1011,6 +1122,12 @@ fn build_brush_header(
         .hexpand(true)
         .build();
     cursor_dd.set_selected(cursor_idx(&editor_state.borrow().brush.cursor));
+    cursor_dd.set_tooltip_text(Some(
+        "Outline shown on the canvas while hovering with this brush. \
+         Auto = match the tip. Circle = always a clean ring. Oval = \
+         flat ellipse. Exact tip = mirror the tip including rotation. \
+         Custom = user-designed cursor.",
+    ));
     parent.append(&row("Cursor", cursor_dd.upcast_ref()));
     parent.append(&dim(cursor_shape_description(
         &editor_state.borrow().brush.cursor,
@@ -1301,6 +1418,11 @@ fn build_layer_settings(
     let geo_strs = StringList::new(GEO_NAMES);
     let geo_dd = DropDown::builder().model(&geo_strs).hexpand(true).build();
     geo_dd.set_selected(geom_idx(&layer.geometry));
+    geo_dd.set_tooltip_text(Some(
+        "How the layer's path is emitted onto the page. Smooth = single \
+         curve. Outline = variable-width polygon. Scatter = sprayed \
+         stamps. Dab = chain of stamps. Fan = parallel offset bristles.",
+    ));
     parent.append(&row("Geometry", geo_dd.upcast_ref()));
     parent.append(&dim(geometry_description(&layer.geometry)));
 
@@ -1331,6 +1453,12 @@ fn build_layer_settings(
     let width_strs = StringList::new(WIDTH_NAMES);
     let width_dd = DropDown::builder().model(&width_strs).hexpand(true).build();
     width_dd.set_selected(width_idx(&layer.width));
+    width_dd.set_tooltip_text(Some(
+        "How each emitted stamp/sample is widened. Constant = ignore \
+         pressure. Pressure = scale by stylus pressure. \
+         Direction-angled = italic-nib calligraphy. Tilt band = \
+         pencil-shading overlay.",
+    ));
     parent.append(&row("Width", width_dd.upcast_ref()));
     parent.append(&dim(width_mode_description(&layer.width)));
 
@@ -1360,6 +1488,11 @@ fn build_layer_settings(
     let tip_strs = StringList::new(TIP_NAMES);
     let tip_dd = DropDown::builder().model(&tip_strs).hexpand(true).build();
     tip_dd.set_selected(tip_idx(&layer.tip));
+    tip_dd.set_tooltip_text(Some(
+        "Shape of the stamp emitted at each point. Round + Square \
+         stroke as continuous curves; FlatNib / Diamond / Star / \
+         Custom auto-stamp along the path so the shape is visible.",
+    ));
     parent.append(&row("Tip", tip_dd.upcast_ref()));
     parent.append(&dim(tip_shape_description(&layer.tip)));
 
@@ -1375,6 +1508,11 @@ fn build_layer_settings(
     let preset_strs = StringList::new(&preset_names);
     let preset_dd = DropDown::builder().model(&preset_strs).hexpand(true).build();
     preset_dd.set_selected(0);
+    preset_dd.set_tooltip_text(Some(
+        "Quick-pick a curated tip shape. Selecting a preset \
+         overwrites the Tip dropdown above with the matching shape — \
+         angle, aspect, points all set for you.",
+    ));
     parent.append(&row("Nib preset", preset_dd.upcast_ref()));
     {
         let editor_state = editor_state.clone();
@@ -1466,6 +1604,11 @@ fn build_layer_settings(
         .hexpand(true)
         .build();
     blend_dd.set_selected(blend_idx(layer.blend));
+    blend_dd.set_tooltip_text(Some(
+        "How this layer's paint mixes with what's already on the page. \
+         Normal = cover. Multiply = darken (highlighter). Screen = \
+         lighten. Erase = subtract.",
+    ));
     parent.append(&row("Blend", blend_dd.upcast_ref()));
     parent.append(&dim(blend_description(layer.blend)));
     {
