@@ -1825,7 +1825,18 @@ fn fill_geometry_subparams(
             let s = SpinButton::with_range(0.1, 5.0, 0.1);
             s.set_digits(2);
             s.set_value(resample_step_mm);
+            s.set_tooltip_text(Some(
+                "Distance between resampled path points in mm. Lower = \
+                 smoother curve at the cost of more GPU work.",
+            ));
             parent.append(&row("Resample step (mm)", s.upcast_ref()));
+            parent.append(&dim(
+                "Resample step: how often the smooth curve is sampled \
+                 along its length. Default 1mm reads as a continuous \
+                 line. 0.3 mm = silky smooth but slower; 3 mm = \
+                 visibly faceted (only useful for stamp-along chains \
+                 with non-circular tips).",
+            ));
             commit_geom(s, editor_state, layer_idx, rebuild, |val| {
                 Geometry::Smooth { resample_step_mm: val }
             });
@@ -1834,9 +1845,27 @@ fn fill_geometry_subparams(
             let s = SpinButton::with_range(0.1, 5.0, 0.1);
             s.set_digits(2);
             s.set_value(resample_step_mm);
+            s.set_tooltip_text(Some(
+                "Distance between offset polygon vertices, as a \
+                 multiple of the brush base width. Lower = silkier \
+                 outline; higher = chunkier polygon edges.",
+            ));
             parent.append(&row("Resample step ×", s.upcast_ref()));
+            parent.append(&dim(
+                "Resample step ×: spacing between the polygon's left/\
+                 right offset vertices, scaled by the base width. \
+                 0.5 = legacy calligraphy default. Drop to 0.25 for \
+                 silky variable-width outlines; raise to 1.0+ for \
+                 chunky faceted edges.",
+            ));
             let chk = CheckButton::with_label("Smooth outline");
             chk.set_active(smooth_outline);
+            chk.set_tooltip_text(Some(
+                "On (default): connect outline vertices with quadratic \
+                 curves so the polygon reads as a continuous nib trace. \
+                 Off: straight line segments — rigid, polygonal, \
+                 retro-feeling.",
+            ));
             parent.append(&chk);
             // Closures need shared state. Commit on either change.
             let editor_state2 = editor_state.clone();
@@ -1866,25 +1895,92 @@ fn fill_geometry_subparams(
             chk.connect_toggled(move |_| commit());
         }
         Geometry::Scatter { density, spread_mm, falloff, directional_bias_deg } => {
+            // Density — number of stamps per input point.
             let d = SpinButton::with_range(1.0, 256.0, 1.0);
             d.set_digits(0);
             d.set_value(density as f64);
+            d.set_tooltip_text(Some(
+                "How many stamp tips are dropped per input point. \
+                 Higher = denser cloud, more GPU work.",
+            ));
             parent.append(&row("Density", d.upcast_ref()));
+            parent.append(&dim(
+                "Density: stamps per input point. Spray-can default 36. \
+                 Try 6–12 for stipple/sketchy texture, 60+ for thick \
+                 airbrush coverage. Costs scale linearly — high values \
+                 on long strokes can stutter on slower hardware.",
+            ));
+
+            // Spread.
             let sp = SpinButton::with_range(0.0, 100.0, 0.5);
             sp.set_digits(2);
             sp.set_value(spread_mm);
-            parent.append(&row("Spread (mm, 0 = auto)", sp.upcast_ref()));
+            sp.set_tooltip_text(Some(
+                "Radius of the scatter cloud, in mm. 0 = auto (uses \
+                 half the brush base width).",
+            ));
+            parent.append(&row("Spread (mm)", sp.upcast_ref()));
+            parent.append(&dim(
+                "Spread: how far stamps fly from the input point. 0 = \
+                 auto (half the brush base width — the legacy spray-can \
+                 default). Set explicitly for a fixed-radius cloud \
+                 regardless of brush size — handy for stipple textures \
+                 that shouldn't grow when the user picks a thicker pen.",
+            ));
+
+            // Falloff exponent.
             let fo = SpinButton::with_range(0.1, 8.0, 0.1);
             fo.set_digits(2);
             fo.set_value(falloff);
+            fo.set_tooltip_text(Some(
+                "Distribution exponent. 1 = uniform across the disc. \
+                 >1 biases stamps toward the centre; <1 pushes them to \
+                 the edge.",
+            ));
             parent.append(&row("Falloff exp", fo.upcast_ref()));
+            parent.append(&dim(
+                "Falloff: how stamps cluster within the spread radius. \
+                 Each stamp's distance from the point is `r_unit ^ \
+                 exp` × Spread, where r_unit is uniform 0..1.\n\n\
+                 1.0 = uniform disc (sparse centre, lots at the edge).\n\
+                 2.0 = centre-biased (legacy default — looks like a \
+                 spray can).\n\
+                 4.0+ = tight bullseye (most stamps near the input).\n\
+                 0.5 = ring-like (most stamps near the edge).",
+            ));
+
+            // Directional cone.
             let cone_chk = CheckButton::with_label("Directional cone");
             cone_chk.set_active(directional_bias_deg.is_some());
+            cone_chk.set_tooltip_text(Some(
+                "Bias scatter direction along the stylus tilt instead \
+                 of going 360°. Off = uniform disc (default). \
+                 On = airbrush-cone feel.",
+            ));
+            parent.append(&cone_chk);
+            parent.append(&dim(
+                "Directional cone: instead of scattering uniformly in \
+                 every direction, restrict stamps to a wedge. The \
+                 wedge points along the stylus tilt vector — tilt the \
+                 pen and the spray angles that way (real airbrush \
+                 behaviour).",
+            ));
+
+            // Cone half-angle.
             let cone_deg = SpinButton::with_range(0.0, 180.0, 1.0);
             cone_deg.set_digits(1);
             cone_deg.set_value(directional_bias_deg.unwrap_or(35.0));
-            parent.append(&cone_chk);
+            cone_deg.set_tooltip_text(Some(
+                "Cone half-angle in degrees. Tighter = more focused \
+                 stream. Only used when Directional cone is on.",
+            ));
             parent.append(&row("Cone half-angle°", cone_deg.upcast_ref()));
+            parent.append(&dim(
+                "Cone half-angle: how wide the directional spray opens. \
+                 5° = laser-thin stream. 35° = legacy airbrush default. \
+                 90° = half the disc. 180° = full circle (same as \
+                 turning the cone off).",
+            ));
 
             let editor_state2 = editor_state.clone();
             let rebuild2 = rebuild.clone();
@@ -1935,7 +2031,18 @@ fn fill_geometry_subparams(
             let s = SpinButton::with_range(0.1, 8.0, 0.1);
             s.set_digits(2);
             s.set_value(step_mult);
+            s.set_tooltip_text(Some(
+                "Distance between stamps as a multiple of base width. \
+                 1.0 = stamps just touching. <1 = overlapping. >1 = \
+                 gaps between stamps.",
+            ));
             parent.append(&row("Step ×", s.upcast_ref()));
+            parent.append(&dim(
+                "Step ×: stamp spacing along the path, scaled by the \
+                 brush base width. 0.4–0.6 reads as a continuous trace. \
+                 1.0 = stamps barely touching. 2.0+ = visibly discrete \
+                 stamps (chain of stars / arrows / leaves).",
+            ));
             commit_geom(s, editor_state, layer_idx, rebuild, |val| {
                 Geometry::DabStamp { step_mult: val }
             });
@@ -1944,11 +2051,30 @@ fn fill_geometry_subparams(
             let c = SpinButton::with_range(2.0, 16.0, 1.0);
             c.set_digits(0);
             c.set_value(count as f64);
+            c.set_tooltip_text(Some(
+                "Number of parallel offset bristle strokes. More = \
+                 denser fan, more GPU work.",
+            ));
             parent.append(&row("Tine count", c.upcast_ref()));
+            parent.append(&dim(
+                "Tine count: how many parallel offset strokes the fan \
+                 emits. 3 = legacy default. 6+ reads as dense bristle \
+                 hair. 2 makes a thin parallel-pair (railroad tracks).",
+            ));
             let sp = SpinButton::with_range(0.0, 6.0, 0.05);
             sp.set_digits(2);
             sp.set_value(spread_mult);
+            sp.set_tooltip_text(Some(
+                "Total fan width perpendicular to the path, as a \
+                 multiple of the brush base width.",
+            ));
             parent.append(&row("Spread ×", sp.upcast_ref()));
+            parent.append(&dim(
+                "Spread ×: total fan width perpendicular to the stroke, \
+                 scaled by base width. 1.0 = fan equals one stroke \
+                 width. 1.4 = legacy default. 3+ = wide rake-like \
+                 spread.",
+            ));
             let (c2, sp2) = (c.clone(), sp.clone());
             let editor_state2 = editor_state.clone();
             let rebuild2 = rebuild.clone();
@@ -2007,7 +2133,16 @@ fn fill_width_subparams(
             let s = SpinButton::with_range(0.05, 12.0, 0.05);
             s.set_digits(2);
             s.set_value(width_mult);
+            s.set_tooltip_text(Some(
+                "Multiplier on the brush base width. 1.0 = exactly the \
+                 base width. 0.5 = half. 2.0 = double.",
+            ));
             parent.append(&row("Width ×", s.upcast_ref()));
+            parent.append(&dim(
+                "Width ×: stroke thickness as a multiple of the brush \
+                 base width. Pressure has no effect — every stroke \
+                 looks the same regardless of how the user pressed.",
+            ));
             let es = editor_state.clone();
             let rb = rebuild.clone();
             s.connect_value_changed(move |s| {
@@ -2023,15 +2158,29 @@ fn fill_width_subparams(
             let m = SpinButton::with_range(0.05, 12.0, 0.05);
             m.set_digits(2);
             m.set_value(width_mult);
+            m.set_tooltip_text(Some("Multiplier on the brush base width."));
             parent.append(&row("Width ×", m.upcast_ref()));
             let mn = SpinButton::with_range(0.0, 50.0, 0.05);
             mn.set_digits(2);
             mn.set_value(min_mm);
+            mn.set_tooltip_text(Some(
+                "Minimum stroke width in mm. The line never gets thinner \
+                 than this even at high zoom-out.",
+            ));
             parent.append(&row("Min (mm)", mn.upcast_ref()));
             let mx = SpinButton::with_range(0.0, 50.0, 0.05);
             mx.set_digits(2);
             mx.set_value(max_mm);
+            mx.set_tooltip_text(Some(
+                "Maximum stroke width in mm. The line never gets thicker \
+                 than this even at extreme zoom-in.",
+            ));
             parent.append(&row("Max (mm)", mx.upcast_ref()));
+            parent.append(&dim(
+                "Clamped constant: width = base × multiplier, then \
+                 clipped between Min and Max in mm. Pencil cores live \
+                 here so the line stays sharp regardless of zoom.",
+            ));
             let (m2, mn2, mx2) = (m.clone(), mn.clone(), mx.clone());
             let es = editor_state.clone();
             let rb = rebuild.clone();
@@ -2061,11 +2210,30 @@ fn fill_width_subparams(
             let fl = SpinButton::with_range(0.0, 1.5, 0.05);
             fl.set_digits(2);
             fl.set_value(floor);
+            fl.set_tooltip_text(Some(
+                "Width fraction at zero pressure. 0 = invisible at \
+                 zero touch. 0.6 = solid even with a feather-light \
+                 stylus.",
+            ));
             parent.append(&row("Floor", fl.upcast_ref()));
             let am = SpinButton::with_range(0.0, 4.0, 0.05);
             am.set_digits(2);
             am.set_value(amp);
+            am.set_tooltip_text(Some(
+                "How much extra width pressure adds. 0 = pressure \
+                 has no effect. 1 = max pressure doubles the line \
+                 (when floor=1).",
+            ));
             parent.append(&row("Amp", am.upcast_ref()));
+            parent.append(&dim(
+                "Pressure formula: width = base × (Floor + Amp × \
+                 pressure). Tune both:\n\
+                 • Floor 0.6 + Amp 0.4 = fountain pen feel (always \
+                 visible, light pressure tweak).\n\
+                 • Floor 0 + Amp 1 = fully pressure-driven (invisible \
+                 at zero touch, full width at max press).\n\
+                 • Floor 1 + Amp 0 = same as Constant ×1.",
+            ));
             let (fl2, am2) = (fl.clone(), am.clone());
             let es = editor_state.clone();
             let rb = rebuild.clone();
@@ -2090,11 +2258,32 @@ fn fill_width_subparams(
             let na = SpinButton::with_range(-180.0, 180.0, 1.0);
             na.set_digits(1);
             na.set_value(nib_deg);
+            na.set_tooltip_text(Some(
+                "Orientation of the nib axis. 0° = horizontal nib. \
+                 45° = standard italic (down-strokes thick). 90° = \
+                 vertical nib (cross-strokes thick).",
+            ));
             parent.append(&row("Nib angle°", na.upcast_ref()));
             let mr = SpinButton::with_range(0.0, 1.0, 0.05);
             mr.set_digits(2);
             mr.set_value(min_ratio);
+            mr.set_tooltip_text(Some(
+                "Minimum width fraction perpendicular to the nib. \
+                 0 = nib goes infinitely thin at the wrong direction \
+                 (sharp italic). 1 = no direction effect (constant).",
+            ));
             parent.append(&row("Min ratio", mr.upcast_ref()));
+            parent.append(&dim(
+                "Direction-angled: real italic-nib formula. The line \
+                 is widest when stroked along the nib axis, thinnest \
+                 perpendicular to it.\n\n\
+                 • Nib angle 45° + min 0.18 = classic broad-edge \
+                 calligraphy.\n\
+                 • Nib angle 0° + min 0.5 = subtle horizontal-bias \
+                 marker.\n\n\
+                 Only meaningful with Outline geometry; on Smooth \
+                 it falls back to a constant-width stroke.",
+            ));
             let (na2, mr2) = (na.clone(), mr.clone());
             let es = editor_state.clone();
             let rb = rebuild.clone();
@@ -2119,15 +2308,42 @@ fn fill_width_subparams(
             let th = SpinButton::with_range(0.0, 1.0, 0.01);
             th.set_digits(2);
             th.set_value(threshold);
+            th.set_tooltip_text(Some(
+                "Minimum stylus tilt (0..1) before this layer emits \
+                 anything. Below the threshold = no shading. 0.12 = \
+                 legacy pencil default.",
+            ));
             parent.append(&row("Threshold", th.upcast_ref()));
             let bm = SpinButton::with_range(0.0, 32.0, 0.1);
             bm.set_digits(2);
             bm.set_value(band_mult);
+            bm.set_tooltip_text(Some(
+                "How much wider the tilt band is than the core. 8 = \
+                 legacy pencil default. Higher = bigger smear when \
+                 the user lays the stylus down.",
+            ));
             parent.append(&row("Band ×", bm.upcast_ref()));
             let al = SpinButton::with_range(0.0, 2.0, 0.01);
             al.set_digits(2);
             al.set_value(alpha_scale);
+            al.set_tooltip_text(Some(
+                "Alpha multiplier for the tilt band. 0.22 = legacy \
+                 pencil default (subtle). 0.5+ = darker, more \
+                 graphite-rich shading.",
+            ));
             parent.append(&row("Alpha scale", al.upcast_ref()));
+            parent.append(&dim(
+                "Tilt band emits *additional* per-segment paint only \
+                 where stylus tilt exceeds Threshold. Designed to \
+                 layer on top of a constant-width core (the standard \
+                 Pencil composition).\n\n\
+                 • Threshold: how much tilt is needed before shading \
+                 appears.\n\
+                 • Band ×: relative width of the shading.\n\
+                 • Alpha scale: opacity of the shading.\n\n\
+                 By itself this layer paints nothing at low tilt — \
+                 pair with another layer that draws the core line.",
+            ));
             let (th2, bm2, al2) = (th.clone(), bm.clone(), al.clone());
             let es = editor_state.clone();
             let rb = rebuild.clone();
