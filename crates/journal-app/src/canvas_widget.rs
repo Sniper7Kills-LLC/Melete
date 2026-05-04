@@ -207,11 +207,11 @@ fn draw_placeholder(
     image: Option<&gtk4::cairo::ImageSurface>,
     text: &str,
 ) {
-    // Page-colour fill (matches the Vello placeholder).
+    // Page-colour fill (editorial fieldbook palette — matches Vello).
     if dark_mode {
-        ctx.set_source_rgb(0.110, 0.110, 0.129);
+        ctx.set_source_rgb(0.110, 0.165, 0.188);
     } else {
-        ctx.set_source_rgb(0.969, 0.969, 0.980);
+        ctx.set_source_rgb(0.957, 0.937, 0.886);
     }
     let _ = ctx.paint();
 

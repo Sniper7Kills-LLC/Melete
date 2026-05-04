@@ -56,18 +56,33 @@ const APP_CSS: &str = r#"
    Journal — visual identity (paper-journal mood: deep indigo + amber)
    ──────────────────────────────────────────────────────────────────── */
 
+/* Editorial fieldbook palette — deep indigo + amber on cream / dim teal. */
 @define-color accent_bg_color #3a3d6e;
 @define-color accent_color    #5a5e96;
 @define-color accent_fg_color #ffffff;
 @define-color amber_accent    #d6a83a;
+@define-color page_cream      #f4efe2;
+@define-color page_teal       #1c2a30;
 
 .drag-target {
     background-color: alpha(@accent_bg_color, 0.2);
     transition: background-color 120ms ease;
 }
 
+/* Editorial display font — serif fallback chain, no bundling. Hits
+   common Linux serifs in priority order: editorial-grade first, then
+   ubiquitous Liberation/DejaVu fallbacks for a clean install. */
+.display-font,
+.wordmark,
+.notebook-card .card-title,
+.empty-state-title,
+.title-1, .title-2, .title-3, .title-4 {
+    font-family: "EB Garamond", "Lora", "Crimson Pro", "Source Serif 4",
+                 "Source Serif Pro", "Liberation Serif", "DejaVu Serif",
+                 "Cantarell", serif;
+}
+
 .wordmark {
-    font-family: "Cantarell", "Source Sans 3", sans-serif;
     font-weight: 700;
     letter-spacing: 0.10em;
     text-transform: uppercase;
@@ -75,8 +90,12 @@ const APP_CSS: &str = r#"
 }
 
 .section-header-label {
+    font-family: "EB Garamond", "Lora", "Crimson Pro", "Source Serif 4",
+                 "Source Serif Pro", "Liberation Serif", "DejaVu Serif",
+                 "Cantarell", serif;
     font-weight: 700;
-    font-size: 1.05em;
+    font-size: 1.10em;
+    letter-spacing: 0.01em;
 }
 .section-nested {
     border-left: 2px solid alpha(@accent_color, 0.35);
@@ -129,6 +148,22 @@ const APP_CSS: &str = r#"
 .toolbar button:checked {
     background-color: alpha(@amber_accent, 0.40);
     box-shadow: inset 0 -2px 0 @amber_accent;
+}
+
+/* ── Editorial fieldbook accents — pull amber into shared chrome ──── */
+switch:checked > slider { background-color: @amber_accent; }
+switch:checked > image  { color: @amber_accent; }
+switch:checked          { background-color: alpha(@amber_accent, 0.55); }
+
+scrollbar slider {
+    background-color: alpha(@amber_accent, 0.55);
+    border-radius: 999px;
+}
+scrollbar slider:hover { background-color: alpha(@amber_accent, 0.78); }
+
+*:focus-visible {
+    outline: 2px solid alpha(@amber_accent, 0.65);
+    outline-offset: 1px;
 }
 
 /* ── Compact floating toolbar — single row, ~36px tall ──────────────── */

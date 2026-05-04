@@ -738,9 +738,11 @@ fn build_scene<F>(
     // 1) Page colour fill — covers entire visible viewport (screen-space).
     let (sw, sh) = transform.screen_size();
     let bg_color = if dark_mode {
-        Color::from_rgba8(28, 27, 23, 255) // warm near-black
+        // Editorial fieldbook dark — dim teal, holds amber accents.
+        Color::from_rgba8(28, 42, 48, 255)
     } else {
-        Color::from_rgba8(250, 247, 242, 255) // warm cream
+        // Editorial fieldbook light — fieldbook-paper cream.
+        Color::from_rgba8(244, 239, 226, 255)
     };
     scene.fill(
         Fill::NonZero,

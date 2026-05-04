@@ -67,11 +67,11 @@ impl WidgetRenderer {
         dark_mode: bool,
         text: &str,
     ) {
-        // Page-colour fill.
+        // Page-colour fill — editorial fieldbook palette.
         let bg = if dark_mode {
-            vello::peniko::Color::from_rgba8(28, 28, 33, 255)
+            vello::peniko::Color::from_rgba8(28, 42, 48, 255)
         } else {
-            vello::peniko::Color::from_rgba8(247, 247, 250, 255)
+            vello::peniko::Color::from_rgba8(244, 239, 226, 255)
         };
         scene.fill(
             Fill::NonZero,
