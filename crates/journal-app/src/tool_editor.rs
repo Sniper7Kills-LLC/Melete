@@ -40,6 +40,7 @@ pub fn build_editor_view(
     let editor_state = Rc::new(RefCell::new(EditorState {
         brush: seed_brush.unwrap_or_else(default_seed_brush),
         selected_layer: 0,
+        rebuilding: false,
     }));
 
     let root = GtkBox::builder()
@@ -174,6 +175,8 @@ pub fn build_editor_view(
         let state_outer = state.clone();
         let rebuild_self = rebuild.clone();
         let do_rebuild: Rc<dyn Fn()> = Rc::new(move || {
+            editor_state.borrow_mut().rebuilding = true;
+
             // Clear lists.
             while let Some(child) = lib_list.first_child() {
                 lib_list.remove(&child);
@@ -219,12 +222,14 @@ pub fn build_editor_view(
                     .spacing(6)
                     .build();
                 let chk = CheckButton::new();
-                chk.set_active(layer.enabled);
                 {
                     let editor_state = editor_state.clone();
                     let i_clone = i;
                     let rebuild_self = rebuild_self.clone();
                     chk.connect_toggled(move |b| {
+                        if editor_state.borrow().rebuilding {
+                            return;
+                        }
                         if let Some(l) = editor_state
                             .borrow_mut()
                             .brush
@@ -238,6 +243,7 @@ pub fn build_editor_view(
                         }
                     });
                 }
+                chk.set_active(layer.enabled);
                 let label = Label::builder()
                     .label(layer_summary(layer, i))
                     .halign(gtk4::Align::Start)
@@ -270,6 +276,8 @@ pub fn build_editor_view(
                 lbl.add_css_class("dim-label");
                 right_body.append(&lbl);
             }
+
+            editor_state.borrow_mut().rebuilding = false;
         });
         *rebuild.borrow_mut() = Some(do_rebuild);
     }
@@ -283,6 +291,9 @@ pub fn build_editor_view(
         let state_outer = state.clone();
         let rebuild = rebuild.clone();
         lib_list.connect_row_selected(move |_, row| {
+            if editor_state.borrow().rebuilding {
+                return;
+            }
             let Some(row) = row else { return };
             let idx = row.index();
             if idx < 0 {
@@ -305,6 +316,9 @@ pub fn build_editor_view(
         let editor_state = editor_state.clone();
         let rebuild = rebuild.clone();
         layers_list.connect_row_selected(move |_, row| {
+            if editor_state.borrow().rebuilding {
+                return;
+            }
             let Some(row) = row else { return };
             let idx = row.index();
             if idx >= 0 {
@@ -418,6 +432,12 @@ pub fn build_editor_view(
 struct EditorState {
     brush: Brush,
     selected_layer: usize,
+    /// Set while `do_rebuild` is mutating the GTK widgets. Signal
+    /// handlers (row-selected / toggled / value-changed) early-out
+    /// when this is true — programmatic `select_row` and
+    /// `set_active` calls fire those signals just like user input,
+    /// and re-entrant rebuild calls quickly overflow the stack.
+    rebuilding: bool,
 }
 
 fn default_seed_brush() -> Brush {
