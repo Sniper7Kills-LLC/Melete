@@ -123,6 +123,35 @@ pub fn build_toolbar(
     }
     tools_list.append(&edit_btn);
 
+    // Per-tool brush picker — lists built-in + custom brushes;
+    // clicking one assigns it to the active tool's slot. Rebuilt on
+    // every popover show so library add/rename/delete from the Tool
+    // Editor land instantly without an app restart.
+    tools_list.append(&Separator::new(Orientation::Horizontal));
+    let brush_label = gtk4::Label::builder()
+        .label("Brush for current tool")
+        .halign(gtk4::Align::Start)
+        .build();
+    brush_label.add_css_class("dim-label");
+    tools_list.append(&brush_label);
+    let brush_subbox = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(2)
+        .build();
+    tools_list.append(&brush_subbox);
+    {
+        let state = state.clone();
+        let popover = tools_popover.clone();
+        let brush_subbox = brush_subbox.clone();
+        let tools_open = tools_open.clone();
+        tools_popover.connect_visible_notify(move |po| {
+            if !po.is_visible() {
+                return;
+            }
+            rebuild_brush_picker(&brush_subbox, &state, &popover, &tools_open);
+        });
+    }
+
     tools_popover.set_child(Some(&tools_list));
     tools_btn.set_popover(Some(&tools_popover));
 
@@ -404,6 +433,122 @@ pub fn build_toolbar(
 /// Returns the symbolic icon name for the given tool. The names lean on
 /// freedesktop.org symbolic icons that ship with most icon themes; missing
 /// names fall back to a generic image-missing glyph.
+/// Refresh the per-tool brush-picker subsection of the tools
+/// popover. Called every time the popover becomes visible so that
+/// brushes added / renamed / deleted in the Tool Editor land
+/// instantly without restarting the app.
+fn rebuild_brush_picker(
+    container: &GtkBox,
+    state: &SharedState,
+    popover: &Popover,
+    tools_open: &Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>>,
+) {
+    while let Some(c) = container.first_child() {
+        container.remove(&c);
+    }
+    let tool = state.borrow().tool;
+    if !crate::state::tool_is_drawing(tool) {
+        let l = gtk4::Label::builder()
+            .label("(non-drawing tool)")
+            .halign(gtk4::Align::Start)
+            .build();
+        l.add_css_class("dim-label");
+        container.append(&l);
+        return;
+    }
+    let active_id = crate::tool_settings::tool_key(tool)
+        .and_then(|k| state.borrow().tool_brushes.get(k).map(|b| b.id));
+
+    let mut entries: Vec<journal_core::Brush> =
+        crate::brush_library::built_ins();
+    entries.extend(state.borrow().brush_library.clone());
+
+    for brush in entries {
+        let row = gtk4::Box::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(6)
+            .build();
+        let mark = gtk4::Label::builder()
+            .label(if Some(brush.id) == active_id { "●" } else { "  " })
+            .width_chars(2)
+            .build();
+        let label = gtk4::Label::builder()
+            .label(&brush.name)
+            .halign(gtk4::Align::Start)
+            .hexpand(true)
+            .build();
+        row.append(&mark);
+        row.append(&label);
+        let btn = Button::builder().child(&row).build();
+        btn.add_css_class("flat");
+        let state_c = state.clone();
+        let pop_c = popover.clone();
+        let brush_c = brush.clone();
+        btn.connect_clicked(move |_| {
+            let tool = state_c.borrow().tool;
+            let key = match crate::tool_settings::tool_key(tool) {
+                Some(k) => k.to_string(),
+                None => {
+                    pop_c.popdown();
+                    return;
+                }
+            };
+            {
+                let mut s = state_c.borrow_mut();
+                s.tool_brushes.insert(key, brush_c.clone());
+                s.active_brush_recipe = Some(brush_c.clone());
+                if let Some(rgba) = brush_c.default_color {
+                    s.pen.color = journal_core::Color {
+                        r: rgba[0],
+                        g: rgba[1],
+                        b: rgba[2],
+                        a: rgba[3],
+                    };
+                }
+            }
+            crate::state::persist_tool_state(&state_c);
+            pop_c.popdown();
+        });
+        container.append(&btn);
+    }
+
+    // Clear-assignment entry — falls back to the legacy adapter.
+    let clear_row = gtk4::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .build();
+    let mark = gtk4::Label::builder()
+        .label(if active_id.is_none() { "●" } else { "  " })
+        .width_chars(2)
+        .build();
+    let label = gtk4::Label::builder()
+        .label("(none — use built-in)")
+        .halign(gtk4::Align::Start)
+        .hexpand(true)
+        .build();
+    clear_row.append(&mark);
+    clear_row.append(&label);
+    let clear_btn = Button::builder().child(&clear_row).build();
+    clear_btn.add_css_class("flat");
+    {
+        let state_c = state.clone();
+        let pop_c = popover.clone();
+        clear_btn.connect_clicked(move |_| {
+            let tool = state_c.borrow().tool;
+            if let Some(key) = crate::tool_settings::tool_key(tool) {
+                let mut s = state_c.borrow_mut();
+                s.tool_brushes.remove(key);
+                s.active_brush_recipe = None;
+            }
+            crate::state::persist_tool_state(&state_c);
+            pop_c.popdown();
+        });
+    }
+    container.append(&clear_btn);
+
+    let _ = tools_open;
+}
+
 /// Map a drawing tool to its matching built-in brush composition.
 /// Used by the toolbar's "Edit current tool…" entry to pre-seed the
 /// Tool Editor with the recipe the user is currently drawing with.
