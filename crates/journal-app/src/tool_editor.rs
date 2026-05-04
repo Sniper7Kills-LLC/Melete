@@ -57,6 +57,11 @@ pub fn build_editor_view(
     let preview_brush: Rc<RefCell<Brush>> = Rc::new(RefCell::new(
         editor_state.borrow().brush.clone(),
     ));
+    // User-drawn strokes inside the preview canvas. Each is rendered
+    // with the *current* brush so changing layer settings live-updates
+    // every existing stroke — the whole point of the preview.
+    let preview_strokes: Rc<RefCell<Vec<Stroke>>> = Rc::new(RefCell::new(Vec::new()));
+    let preview_in_progress: Rc<RefCell<Option<Stroke>>> = Rc::new(RefCell::new(None));
 
     let root = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -167,12 +172,14 @@ pub fn build_editor_view(
         .vexpand(true)
         .build();
 
-    let preview_area = build_preview_area(
+    let (preview_frame, preview_area) = build_preview_area(
         editor_state.clone(),
         preview_renderer.clone(),
         preview_brush.clone(),
+        preview_strokes.clone(),
+        preview_in_progress.clone(),
     );
-    right_root.append(&preview_area);
+    right_root.append(&preview_frame);
     right_root.append(&Separator::new(Orientation::Horizontal));
 
     let right = ScrolledWindow::builder()
@@ -1134,38 +1141,55 @@ fn prompt_save_as(parent: &ApplicationWindow, on_name: impl Fn(String) + 'static
 
 // ── Live preview ──────────────────────────────────────────────────
 //
-// Mini Vello-rendered S-curve in a 360×100 cell. Shows what the
-// current brush composition draws before the user commits. Renderer
-// is created lazily on first paint (wgpu init is ~1s).
+// Interactive Vello-rendered drawing area. The user draws inside it
+// (mouse or stylus); strokes are stored without a recipe and
+// re-rendered every frame against the current editor brush — so any
+// layer-settings change live-updates every existing stroke. Clear
+// button wipes the canvas.
 
-const PREVIEW_W: i32 = 360;
-const PREVIEW_H: i32 = 100;
+const PREVIEW_W: i32 = 480;
+const PREVIEW_H: i32 = 200;
+const PREVIEW_BASE_WIDTH: f64 = 8.0;
 
 fn build_preview_area(
     editor_state: Rc<RefCell<EditorState>>,
     renderer: Rc<RefCell<Option<VelloRenderer>>>,
     preview_brush: Rc<RefCell<Brush>>,
-) -> Frame {
+    preview_strokes: Rc<RefCell<Vec<Stroke>>>,
+    preview_in_progress: Rc<RefCell<Option<Stroke>>>,
+) -> (Frame, DrawingArea) {
     let frame = Frame::builder()
         .margin_top(10)
         .margin_bottom(10)
         .margin_start(16)
         .margin_end(16)
         .build();
-    frame.set_label(Some("Preview"));
+    frame.set_label(Some("Preview — draw here"));
+
+    let outer = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_top(6)
+        .margin_bottom(6)
+        .margin_start(6)
+        .margin_end(6)
+        .build();
+
     let area = DrawingArea::builder()
         .content_width(PREVIEW_W)
         .content_height(PREVIEW_H)
         .build();
+    area.set_can_target(true);
+    area.set_focusable(true);
+
     {
         let renderer = renderer.clone();
         let preview_brush = preview_brush.clone();
-        let editor_state = editor_state.clone();
+        let preview_strokes = preview_strokes.clone();
+        let preview_in_progress = preview_in_progress.clone();
+        let _editor_state = editor_state.clone();
         area.set_draw_func(move |_, ctx, w, h| {
-            let dark = editor_state.borrow().rebuilding;
-            let _ = dark;
-            // Background fill — light cream so the preview reads as a
-            // page surface, contrasting with the dark editor chrome.
+            // Cream page surface.
             ctx.set_source_rgb(0.96, 0.95, 0.92);
             let _ = ctx.paint();
 
@@ -1183,7 +1207,28 @@ fn build_preview_area(
             let r = renderer_slot.as_mut().unwrap();
 
             let brush = preview_brush.borrow().clone();
-            let strokes = vec![preview_stroke(brush, w as f64, h as f64)];
+            // Compose all strokes (committed + in-progress) with the
+            // current brush as their recipe — so changing the brush
+            // re-renders every prior stroke with the new look.
+            let mut strokes: Vec<Stroke> = preview_strokes
+                .borrow()
+                .iter()
+                .map(|s| {
+                    let mut s2 = s.clone();
+                    s2.brush_recipe = Some(brush.clone());
+                    s2
+                })
+                .collect();
+            if let Some(ip) = preview_in_progress.borrow().as_ref() {
+                let mut s2 = ip.clone();
+                s2.brush_recipe = Some(brush.clone());
+                strokes.push(s2);
+            }
+            if strokes.is_empty() {
+                draw_preview_hint(ctx, w, h);
+                return;
+            }
+
             let viewport = Viewport {
                 center: Point {
                     x: w as f64 * 0.5,
@@ -1193,7 +1238,6 @@ fn build_preview_area(
                 rotation: 0.0,
             };
             let transform = ViewportTransform::new(viewport, w as f64, h as f64);
-            let bg = BackgroundConfig::Blank;
             let page_rect = Rect {
                 x: 0.0,
                 y: 0.0,
@@ -1202,7 +1246,7 @@ fn build_preview_area(
             };
             let bytes = match r.render_rgba(
                 &transform,
-                &bg,
+                &BackgroundConfig::Blank,
                 page_rect,
                 &strokes,
                 &HashSet::new(),
@@ -1221,43 +1265,119 @@ fn build_preview_area(
             blit_rgba_to_cairo(ctx, &bytes, w as u32, h as u32);
         });
     }
-    frame.set_child(Some(&area));
-    frame
-}
 
-/// Synthesize a fixed S-curve stroke using `brush` as the recipe.
-/// Width / pressure ramp 0.3 → 1.0 → 0.5 across the curve so all
-/// pressure-driven WidthModes show a visible taper.
-fn preview_stroke(brush: Brush, w: f64, h: f64) -> Stroke {
-    let n = 48;
-    let mut pts = Vec::with_capacity(n);
-    let pad = 18.0;
-    let usable_w = (w - pad * 2.0).max(20.0);
-    let mid_y = h * 0.5;
-    let amp = (h * 0.32).min(usable_w * 0.18);
-    for i in 0..n {
-        let t = i as f64 / (n - 1) as f64;
-        let x = pad + usable_w * t;
-        // Two-hump S-curve.
-        let y = mid_y - amp * (t * std::f64::consts::TAU).sin();
-        // Pressure: 0.25 → 1.0 → 0.5
-        let pressure = if t < 0.5 {
-            0.25 + 1.5 * t
-        } else {
-            1.0 - 0.5 * (t - 0.5) * 2.0
-        };
-        pts.push(StrokePoint {
-            x,
-            y,
-            pressure: pressure as f32,
-            tilt_x: 0.0,
-            tilt_y: 0.0,
-            timestamp_ms: i as u64,
+    // Stylus input.
+    {
+        let area_widget: gtk4::Widget = area.clone().upcast();
+        let g = gtk4::GestureStylus::new();
+        g.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        let area_clone = area.clone();
+        let in_progress = preview_in_progress.clone();
+        g.connect_down(move |g, x, y| {
+            let pressure = g.axis(gtk4::gdk::AxisUse::Pressure).unwrap_or(0.5) as f32;
+            let tilt_x = g.axis(gtk4::gdk::AxisUse::Xtilt).unwrap_or(0.0) as f32;
+            let tilt_y = g.axis(gtk4::gdk::AxisUse::Ytilt).unwrap_or(0.0) as f32;
+            *in_progress.borrow_mut() = Some(new_preview_stroke(x, y, pressure, tilt_x, tilt_y));
+            area_clone.queue_draw();
+        });
+        let area_clone = area.clone();
+        let in_progress = preview_in_progress.clone();
+        g.connect_motion(move |g, x, y| {
+            let pressure = g.axis(gtk4::gdk::AxisUse::Pressure).unwrap_or(0.5) as f32;
+            let tilt_x = g.axis(gtk4::gdk::AxisUse::Xtilt).unwrap_or(0.0) as f32;
+            let tilt_y = g.axis(gtk4::gdk::AxisUse::Ytilt).unwrap_or(0.0) as f32;
+            if let Some(s) = in_progress.borrow_mut().as_mut() {
+                push_preview_point(s, x, y, pressure, tilt_x, tilt_y);
+            }
+            area_clone.queue_draw();
+        });
+        let area_clone = area.clone();
+        let in_progress = preview_in_progress.clone();
+        let strokes = preview_strokes.clone();
+        g.connect_up(move |_, _, _| {
+            if let Some(s) = in_progress.borrow_mut().take() {
+                if s.points.len() >= 2 {
+                    strokes.borrow_mut().push(s);
+                }
+            }
+            area_clone.queue_draw();
+        });
+        area_widget.add_controller(g);
+    }
+
+    // Mouse drag fallback (no stylus).
+    {
+        let area_widget: gtk4::Widget = area.clone().upcast();
+        let g = gtk4::GestureDrag::new();
+        g.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        g.set_propagation_phase(gtk4::PropagationPhase::Bubble);
+        let area_clone = area.clone();
+        let in_progress = preview_in_progress.clone();
+        g.connect_drag_begin(move |_, x, y| {
+            *in_progress.borrow_mut() = Some(new_preview_stroke(x, y, 0.7, 0.0, 0.0));
+            area_clone.queue_draw();
+        });
+        let area_clone = area.clone();
+        let in_progress = preview_in_progress.clone();
+        g.connect_drag_update(move |g, dx, dy| {
+            if let Some((sx, sy)) = g.start_point() {
+                if let Some(s) = in_progress.borrow_mut().as_mut() {
+                    push_preview_point(s, sx + dx, sy + dy, 0.7, 0.0, 0.0);
+                }
+                area_clone.queue_draw();
+            }
+        });
+        let area_clone = area.clone();
+        let in_progress = preview_in_progress.clone();
+        let strokes = preview_strokes.clone();
+        g.connect_drag_end(move |_, _, _| {
+            if let Some(s) = in_progress.borrow_mut().take() {
+                if s.points.len() >= 2 {
+                    strokes.borrow_mut().push(s);
+                }
+            }
+            area_clone.queue_draw();
+        });
+        area_widget.add_controller(g);
+    }
+
+    outer.append(&area);
+
+    // Toolbar row beneath the canvas — Clear button.
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .halign(gtk4::Align::End)
+        .build();
+    let clear_btn = Button::with_label("Clear");
+    {
+        let strokes = preview_strokes.clone();
+        let in_progress = preview_in_progress.clone();
+        let area_clone = area.clone();
+        clear_btn.connect_clicked(move |_| {
+            strokes.borrow_mut().clear();
+            *in_progress.borrow_mut() = None;
+            area_clone.queue_draw();
         });
     }
+    row.append(&clear_btn);
+    outer.append(&row);
+
+    frame.set_child(Some(&outer));
+    (frame, area)
+}
+
+fn new_preview_stroke(x: f64, y: f64, pressure: f32, tx: f32, ty: f32) -> Stroke {
     Stroke {
         id: Uuid::nil(),
-        points: pts,
+        points: vec![StrokePoint {
+            x,
+            y,
+            pressure,
+            tilt_x: tx,
+            tilt_y: ty,
+            timestamp_ms: 0,
+        }],
         pen: PenSettings {
             color: JColor {
                 r: 30,
@@ -1265,20 +1385,49 @@ fn preview_stroke(brush: Brush, w: f64, h: f64) -> Stroke {
                 b: 35,
                 a: 255,
             },
-            base_width: 6.0,
+            base_width: PREVIEW_BASE_WIDTH,
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
             brush_style: journal_core::BrushStyle::Pen,
         },
         zoom_at_creation: 1.0,
         bounding_box: Rect {
-            x: 0.0,
-            y: 0.0,
-            width: w,
-            height: h,
+            x,
+            y,
+            width: 1.0,
+            height: 1.0,
         },
-        brush_recipe: Some(brush),
+        brush_recipe: None,
     }
+}
+
+fn push_preview_point(s: &mut Stroke, x: f64, y: f64, pressure: f32, tx: f32, ty: f32) {
+    s.points.push(StrokePoint {
+        x,
+        y,
+        pressure,
+        tilt_x: tx,
+        tilt_y: ty,
+        timestamp_ms: s.points.len() as u64,
+    });
+    // Update bbox so render culling doesn't drop the stroke.
+    let bbox = &mut s.bounding_box;
+    let pad = PREVIEW_BASE_WIDTH;
+    let min_x = bbox.x.min(x - pad);
+    let max_x = (bbox.x + bbox.width).max(x + pad);
+    let min_y = bbox.y.min(y - pad);
+    let max_y = (bbox.y + bbox.height).max(y + pad);
+    bbox.x = min_x;
+    bbox.y = min_y;
+    bbox.width = max_x - min_x;
+    bbox.height = max_y - min_y;
+}
+
+fn draw_preview_hint(ctx: &gtk4::cairo::Context, w: i32, h: i32) {
+    ctx.set_source_rgba(0.4, 0.4, 0.4, 0.5);
+    ctx.move_to(20.0, h as f64 * 0.5);
+    let _ = ctx.show_text("Draw here to preview the brush. Stylus or mouse.");
+    let _ = w;
 }
 
 /// Vello produces RGBA8 (R,G,B,A premultiplied). Cairo ARgb32 on
