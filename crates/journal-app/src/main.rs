@@ -360,6 +360,14 @@ flowbox > flowboxchild:nth-child(12) .notebook-card { animation-delay: 330ms; }
     border-radius: 4px;
     border: 1px solid alpha(@borders, 0.7);
     box-shadow: 0 1px 1px alpha(black, 0.05);
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.nbtc-preview-chip-clickable {
+    cursor: pointer;
+}
+.nbtc-preview-chip-clickable:hover {
+    border-color: @amber_accent;
+    box-shadow: 0 2px 4px alpha(@amber_accent, 0.25);
 }
 .nbtc-preview-chip-empty {
     border: 1px dashed alpha(@accent_color, 0.45);

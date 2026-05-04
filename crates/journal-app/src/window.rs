@@ -721,11 +721,17 @@ pub fn show_notebook_template_editor(win: &SharedWindow, edit: Option<NotebookTe
         }
     });
 
+    let win_for_chip = win.clone();
+    let on_open_chip: Rc<dyn Fn(PageTemplate)> = Rc::new(move |t| {
+        show_template_editor(&win_for_chip, Some(t));
+    });
+
     let view = crate::notebook_template_creator::build_editor_view(
         &parent,
         state,
         edit,
         on_done,
+        Some(on_open_chip),
     );
     container.append(&view);
 

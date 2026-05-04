@@ -30,12 +30,22 @@ use crate::state::SharedState;
 
 // ─── Bottom layout preview ───────────────────────────────────────────────────
 
+/// Opener closure type for clicking a chip in the preview strip.
+/// Receives the `PageTemplate` corresponding to the clicked chip; the
+/// caller (window.rs) routes the call into the full-screen page-template
+/// editor.
+pub type OnOpenChipFn = Rc<dyn Fn(PageTemplate)>;
+
 thread_local! {
     /// The active editor's preview body Box. Set on `build_editor_view`,
     /// cleared on Back / Save. Slot-rebuild functions call
     /// `refresh_layout_preview` after every chip add/remove so users can see
     /// what the planner will actually generate.
     static LAYOUT_PREVIEW: RefCell<Option<GtkBox>> = const { RefCell::new(None) };
+    /// Active opener closure for clickable preview chips. Set on
+    /// `build_editor_view`, cleared on Back / Save. Each chip's click
+    /// handler pulls from here.
+    static CHIP_OPENER: RefCell<Option<OnOpenChipFn>> = const { RefCell::new(None) };
 }
 
 const MINI_W: i32 = 64;
@@ -43,7 +53,9 @@ const MINI_H: i32 = 84;
 
 /// Render a single page template as a small Cairo preview wrapped in a
 /// thin Frame, suitable for the bottom-of-editor preview strip. Tooltip
-/// is set to the page name so users can identify chips on hover.
+/// is set to the page name so users can identify chips on hover. When a
+/// chip-opener closure is registered, the chip becomes clickable and
+/// opens the matching page-template editor (audit §3 follow-up).
 fn mini_page_preview(t: &PageTemplate) -> Frame {
     let area = DrawingArea::builder()
         .width_request(MINI_W)
@@ -80,8 +92,28 @@ fn mini_page_preview(t: &PageTemplate) -> Frame {
     });
     let frame = Frame::builder().build();
     frame.add_css_class("nbtc-preview-chip-frame");
-    frame.set_tooltip_text(Some(&t.name));
+    let tooltip = if CHIP_OPENER.with(|c| c.borrow().is_some()) {
+        format!("{}\nClick to open in the page-template editor.", t.name)
+    } else {
+        t.name.clone()
+    };
+    frame.set_tooltip_text(Some(&tooltip));
     frame.set_child(Some(&area));
+
+    // Click → page-template editor opener (when registered). Routes via
+    // the thread-local CHIP_OPENER so the chip-build path stays a pure
+    // (PageTemplate) -> Frame fn.
+    let click = gtk4::GestureClick::new();
+    let template = t.clone();
+    click.connect_released(move |_g, _n, _x, _y| {
+        let opener = CHIP_OPENER.with(|c| c.borrow().clone());
+        if let Some(open) = opener {
+            (open)(template.clone());
+        }
+    });
+    frame.add_controller(click);
+    frame.add_css_class("nbtc-preview-chip-clickable");
+
     frame
 }
 
@@ -637,6 +669,7 @@ pub fn build_editor_view(
     state: SharedState,
     edit: Option<NotebookTemplate>,
     on_done: Rc<dyn Fn()>,
+    on_open_chip: Option<OnOpenChipFn>,
 ) -> GtkBox {
     let page_templates: Vec<PageTemplate> = {
         let s = state.borrow();
@@ -754,6 +787,7 @@ pub fn build_editor_view(
     root.append(&preview);
 
     LAYOUT_PREVIEW.with(|cell| *cell.borrow_mut() = Some(preview_body.clone()));
+    CHIP_OPENER.with(|cell| *cell.borrow_mut() = on_open_chip.clone());
     refresh_layout_preview(&es, &page_templates);
 
     // ── Back ─────────────────────────────────────────────────────────────────
@@ -761,6 +795,7 @@ pub fn build_editor_view(
         let on_done = on_done.clone();
         back_btn.connect_clicked(move |_| {
             LAYOUT_PREVIEW.with(|cell| *cell.borrow_mut() = None);
+            CHIP_OPENER.with(|cell| *cell.borrow_mut() = None);
             (on_done)();
         });
     }
@@ -781,6 +816,7 @@ pub fn build_editor_view(
                 std::time::Duration::from_millis(450),
                 move || {
                     LAYOUT_PREVIEW.with(|cell| *cell.borrow_mut() = None);
+                    CHIP_OPENER.with(|cell| *cell.borrow_mut() = None);
                     (on_done)();
                 },
             );
