@@ -227,6 +227,17 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     ),
                     None => (None, None),
                 };
+                // Page-change fade-in: ramp opacity from 0 → 1 over
+                // PAGE_FADE_MS after `set_current_page` stamps a new
+                // transition_started_at.
+                const PAGE_FADE_MS: f32 = 180.0;
+                let fade_alpha = match s.page_transition_started_at {
+                    Some(start) => {
+                        let elapsed = start.elapsed().as_secs_f32() * 1000.0;
+                        (elapsed / PAGE_FADE_MS).clamp(0.0, 1.0)
+                    }
+                    None => 1.0,
+                };
                 let overlays = journal_canvas::vello_renderer::OverlayState {
                     selection_bbox,
                     lasso_screen_points: s.lasso_points.clone(),
@@ -239,6 +250,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     dark_mode: crate::is_dark_mode(),
                     cursor_shape,
                     cursor_tip,
+                    fade_alpha,
                 };
                 (
                     s.transform,
@@ -371,6 +383,39 @@ pub fn build(state: SharedState) -> Option<GLArea> {
             if let Some(a) = area_weak.upgrade() {
                 a.queue_render();
             }
+        });
+    }
+
+    // Page-change fade ticker: while a transition is active, force a
+    // render every frame so the alpha ramp completes; clear the
+    // transition stamp once the fade has run its course so the ticker
+    // stops queue_render'ing on idle.
+    {
+        let state = state.clone();
+        let area_weak = area.downgrade();
+        const PAGE_FADE_MS_TICK: f32 = 180.0;
+        area.add_tick_callback(move |_, _| {
+            let active = {
+                let mut s = state.borrow_mut();
+                match s.page_transition_started_at {
+                    Some(start) => {
+                        let elapsed = start.elapsed().as_secs_f32() * 1000.0;
+                        if elapsed >= PAGE_FADE_MS_TICK {
+                            s.page_transition_started_at = None;
+                            true // request one final repaint at fade=1.0
+                        } else {
+                            true
+                        }
+                    }
+                    None => false,
+                }
+            };
+            if active {
+                if let Some(a) = area_weak.upgrade() {
+                    a.queue_render();
+                }
+            }
+            gtk4::glib::ControlFlow::Continue
         });
     }
 

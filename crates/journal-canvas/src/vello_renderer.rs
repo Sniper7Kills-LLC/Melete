@@ -285,6 +285,13 @@ pub struct OverlayState {
     /// `Auto` resolves to the first layer's tip. Null → fallback to
     /// circle.
     pub cursor_tip: Option<journal_core::TipShape>,
+    /// Multiplier on the entire scene's alpha — `1.0` = fully visible.
+    /// Used by the canvas to fade-in a freshly-loaded page surface
+    /// over a couple of frames after `current_page_id` changes
+    /// (audit §9). Values < 1.0 wrap the page-fill / background /
+    /// widgets / strokes / overlays in a single `push_layer` so the
+    /// fade applies to everything as one composite.
+    pub fade_alpha: f32,
 }
 
 impl Default for OverlayState {
@@ -301,6 +308,7 @@ impl Default for OverlayState {
             dark_mode: false,
             cursor_shape: None,
             cursor_tip: None,
+            fade_alpha: 1.0,
         }
     }
 }
@@ -752,6 +760,24 @@ fn build_scene<F>(
         &KRect::new(0.0, 0.0, sw, sh),
     );
 
+    // Page-change fade: when `fade_alpha < 1.0`, wrap the rest of the
+    // scene (background pattern + widgets + strokes + overlays) in a
+    // single `push_layer` so the new page surface fades in over a few
+    // frames. Audit §9. The page-fill above sits *outside* the layer
+    // — we want the cream/teal page colour fully opaque from frame 0
+    // so the fade reads as "ink lands" not "page colour ramps in".
+    let fade = overlays.fade_alpha.clamp(0.0, 1.0);
+    let faded = fade < 0.999;
+    if faded {
+        scene.push_layer(
+            Fill::NonZero,
+            vello::peniko::Mix::Normal,
+            fade,
+            Affine::IDENTITY,
+            &KRect::new(0.0, 0.0, sw, sh),
+        );
+    }
+
     // 2) Background pattern.
     draw_background_pattern(scene, transform, world_to_screen, background, page_rect, bg_image);
 
@@ -842,6 +868,10 @@ fn build_scene<F>(
     }
     if let Some((px, py)) = overlays.pointer_screen {
         draw_brush_cursor_overlay(scene, px, py, overlays);
+    }
+
+    if faded {
+        scene.pop_layer();
     }
 }
 

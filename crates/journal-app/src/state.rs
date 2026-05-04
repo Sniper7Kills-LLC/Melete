@@ -118,6 +118,11 @@ pub struct CanvasState {
     pub selection_resize_bbox_orig: Option<journal_core::Rect>,
     pub selection_resize_cumulative: (f64, f64),
     pub selection_resize_anchor: (f64, f64),
+    /// Wall-clock instant when the current page was switched in. The
+    /// canvas reads this to fade the new page surface in over a few
+    /// frames (audit §9). `None` once the fade is complete or no page
+    /// has loaded yet.
+    pub page_transition_started_at: Option<std::time::Instant>,
     pub thumbnail_cache: HashMap<PageId, cairo::ImageSurface>,
 
     /// Per-app stroke clipboard for copy/paste between pages.
@@ -249,6 +254,7 @@ pub fn new_shared_state(
         selection_resize_bbox_orig: None,
         selection_resize_cumulative: (1.0, 1.0),
         selection_resize_anchor: (0.0, 0.0),
+        page_transition_started_at: None,
         thumbnail_cache: HashMap::new(),
         stroke_clipboard: Vec::new(),
         placeholder_image: None,
@@ -462,9 +468,13 @@ pub fn set_current_page(state: &SharedState, page_id: PageId) {
         (strokes, page_date, overrides)
     };
     let mut s = state.borrow_mut();
+    let was_different = s.current_page_id != Some(page_id);
     s.strokes = strokes;
     s.current_stroke = None;
     s.current_page_id = Some(page_id);
+    if was_different {
+        s.page_transition_started_at = Some(std::time::Instant::now());
+    }
     s.current_page_date = page_date;
     s.current_page_overrides = overrides;
     s.history.clear();
