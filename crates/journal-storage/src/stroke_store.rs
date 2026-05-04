@@ -321,7 +321,9 @@ mod tests {
 
     #[test]
     fn round_trip_stroke_with_brush_recipe() {
-        use journal_core::{Brush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
+        use journal_core::{
+            Brush, BrushLayer, ColorMod, CursorShape, Geometry, TipShape, WidthMode,
+        };
         let (db, pid) = setup();
         let mut s = make_stroke(0.0, 0.0, 50.0);
         let recipe = Brush {
@@ -335,6 +337,7 @@ mod tests {
                 color: ColorMod { alpha_mult: 0.9, hue_shift_deg: 0.0 },
                 blend: BlendMode::Normal,
             }],
+            cursor: CursorShape::Auto,
         };
         s.brush_recipe = Some(recipe.clone());
         insert_stroke(db.conn(), &s, pid).unwrap();

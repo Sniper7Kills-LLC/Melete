@@ -220,6 +220,13 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     )
                 };
                 let cursor_radius = compute_cursor_radius(&s);
+                let (cursor_shape, cursor_tip) = match s.active_brush_recipe.as_ref() {
+                    Some(b) => (
+                        Some(b.cursor.clone()),
+                        b.layers.first().map(|l| l.tip.clone()),
+                    ),
+                    None => (None, None),
+                };
                 let overlays = journal_canvas::vello_renderer::OverlayState {
                     selection_bbox,
                     lasso_screen_points: s.lasso_points.clone(),
@@ -230,6 +237,8 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     cursor_opacity: s.pen.opacity,
                     show_page_bounds: s.show_page_bounds,
                     dark_mode: s.dark_mode,
+                    cursor_shape,
+                    cursor_tip,
                 };
                 (
                     s.transform,

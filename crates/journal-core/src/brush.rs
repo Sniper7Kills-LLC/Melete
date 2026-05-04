@@ -28,6 +28,40 @@ pub struct Brush {
     /// three (outer halo, mid, core); Pencil is two (sharp core,
     /// tilt-driven shading).
     pub layers: Vec<BrushLayer>,
+    /// Hover-cursor shape rendered on the canvas while this brush is
+    /// active. `Auto` derives the cursor from the first layer's tip
+    /// + width. Other variants override.
+    #[serde(default)]
+    pub cursor: CursorShape,
+}
+
+/// Hover-cursor shape for the brush. Drives the canvas overlay that
+/// shows where the next stroke will land.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum CursorShape {
+    /// Derive from the brush's first layer (tip shape + computed
+    /// width at the current pen base width). Default.
+    Auto,
+    /// Fixed circle outline.
+    Circle,
+    /// Ellipse with a width:height aspect ratio.
+    Oval { aspect: f64 },
+    /// Mirror the first layer's `TipShape` exactly. Useful for
+    /// calligraphy nibs where the cursor itself should hint at the
+    /// nib angle.
+    ExactTip,
+    /// User-designed polygon (same unit-space convention as
+    /// `TipShape::Custom`). Lets users draw a recognisable cursor
+    /// (e.g. crosshair, brush silhouette) independent of what the
+    /// brush actually paints.
+    Custom { points: Vec<(f64, f64)> },
+}
+
+impl Default for CursorShape {
+    fn default() -> Self {
+        CursorShape::Auto
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -76,6 +110,11 @@ pub enum Geometry {
     },
     /// Stamps the tip at fixed intervals along the path.
     DabStamp { step_mult: f64 },
+    /// Fan-bristle: emit `count` parallel offset Smooth strokes
+    /// spread `spread_mult * width` perpendicular to the stroke
+    /// direction. Each tine renders thin to read as bristle hair.
+    /// Reproduces `PaintbrushShape::Fan` natively.
+    FanOffset { count: u32, spread_mult: f64 },
 }
 
 /// How each emitted stamp is widened.
@@ -112,7 +151,7 @@ pub enum WidthMode {
 }
 
 /// What is stamped at each emitted position.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TipShape {
     Round,
@@ -120,6 +159,11 @@ pub enum TipShape {
     FlatNib { angle_deg: f64, aspect: f64 },
     Diamond,
     StarN { points: u8, inner_ratio: f64 },
+    /// User-designed polygon. Points are in unit space (-1..1 on
+    /// each axis around the stamp centre); the renderer scales them
+    /// by the layer's width. Minimum 3 points, edges connect in
+    /// order, the polygon auto-closes.
+    Custom { points: Vec<(f64, f64)> },
 }
 
 /// Per-layer multiplier on the stroke's pen color. Lets multi-pass
@@ -163,6 +207,53 @@ impl Brush {
                 color: ColorMod::default(),
                 blend: BlendMode::Normal,
             }],
+            cursor: CursorShape::default(),
         }
     }
+}
+
+/// Built-in nib-shape presets. Each preset is a `TipShape` with
+/// pre-tuned parameters; the editor surfaces them in a dropdown so
+/// the user can pick a calligraphy nib (Italic, Chisel, Brush, …)
+/// without typing angle/aspect numbers by hand. Custom polygons
+/// live alongside as `TipShape::Custom`.
+pub fn nib_presets() -> Vec<(&'static str, TipShape)> {
+    vec![
+        ("Round point", TipShape::Round),
+        ("Square block", TipShape::Square),
+        ("Diamond", TipShape::Diamond),
+        ("Italic 45°", TipShape::FlatNib { angle_deg: 45.0, aspect: 0.25 }),
+        ("Italic 30°", TipShape::FlatNib { angle_deg: 30.0, aspect: 0.20 }),
+        ("Chisel 0°", TipShape::FlatNib { angle_deg: 0.0, aspect: 0.18 }),
+        ("Broad-edge 60°", TipShape::FlatNib { angle_deg: 60.0, aspect: 0.30 }),
+        ("Star (5)", TipShape::StarN { points: 5, inner_ratio: 0.5 }),
+        ("Star (8)", TipShape::StarN { points: 8, inner_ratio: 0.4 }),
+        (
+            "Leaf",
+            TipShape::Custom {
+                points: vec![
+                    (0.0, -1.0),
+                    (0.6, -0.4),
+                    (0.4, 0.4),
+                    (0.0, 1.0),
+                    (-0.4, 0.4),
+                    (-0.6, -0.4),
+                ],
+            },
+        ),
+        (
+            "Arrow",
+            TipShape::Custom {
+                points: vec![
+                    (0.0, -1.0),
+                    (0.7, 0.4),
+                    (0.25, 0.2),
+                    (0.25, 1.0),
+                    (-0.25, 1.0),
+                    (-0.25, 0.2),
+                    (-0.7, 0.4),
+                ],
+            },
+        ),
+    ]
 }

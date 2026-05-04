@@ -303,7 +303,14 @@ pub fn build_editor_view(
                 }
             }
 
-            // Right panel — selected layer settings.
+            // Right panel — brush-level header (cursor shape) + per-layer settings.
+            build_brush_header(
+                &right_body,
+                editor_state.clone(),
+                rebuild_self.clone(),
+            );
+            right_body.append(&Separator::new(Orientation::Horizontal));
+
             let layers_now = editor_state.borrow().brush.layers.clone();
             let selected = editor_state.borrow().selected_layer;
             if let Some(layer) = layers_now.get(selected) {
@@ -558,6 +565,7 @@ fn default_seed_brush() -> Brush {
         id: Uuid::new_v4(),
         name: "New brush".into(),
         layers: vec![default_layer()],
+        cursor: journal_core::CursorShape::Auto,
     }
 }
 
@@ -590,6 +598,7 @@ fn layer_summary(layer: &BrushLayer, idx: usize) -> String {
         Geometry::Outline { .. } => "Outline",
         Geometry::Scatter { .. } => "Scatter",
         Geometry::DabStamp { .. } => "DabStamp",
+        Geometry::FanOffset { .. } => "FanOffset",
     };
     let w = match layer.width {
         WidthMode::Constant { .. } => "Const",
@@ -603,9 +612,22 @@ fn layer_summary(layer: &BrushLayer, idx: usize) -> String {
 
 // ── Right-panel settings form ─────────────────────────────────────
 
-const GEO_NAMES: &[&str] = &["Smooth", "Outline", "Scatter", "DabStamp"];
-const WIDTH_NAMES: &[&str] = &["Constant", "ClampedConstant", "Pressure", "DirectionAngled", "TiltBand"];
-const TIP_NAMES: &[&str] = &["Round", "Square", "FlatNib", "Diamond", "StarN"];
+const GEO_NAMES: &[&str] = &["Smooth", "Outline", "Scatter", "DabStamp", "FanOffset"];
+const WIDTH_NAMES: &[&str] = &[
+    "Constant",
+    "ClampedConstant",
+    "Pressure",
+    "DirectionAngled",
+    "TiltBand",
+];
+const TIP_NAMES: &[&str] = &[
+    "Round",
+    "Square",
+    "FlatNib",
+    "Diamond",
+    "StarN",
+    "Custom polygon",
+];
 const BLEND_NAMES: &[&str] = &[
     "Normal", "Multiply", "Screen", "Overlay", "Darken", "Lighten", "Erase",
 ];
@@ -616,6 +638,7 @@ fn geom_idx(g: &Geometry) -> u32 {
         Geometry::Outline { .. } => 1,
         Geometry::Scatter { .. } => 2,
         Geometry::DabStamp { .. } => 3,
+        Geometry::FanOffset { .. } => 4,
     }
 }
 fn width_idx(w: &WidthMode) -> u32 {
@@ -634,6 +657,7 @@ fn tip_idx(t: &TipShape) -> u32 {
         TipShape::FlatNib { .. } => 2,
         TipShape::Diamond => 3,
         TipShape::StarN { .. } => 4,
+        TipShape::Custom { .. } => 5,
     }
 }
 fn blend_idx(b: BlendMode) -> u32 {
@@ -658,6 +682,7 @@ fn default_geometry_for(idx: u32) -> Geometry {
             directional_bias_deg: None,
         },
         3 => Geometry::DabStamp { step_mult: 1.0 },
+        4 => Geometry::FanOffset { count: 3, spread_mult: 1.4 },
         _ => Geometry::Smooth { resample_step_mm: 1.0 },
     }
 }
@@ -684,8 +709,23 @@ fn default_tip_for(idx: u32) -> TipShape {
         2 => TipShape::FlatNib { angle_deg: 45.0, aspect: 0.3 },
         3 => TipShape::Diamond,
         4 => TipShape::StarN { points: 5, inner_ratio: 0.5 },
+        5 => TipShape::Custom {
+            points: default_custom_polygon(),
+        },
         _ => TipShape::Round,
     }
+}
+
+/// 8-vertex regular polygon for the initial Custom tip — a fair
+/// starting point the user can drag points from.
+fn default_custom_polygon() -> Vec<(f64, f64)> {
+    let n = 8;
+    (0..n)
+        .map(|i| {
+            let theta = (i as f64) * std::f64::consts::TAU / (n as f64) - std::f64::consts::FRAC_PI_2;
+            (theta.cos(), theta.sin())
+        })
+        .collect()
 }
 fn blend_from_idx(idx: u32) -> BlendMode {
     match idx {
@@ -697,6 +737,328 @@ fn blend_from_idx(idx: u32) -> BlendMode {
         6 => BlendMode::Erase,
         _ => BlendMode::Normal,
     }
+}
+
+// ── Brush-level header (name + cursor shape) ────────────────────
+
+const CURSOR_NAMES: &[&str] = &["Auto (matches tip)", "Circle", "Oval", "Exact tip", "Custom polygon"];
+
+fn cursor_idx(c: &journal_core::CursorShape) -> u32 {
+    use journal_core::CursorShape as CS;
+    match c {
+        CS::Auto => 0,
+        CS::Circle => 1,
+        CS::Oval { .. } => 2,
+        CS::ExactTip => 3,
+        CS::Custom { .. } => 4,
+    }
+}
+fn default_cursor_for(idx: u32) -> journal_core::CursorShape {
+    use journal_core::CursorShape as CS;
+    match idx {
+        1 => CS::Circle,
+        2 => CS::Oval { aspect: 0.5 },
+        3 => CS::ExactTip,
+        4 => CS::Custom {
+            points: default_custom_polygon(),
+        },
+        _ => CS::Auto,
+    }
+}
+
+fn build_brush_header(
+    parent: &GtkBox,
+    editor_state: Rc<RefCell<EditorState>>,
+    rebuild: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+) {
+    let title = Label::builder()
+        .label("Brush")
+        .halign(gtk4::Align::Start)
+        .build();
+    title.add_css_class("title-4");
+    parent.append(&title);
+
+    // Brush name field.
+    let name_entry = Entry::builder()
+        .text(editor_state.borrow().brush.name.clone())
+        .build();
+    parent.append(&row("Name", name_entry.upcast_ref()));
+    {
+        let editor_state = editor_state.clone();
+        name_entry.connect_changed(move |e| {
+            editor_state.borrow_mut().brush.name = e.text().to_string();
+        });
+    }
+
+    // Cursor shape dropdown.
+    let cursor_strs = StringList::new(CURSOR_NAMES);
+    let cursor_dd = DropDown::builder()
+        .model(&cursor_strs)
+        .hexpand(true)
+        .build();
+    cursor_dd.set_selected(cursor_idx(&editor_state.borrow().brush.cursor));
+    parent.append(&row("Cursor", cursor_dd.upcast_ref()));
+
+    // Cursor sub-params.
+    let cursor_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_start(20)
+        .build();
+    fill_cursor_subparams(
+        &cursor_box,
+        editor_state.borrow().brush.cursor.clone(),
+        editor_state.clone(),
+        rebuild.clone(),
+    );
+    parent.append(&cursor_box);
+
+    {
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        cursor_dd.connect_selected_notify(move |dd| {
+            let new_c = default_cursor_for(dd.selected());
+            editor_state.borrow_mut().brush.cursor = new_c;
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+}
+
+fn fill_cursor_subparams(
+    parent: &GtkBox,
+    cursor: journal_core::CursorShape,
+    editor_state: Rc<RefCell<EditorState>>,
+    rebuild: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+) {
+    use journal_core::CursorShape as CS;
+    match cursor {
+        CS::Auto | CS::Circle | CS::ExactTip => {
+            let l = Label::builder()
+                .label("(no extra parameters)")
+                .halign(gtk4::Align::Start)
+                .build();
+            l.add_css_class("dim-label");
+            parent.append(&l);
+        }
+        CS::Oval { aspect } => {
+            let s = SpinButton::with_range(0.05, 4.0, 0.05);
+            s.set_digits(2);
+            s.set_value(aspect);
+            parent.append(&row("Aspect (h:w)", s.upcast_ref()));
+            let editor_state = editor_state.clone();
+            let rebuild = rebuild.clone();
+            s.connect_value_changed(move |s| {
+                editor_state.borrow_mut().brush.cursor =
+                    CS::Oval { aspect: s.value() };
+                if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                    f();
+                }
+            });
+        }
+        CS::Custom { points } => {
+            // Reuse the polygon editor — but it's currently
+            // hard-wired to write into `layer.tip`. Build a
+            // dedicated cursor variant that writes into
+            // `brush.cursor`.
+            let editor = polygon_editor_cursor(points, editor_state.clone(), rebuild.clone());
+            parent.append(&editor);
+        }
+    }
+}
+
+/// Variant of `polygon_editor` that writes into `brush.cursor`
+/// (not a layer's tip). Same interactive UI.
+fn polygon_editor_cursor(
+    initial: Vec<(f64, f64)>,
+    editor_state: Rc<RefCell<EditorState>>,
+    rebuild: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+) -> GtkBox {
+    use journal_core::CursorShape as CS;
+    const CANVAS_SIZE: i32 = 220;
+    const HANDLE_R: f64 = 6.0;
+    let outer = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .build();
+    let area = DrawingArea::builder()
+        .content_width(CANVAS_SIZE)
+        .content_height(CANVAS_SIZE)
+        .build();
+    area.set_can_target(true);
+
+    let pts: Rc<RefCell<Vec<(f64, f64)>>> = Rc::new(RefCell::new(initial));
+    let drag_idx: Rc<RefCell<Option<usize>>> = Rc::new(RefCell::new(None));
+
+    let to_canvas = |ux: f64, uy: f64| -> (f64, f64) {
+        let half = CANVAS_SIZE as f64 * 0.5;
+        let r = half - 14.0;
+        (half + ux * r, half + uy * r)
+    };
+    let to_unit = move |cx: f64, cy: f64| -> (f64, f64) {
+        let half = CANVAS_SIZE as f64 * 0.5;
+        let r = half - 14.0;
+        ((cx - half) / r, (cy - half) / r)
+    };
+
+    {
+        let pts = pts.clone();
+        area.set_draw_func(move |_, ctx, _, _| {
+            ctx.set_source_rgb(0.97, 0.96, 0.93);
+            let _ = ctx.paint();
+            ctx.set_source_rgba(0.4, 0.4, 0.45, 0.3);
+            ctx.set_line_width(1.0);
+            ctx.move_to(0.0, CANVAS_SIZE as f64 * 0.5);
+            ctx.line_to(CANVAS_SIZE as f64, CANVAS_SIZE as f64 * 0.5);
+            ctx.move_to(CANVAS_SIZE as f64 * 0.5, 0.0);
+            ctx.line_to(CANVAS_SIZE as f64 * 0.5, CANVAS_SIZE as f64);
+            let _ = ctx.stroke();
+
+            let p = pts.borrow();
+            if p.len() >= 2 {
+                ctx.set_source_rgba(0.55, 0.3, 0.1, 0.3);
+                let (x0, y0) = to_canvas(p[0].0, p[0].1);
+                ctx.move_to(x0, y0);
+                for v in p.iter().skip(1) {
+                    let (x, y) = to_canvas(v.0, v.1);
+                    ctx.line_to(x, y);
+                }
+                ctx.close_path();
+                let _ = ctx.fill_preserve();
+                ctx.set_source_rgba(0.4, 0.2, 0.05, 1.0);
+                ctx.set_line_width(1.5);
+                let _ = ctx.stroke();
+            }
+            ctx.set_source_rgb(0.85, 0.45, 0.2);
+            for v in p.iter() {
+                let (x, y) = to_canvas(v.0, v.1);
+                ctx.arc(x, y, HANDLE_R, 0.0, std::f64::consts::TAU);
+                let _ = ctx.fill();
+            }
+        });
+    }
+
+    {
+        let area_widget: gtk4::Widget = area.clone().upcast();
+        let g = gtk4::GestureDrag::new();
+        g.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        let pts_d = pts.clone();
+        let drag_idx_d = drag_idx.clone();
+        let area_clone = area.clone();
+        g.connect_drag_begin(move |_, x, y| {
+            let p = pts_d.borrow();
+            let mut hit = None;
+            for (i, v) in p.iter().enumerate() {
+                let (cx, cy) = to_canvas(v.0, v.1);
+                let dx = cx - x;
+                let dy = cy - y;
+                if (dx * dx + dy * dy).sqrt() < HANDLE_R * 1.6 {
+                    hit = Some(i);
+                    break;
+                }
+            }
+            *drag_idx_d.borrow_mut() = hit;
+            area_clone.queue_draw();
+        });
+        let pts_d = pts.clone();
+        let drag_idx_d = drag_idx.clone();
+        let editor_state2 = editor_state.clone();
+        let rebuild2 = rebuild.clone();
+        let area_clone = area.clone();
+        g.connect_drag_update(move |g, dx, dy| {
+            let Some((sx, sy)) = g.start_point() else { return };
+            let cx = sx + dx;
+            let cy = sy + dy;
+            let (ux, uy) = to_unit(cx, cy);
+            let ux = ux.clamp(-1.0, 1.0);
+            let uy = uy.clamp(-1.0, 1.0);
+            let i = match *drag_idx_d.borrow() {
+                Some(i) => i,
+                None => return,
+            };
+            {
+                let mut p = pts_d.borrow_mut();
+                if let Some(v) = p.get_mut(i) {
+                    *v = (ux, uy);
+                }
+            }
+            editor_state2.borrow_mut().brush.cursor = CS::Custom {
+                points: pts_d.borrow().clone(),
+            };
+            area_clone.queue_draw();
+            if let Some(f) = rebuild2.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+        let drag_idx_d = drag_idx.clone();
+        g.connect_drag_end(move |_, _, _| {
+            *drag_idx_d.borrow_mut() = None;
+        });
+        area_widget.add_controller(g);
+    }
+    outer.append(&area);
+
+    let btn_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .halign(gtk4::Align::End)
+        .build();
+    let add_btn = Button::with_label("+ Vertex");
+    let rem_btn = Button::with_label("− Vertex");
+    btn_row.append(&rem_btn);
+    btn_row.append(&add_btn);
+    outer.append(&btn_row);
+
+    {
+        let pts_a = pts.clone();
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        let area_clone = area.clone();
+        add_btn.connect_clicked(move |_| {
+            let new_pts = {
+                let mut p = pts_a.borrow().clone();
+                if p.is_empty() {
+                    p.push((1.0, 0.0));
+                } else {
+                    let last = *p.last().unwrap();
+                    let first = p[0];
+                    let mid = ((last.0 + first.0) * 0.5, (last.1 + first.1) * 0.5);
+                    p.push(mid);
+                }
+                p
+            };
+            *pts_a.borrow_mut() = new_pts.clone();
+            editor_state.borrow_mut().brush.cursor = CS::Custom { points: new_pts };
+            area_clone.queue_draw();
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+    {
+        let pts_r = pts.clone();
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        let area_clone = area.clone();
+        rem_btn.connect_clicked(move |_| {
+            let new_pts = {
+                let mut p = pts_r.borrow().clone();
+                if p.len() > 3 {
+                    p.pop();
+                }
+                p
+            };
+            *pts_r.borrow_mut() = new_pts.clone();
+            editor_state.borrow_mut().brush.cursor = CS::Custom { points: new_pts };
+            area_clone.queue_draw();
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+
+    outer
 }
 
 /// Build the right-panel form for a single layer. Each input has a
@@ -773,11 +1135,53 @@ fn build_layer_settings(
         });
     }
 
-    // Tip dropdown.
+    // Tip dropdown + presets row + sub-params.
     let tip_strs = StringList::new(TIP_NAMES);
     let tip_dd = DropDown::builder().model(&tip_strs).hexpand(true).build();
     tip_dd.set_selected(tip_idx(&layer.tip));
     parent.append(&row("Tip", tip_dd.upcast_ref()));
+
+    // Nib preset shortcut — pick a curated TipShape (Italic 45°,
+    // Star, Leaf, etc.) without touching the dropdown.
+    let presets = journal_core::brush::nib_presets();
+    let preset_names: Vec<&str> = presets.iter().map(|(n, _)| *n).collect();
+    let preset_strs = StringList::new(&preset_names);
+    let preset_dd = DropDown::builder().model(&preset_strs).hexpand(true).build();
+    preset_dd.set_selected(0);
+    parent.append(&row("Nib preset", preset_dd.upcast_ref()));
+    {
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        let presets = presets.clone();
+        preset_dd.connect_selected_notify(move |dd| {
+            let idx = dd.selected() as usize;
+            if let Some((_, shape)) = presets.get(idx) {
+                if let Some(l) = editor_state.borrow_mut().brush.layers.get_mut(layer_idx) {
+                    l.tip = shape.clone();
+                }
+                if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                    f();
+                }
+            }
+        });
+    }
+
+    // Sub-params for the current Tip variant — angle/aspect for
+    // FlatNib, points/inner_ratio for StarN, polygon editor for
+    // Custom. Round/Square/Diamond have nothing to tune.
+    let tip_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_start(20)
+        .build();
+    fill_tip_subparams(
+        &tip_box,
+        layer.tip.clone(),
+        editor_state.clone(),
+        layer_idx,
+        rebuild.clone(),
+    );
+    parent.append(&tip_box);
 
     {
         let editor_state = editor_state.clone();
@@ -976,6 +1380,40 @@ fn fill_geometry_subparams(
             commit_geom(s, editor_state, layer_idx, rebuild, |val| {
                 Geometry::DabStamp { step_mult: val }
             });
+        }
+        Geometry::FanOffset { count, spread_mult } => {
+            let c = SpinButton::with_range(2.0, 16.0, 1.0);
+            c.set_digits(0);
+            c.set_value(count as f64);
+            parent.append(&row("Tine count", c.upcast_ref()));
+            let sp = SpinButton::with_range(0.0, 6.0, 0.05);
+            sp.set_digits(2);
+            sp.set_value(spread_mult);
+            parent.append(&row("Spread ×", sp.upcast_ref()));
+            let (c2, sp2) = (c.clone(), sp.clone());
+            let editor_state2 = editor_state.clone();
+            let rebuild2 = rebuild.clone();
+            let commit = Rc::new(move || {
+                if let Some(l) = editor_state2
+                    .borrow_mut()
+                    .brush
+                    .layers
+                    .get_mut(layer_idx)
+                {
+                    l.geometry = Geometry::FanOffset {
+                        count: c2.value() as u32,
+                        spread_mult: sp2.value(),
+                    };
+                }
+                if let Some(f) = rebuild2.borrow().as_ref().cloned() {
+                    f();
+                }
+            });
+            {
+                let commit = commit.clone();
+                c.connect_value_changed(move |_| commit());
+            }
+            sp.connect_value_changed(move |_| commit());
         }
     }
 }
@@ -1514,6 +1952,345 @@ fn draw_preview_hint(ctx: &gtk4::cairo::Context, w: i32, h: i32) {
     ctx.move_to(20.0, h as f64 * 0.5);
     let _ = ctx.show_text("Draw here to preview the brush. Stylus or mouse.");
     let _ = w;
+}
+
+// ── Tip sub-params + custom polygon editor ────────────────────────
+
+fn fill_tip_subparams(
+    parent: &GtkBox,
+    tip: TipShape,
+    editor_state: Rc<RefCell<EditorState>>,
+    layer_idx: usize,
+    rebuild: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+) {
+    match tip {
+        TipShape::Round | TipShape::Square | TipShape::Diamond => {
+            // No tunable params — emit a hint label.
+            let l = Label::builder()
+                .label("(no extra parameters)")
+                .halign(gtk4::Align::Start)
+                .build();
+            l.add_css_class("dim-label");
+            parent.append(&l);
+        }
+        TipShape::FlatNib { angle_deg, aspect } => {
+            let a = SpinButton::with_range(-180.0, 180.0, 1.0);
+            a.set_digits(1);
+            a.set_value(angle_deg);
+            parent.append(&row("Nib angle°", a.upcast_ref()));
+            let asp = SpinButton::with_range(0.05, 1.0, 0.05);
+            asp.set_digits(2);
+            asp.set_value(aspect);
+            parent.append(&row("Aspect (short:long)", asp.upcast_ref()));
+            let (a2, asp2) = (a.clone(), asp.clone());
+            let editor_state2 = editor_state.clone();
+            let rebuild2 = rebuild.clone();
+            let commit = Rc::new(move || {
+                if let Some(l) = editor_state2
+                    .borrow_mut()
+                    .brush
+                    .layers
+                    .get_mut(layer_idx)
+                {
+                    l.tip = TipShape::FlatNib {
+                        angle_deg: a2.value(),
+                        aspect: asp2.value(),
+                    };
+                }
+                if let Some(f) = rebuild2.borrow().as_ref().cloned() {
+                    f();
+                }
+            });
+            {
+                let commit = commit.clone();
+                a.connect_value_changed(move |_| commit());
+            }
+            asp.connect_value_changed(move |_| commit());
+        }
+        TipShape::StarN { points, inner_ratio } => {
+            let n = SpinButton::with_range(3.0, 24.0, 1.0);
+            n.set_digits(0);
+            n.set_value(points as f64);
+            parent.append(&row("Points", n.upcast_ref()));
+            let ir = SpinButton::with_range(0.05, 1.0, 0.05);
+            ir.set_digits(2);
+            ir.set_value(inner_ratio);
+            parent.append(&row("Inner ratio", ir.upcast_ref()));
+            let (n2, ir2) = (n.clone(), ir.clone());
+            let editor_state2 = editor_state.clone();
+            let rebuild2 = rebuild.clone();
+            let commit = Rc::new(move || {
+                if let Some(l) = editor_state2
+                    .borrow_mut()
+                    .brush
+                    .layers
+                    .get_mut(layer_idx)
+                {
+                    l.tip = TipShape::StarN {
+                        points: (n2.value() as u32).clamp(3, 255) as u8,
+                        inner_ratio: ir2.value(),
+                    };
+                }
+                if let Some(f) = rebuild2.borrow().as_ref().cloned() {
+                    f();
+                }
+            });
+            {
+                let commit = commit.clone();
+                n.connect_value_changed(move |_| commit());
+            }
+            ir.connect_value_changed(move |_| commit());
+        }
+        TipShape::Custom { points } => {
+            // Vertex polygon editor — draws the polygon with handles
+            // and lets the user drag them. Two helper buttons add /
+            // remove vertices.
+            let editor = polygon_editor(points, editor_state.clone(), layer_idx, rebuild.clone());
+            parent.append(&editor);
+        }
+    }
+}
+
+/// Draggable polygon editor for `TipShape::Custom`. Renders the
+/// polygon centred in a fixed-size canvas; each vertex is a draggable
+/// handle. Buttons below add / remove vertices.
+fn polygon_editor(
+    initial: Vec<(f64, f64)>,
+    editor_state: Rc<RefCell<EditorState>>,
+    layer_idx: usize,
+    rebuild: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+) -> GtkBox {
+    const CANVAS_SIZE: i32 = 220;
+    const HANDLE_R: f64 = 6.0;
+
+    let outer = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .build();
+
+    let area = DrawingArea::builder()
+        .content_width(CANVAS_SIZE)
+        .content_height(CANVAS_SIZE)
+        .build();
+    area.set_can_target(true);
+
+    let pts: Rc<RefCell<Vec<(f64, f64)>>> = Rc::new(RefCell::new(initial));
+    let drag_idx: Rc<RefCell<Option<usize>>> = Rc::new(RefCell::new(None));
+
+    // Map between unit-space (-1..1) and canvas-space (0..CANVAS_SIZE).
+    let to_canvas = |ux: f64, uy: f64| -> (f64, f64) {
+        let half = CANVAS_SIZE as f64 * 0.5;
+        let r = half - 14.0;
+        (half + ux * r, half + uy * r)
+    };
+    let to_unit = move |cx: f64, cy: f64| -> (f64, f64) {
+        let half = CANVAS_SIZE as f64 * 0.5;
+        let r = half - 14.0;
+        ((cx - half) / r, (cy - half) / r)
+    };
+
+    {
+        let pts = pts.clone();
+        area.set_draw_func(move |_, ctx, _, _| {
+            // Background.
+            ctx.set_source_rgb(0.97, 0.96, 0.93);
+            let _ = ctx.paint();
+            // Crosshair.
+            ctx.set_source_rgba(0.4, 0.4, 0.45, 0.3);
+            ctx.set_line_width(1.0);
+            ctx.move_to(0.0, CANVAS_SIZE as f64 * 0.5);
+            ctx.line_to(CANVAS_SIZE as f64, CANVAS_SIZE as f64 * 0.5);
+            ctx.move_to(CANVAS_SIZE as f64 * 0.5, 0.0);
+            ctx.line_to(CANVAS_SIZE as f64 * 0.5, CANVAS_SIZE as f64);
+            let _ = ctx.stroke();
+
+            // Polygon.
+            let p = pts.borrow();
+            if p.len() >= 2 {
+                ctx.set_source_rgba(0.2, 0.3, 0.55, 0.35);
+                let (x0, y0) = to_canvas(p[0].0, p[0].1);
+                ctx.move_to(x0, y0);
+                for v in p.iter().skip(1) {
+                    let (x, y) = to_canvas(v.0, v.1);
+                    ctx.line_to(x, y);
+                }
+                ctx.close_path();
+                let _ = ctx.fill_preserve();
+                ctx.set_source_rgba(0.15, 0.2, 0.4, 1.0);
+                ctx.set_line_width(1.5);
+                let _ = ctx.stroke();
+            }
+            // Handles.
+            ctx.set_source_rgb(0.85, 0.45, 0.2);
+            for v in p.iter() {
+                let (x, y) = to_canvas(v.0, v.1);
+                ctx.arc(x, y, HANDLE_R, 0.0, std::f64::consts::TAU);
+                let _ = ctx.fill();
+            }
+        });
+    }
+
+    // Drag pointer.
+    {
+        let area_widget: gtk4::Widget = area.clone().upcast();
+        let g = gtk4::GestureDrag::new();
+        g.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        let pts_d = pts.clone();
+        let drag_idx_d = drag_idx.clone();
+        let area_clone = area.clone();
+        g.connect_drag_begin(move |_, x, y| {
+            let p = pts_d.borrow();
+            let mut hit = None;
+            for (i, v) in p.iter().enumerate() {
+                let (cx, cy) = to_canvas(v.0, v.1);
+                let dx = cx - x;
+                let dy = cy - y;
+                if (dx * dx + dy * dy).sqrt() < HANDLE_R * 1.6 {
+                    hit = Some(i);
+                    break;
+                }
+            }
+            *drag_idx_d.borrow_mut() = hit;
+            area_clone.queue_draw();
+        });
+        let pts_d = pts.clone();
+        let drag_idx_d = drag_idx.clone();
+        let editor_state2 = editor_state.clone();
+        let rebuild2 = rebuild.clone();
+        let area_clone = area.clone();
+        g.connect_drag_update(move |g, dx, dy| {
+            let Some((sx, sy)) = g.start_point() else { return };
+            let cx = sx + dx;
+            let cy = sy + dy;
+            let (ux, uy) = to_unit(cx, cy);
+            let ux = ux.clamp(-1.0, 1.0);
+            let uy = uy.clamp(-1.0, 1.0);
+            let i = match *drag_idx_d.borrow() {
+                Some(i) => i,
+                None => return,
+            };
+            {
+                let mut p = pts_d.borrow_mut();
+                if let Some(v) = p.get_mut(i) {
+                    *v = (ux, uy);
+                }
+            }
+            // Push into brush.
+            if let Some(l) = editor_state2.borrow_mut().brush.layers.get_mut(layer_idx) {
+                l.tip = TipShape::Custom {
+                    points: pts_d.borrow().clone(),
+                };
+            }
+            area_clone.queue_draw();
+            if let Some(f) = rebuild2.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+        let drag_idx_d = drag_idx.clone();
+        g.connect_drag_end(move |_, _, _| {
+            *drag_idx_d.borrow_mut() = None;
+        });
+        area_widget.add_controller(g);
+    }
+    outer.append(&area);
+
+    // Add / Remove vertex buttons.
+    let btn_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .halign(gtk4::Align::End)
+        .build();
+    let add_btn = Button::with_label("+ Vertex");
+    let rem_btn = Button::with_label("− Vertex");
+    let reset_btn = Button::with_label("Reset");
+    btn_row.append(&reset_btn);
+    btn_row.append(&rem_btn);
+    btn_row.append(&add_btn);
+    outer.append(&btn_row);
+
+    // Helper: regenerate polygon ring from N vertices.
+    let regen_ring = |n: usize| -> Vec<(f64, f64)> {
+        (0..n)
+            .map(|i| {
+                let theta = (i as f64) * std::f64::consts::TAU / (n as f64)
+                    - std::f64::consts::FRAC_PI_2;
+                (theta.cos(), theta.sin())
+            })
+            .collect()
+    };
+
+    {
+        let pts_a = pts.clone();
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        let area_clone = area.clone();
+        add_btn.connect_clicked(move |_| {
+            let new_pts = {
+                let mut p = pts_a.borrow().clone();
+                // Insert midpoint between last and first.
+                if p.is_empty() {
+                    p.push((1.0, 0.0));
+                } else {
+                    let last = *p.last().unwrap();
+                    let first = p[0];
+                    let mid = ((last.0 + first.0) * 0.5, (last.1 + first.1) * 0.5);
+                    p.push(mid);
+                }
+                p
+            };
+            *pts_a.borrow_mut() = new_pts.clone();
+            if let Some(l) = editor_state.borrow_mut().brush.layers.get_mut(layer_idx) {
+                l.tip = TipShape::Custom { points: new_pts };
+            }
+            area_clone.queue_draw();
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+    {
+        let pts_r = pts.clone();
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        let area_clone = area.clone();
+        rem_btn.connect_clicked(move |_| {
+            let new_pts = {
+                let mut p = pts_r.borrow().clone();
+                if p.len() > 3 {
+                    p.pop();
+                }
+                p
+            };
+            *pts_r.borrow_mut() = new_pts.clone();
+            if let Some(l) = editor_state.borrow_mut().brush.layers.get_mut(layer_idx) {
+                l.tip = TipShape::Custom { points: new_pts };
+            }
+            area_clone.queue_draw();
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+    {
+        let pts_rs = pts.clone();
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        let area_clone = area.clone();
+        reset_btn.connect_clicked(move |_| {
+            let n = pts_rs.borrow().len().max(3);
+            let new_pts = regen_ring(n);
+            *pts_rs.borrow_mut() = new_pts.clone();
+            if let Some(l) = editor_state.borrow_mut().brush.layers.get_mut(layer_idx) {
+                l.tip = TipShape::Custom { points: new_pts };
+            }
+            area_clone.queue_draw();
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+
+    outer
 }
 
 /// Vello produces RGBA8 (R,G,B,A premultiplied). Cairo ARgb32 on

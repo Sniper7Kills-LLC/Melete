@@ -278,6 +278,13 @@ pub struct OverlayState {
     pub cursor_opacity: f32,
     pub show_page_bounds: bool,
     pub dark_mode: bool,
+    /// Cursor outline shape. `None` → default circle (legacy behaviour).
+    /// `Some(CursorShape)` overrides; `ExactTip` reads from `cursor_tip`.
+    pub cursor_shape: Option<journal_core::CursorShape>,
+    /// Tip shape used when `cursor_shape == Some(ExactTip)` or when
+    /// `Auto` resolves to the first layer's tip. Null → fallback to
+    /// circle.
+    pub cursor_tip: Option<journal_core::TipShape>,
 }
 
 impl Default for OverlayState {
@@ -292,6 +299,8 @@ impl Default for OverlayState {
             cursor_opacity: 1.0,
             show_page_bounds: false,
             dark_mode: false,
+            cursor_shape: None,
+            cursor_tip: None,
         }
     }
 }
@@ -931,6 +940,8 @@ fn draw_lasso_overlay_scene(scene: &mut Scene, points: &[(f64, f64)]) {
 
 fn draw_brush_cursor_overlay(scene: &mut Scene, px: f64, py: f64, ov: &OverlayState) {
     let radius = ov.cursor_radius.max(2.0);
+    let outline = build_cursor_outline(px, py, radius, ov);
+
     if ov.pointer_drawing {
         let alpha = (ov.cursor_opacity.clamp(0.2, 1.0) * 255.0) as u8;
         let fill = Brush::Solid(Color::from_rgba8(
@@ -939,11 +950,8 @@ fn draw_brush_cursor_overlay(scene: &mut Scene, px: f64, py: f64, ov: &OverlaySt
             ov.cursor_color.b,
             alpha,
         ));
-        let path = Circle::new((px, py), radius).to_path(0.05);
-        scene.fill(Fill::NonZero, Affine::IDENTITY, &fill, None, &path);
+        scene.fill(Fill::NonZero, Affine::IDENTITY, &fill, None, &outline);
     }
-    let ring = Circle::new((px, py), radius).to_path(0.05);
-    let halo = Circle::new((px, py), radius + 0.9).to_path(0.05);
     let (ring_color, halo_color) = if ov.dark_mode {
         (
             Color::from_rgba8(255, 255, 255, 217),
@@ -956,9 +964,64 @@ fn draw_brush_cursor_overlay(scene: &mut Scene, px: f64, py: f64, ov: &OverlaySt
         )
     };
     let ring_style = KStroke::new(1.25);
-    scene.stroke(&ring_style, Affine::IDENTITY, &Brush::Solid(ring_color), None, &ring);
+    scene.stroke(&ring_style, Affine::IDENTITY, &Brush::Solid(ring_color), None, &outline);
     let halo_style = KStroke::new(0.5);
-    scene.stroke(&halo_style, Affine::IDENTITY, &Brush::Solid(halo_color), None, &halo);
+    // Halo is the same outline scaled up slightly. For non-circular
+    // shapes we draw the same path again — simpler and visually fine.
+    scene.stroke(&halo_style, Affine::IDENTITY, &Brush::Solid(halo_color), None, &outline);
+}
+
+/// Build the cursor outline path based on `OverlayState.cursor_shape`.
+/// Falls back to a circle when shape is `None` or unresolved.
+fn build_cursor_outline(px: f64, py: f64, radius: f64, ov: &OverlayState) -> BezPath {
+    use journal_core::CursorShape as CS;
+    match ov.cursor_shape.as_ref() {
+        None | Some(CS::Auto) | Some(CS::Circle) => {
+            Circle::new((px, py), radius).to_path(0.05)
+        }
+        Some(CS::Oval { aspect }) => {
+            let asp = aspect.max(0.05);
+            let mut p = BezPath::new();
+            // Approximate ellipse with 32 segments.
+            let n = 32;
+            for i in 0..=n {
+                let t = (i as f64) * std::f64::consts::TAU / (n as f64);
+                let x = px + radius * t.cos();
+                let y = py + radius * asp * t.sin();
+                if i == 0 {
+                    p.move_to((x, y));
+                } else {
+                    p.line_to((x, y));
+                }
+            }
+            p.close_path();
+            p
+        }
+        Some(CS::ExactTip) => {
+            if let Some(tip) = ov.cursor_tip.as_ref() {
+                tip_polygon(tip, (px, py), radius)
+            } else {
+                Circle::new((px, py), radius).to_path(0.05)
+            }
+        }
+        Some(CS::Custom { points }) => {
+            if points.len() < 3 {
+                return Circle::new((px, py), radius).to_path(0.05);
+            }
+            let mut p = BezPath::new();
+            for (i, (ux, uy)) in points.iter().enumerate() {
+                let x = px + ux * radius;
+                let y = py + uy * radius;
+                if i == 0 {
+                    p.move_to((x, y));
+                } else {
+                    p.line_to((x, y));
+                }
+            }
+            p.close_path();
+            p
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2172,6 +2235,70 @@ fn emit_layer(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Bru
         Geometry::DabStamp { step_mult } => {
             emit_dab_stamp(scene, transform, stroke, layer, *step_mult)
         }
+        Geometry::FanOffset { count, spread_mult } => {
+            emit_fan_offset(scene, transform, stroke, layer, *count, *spread_mult)
+        }
+    }
+}
+
+/// FanOffset — emit `count` thin parallel offset Smooth strokes,
+/// spread perpendicular to the path. Reproduces the legacy
+/// `PaintbrushShape::Fan` look natively.
+fn emit_fan_offset(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    layer: &BrushLayer,
+    count: u32,
+    spread_mult: f64,
+) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let canvas_w = pen.base_width / zoc;
+    let pts = &stroke.points;
+    if pts.len() < 2 {
+        return;
+    }
+    let avg_pressure = (pts.iter().map(|p| p.pressure as f64).sum::<f64>()
+        / pts.len() as f64)
+        .max(0.2);
+    let total_width = canvas_w * avg_pressure * spread_mult;
+    let count = count.max(2);
+    let tine_w = (canvas_w * 0.18).max(0.4);
+    let brush = layer_brush(pen.color, pen.opacity, layer.color);
+
+    for i in 0..count {
+        let t = i as f64 / (count - 1) as f64;
+        let offset = (t - 0.5) * total_width;
+        let mut path = BezPath::new();
+        for (idx, p) in pts.iter().enumerate() {
+            let (tx, ty) = if idx == 0 {
+                let p1 = &pts[1];
+                (p1.x - p.x, p1.y - p.y)
+            } else if idx == pts.len() - 1 {
+                let p0 = &pts[idx - 1];
+                (p.x - p0.x, p.y - p0.y)
+            } else {
+                let p0 = &pts[idx - 1];
+                let p1 = &pts[idx + 1];
+                (p1.x - p0.x, p1.y - p0.y)
+            };
+            let tlen = (tx * tx + ty * ty).sqrt().max(1e-6);
+            let nx = -ty / tlen;
+            let ny = tx / tlen;
+            let ox = p.x + nx * offset;
+            let oy = p.y + ny * offset;
+            if idx == 0 {
+                path.move_to((ox, oy));
+            } else {
+                path.line_to((ox, oy));
+            }
+        }
+        let mut style = KStroke::new(tine_w);
+        style.start_cap = Cap::Round;
+        style.end_cap = Cap::Round;
+        style.join = Join::Round;
+        scene.stroke(&style, transform, &brush, None, &path);
     }
 }
 
@@ -2253,7 +2380,7 @@ fn emit_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Br
         return;
     }
     let brush = layer_brush(pen.color, pen.opacity, layer.color);
-    let (start_cap, end_cap, join) = caps_for_tip(layer.tip);
+    let (start_cap, end_cap, join) = caps_for_tip(&layer.tip);
 
     // Tilt-band is its own emission pattern (per-segment overlays).
     if let WidthMode::TiltBand { threshold, band_mult, alpha_scale } = layer.width {
@@ -2290,10 +2417,7 @@ fn emit_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Br
             }
             _ => width * 0.5,
         };
-        let path = match layer.tip {
-            TipShape::Square => square_path((p.x, p.y), r),
-            _ => Circle::new((p.x, p.y), r).to_path(0.05),
-        };
+        let path = tip_polygon(&layer.tip, (p.x, p.y), r);
         scene.fill(Fill::NonZero, transform, &brush, None, &path);
         return;
     }
@@ -2482,34 +2606,62 @@ fn emit_scatter(
             };
             let cx = p.x + theta.cos() * r;
             let cy = p.y + theta.sin() * r;
-            let path = match layer.tip {
-                TipShape::Square => square_path((cx, cy), dot_radius),
-                _ => Circle::new((cx, cy), dot_radius).to_path(0.05),
-            };
+            let path = tip_polygon(&layer.tip, (cx, cy), dot_radius);
             scene.fill(Fill::NonZero, transform, &brush, None, &path);
         }
     }
 }
 
-/// DabStamp — Phase-0 no-op. Reserved for future tip-stamp brushes
-/// (texture brushes, custom-tip dabs); none of the built-ins use it.
+/// DabStamp — fixed-interval stamping along the path. Each stamp is
+/// a tip-shaped polygon scaled by the layer's width.
 fn emit_dab_stamp(
-    _scene: &mut Scene,
-    _transform: Affine,
-    _stroke: &Stroke,
-    _layer: &BrushLayer,
-    _step_mult: f64,
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    layer: &BrushLayer,
+    step_mult: f64,
 ) {
-    tracing::debug!("DabStamp geometry not yet implemented (Phase 5)");
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let canvas_w = pen.base_width / zoc;
+    let pts = &stroke.points;
+    if pts.is_empty() {
+        return;
+    }
+    let brush = layer_brush(pen.color, pen.opacity, layer.color);
+
+    let avg_pressure = (pts.iter().map(|p| p.pressure as f64).sum::<f64>()
+        / pts.len() as f64)
+        .max(0.05);
+    let step = (canvas_w * step_mult).max(0.5);
+    let samples = if pts.len() == 1 {
+        vec![(pts[0].x, pts[0].y, pts[0].pressure as f64)]
+    } else {
+        resample_path(pts, step)
+    };
+    for &(x, y, press) in &samples {
+        let scale = match layer.width {
+            WidthMode::Constant { width_mult } => canvas_w * width_mult * 0.5,
+            WidthMode::ClampedConstant { width_mult, min_mm, max_mm } => {
+                ((canvas_w * width_mult) * 0.5).clamp(min_mm * 0.5, max_mm * 0.5)
+            }
+            WidthMode::Pressure { floor, amp } => canvas_w * (floor + amp * press) * 0.5,
+            WidthMode::DirectionAngled { .. } => canvas_w * 0.5,
+            WidthMode::TiltBand { .. } => canvas_w * 0.5,
+        };
+        let _ = avg_pressure;
+        let path = tip_polygon(&layer.tip, (x, y), scale);
+        scene.fill(Fill::NonZero, transform, &brush, None, &path);
+    }
 }
 
-fn caps_for_tip(tip: TipShape) -> (Cap, Cap, Join) {
+fn caps_for_tip(tip: &TipShape) -> (Cap, Cap, Join) {
     match tip {
         TipShape::Round => (Cap::Round, Cap::Round, Join::Round),
         TipShape::Square => (Cap::Square, Cap::Square, Join::Miter),
-        // FlatNib / Diamond / StarN don't have GPU-stroke caps; the
-        // render fn for those will eventually use DabStamp instead.
-        // Phase 0: degrade to round.
+        // Non-axis-aligned tips don't have GPU-stroke caps; stroking
+        // a path with FlatNib/Diamond/StarN/Custom degrades to round.
+        // For exact stamps use `Geometry::DabStamp`.
         _ => (Cap::Round, Cap::Round, Join::Round),
     }
 }
@@ -2523,4 +2675,82 @@ fn square_path(center: (f64, f64), half: f64) -> BezPath {
     p.line_to((cx - half, cy + half));
     p.close_path();
     p
+}
+
+/// Build a closed BezPath for a `TipShape` at `center`, scaled so
+/// that the unit-space `(±1, ±1)` corners land at `±scale`.
+fn tip_polygon(tip: &TipShape, center: (f64, f64), scale: f64) -> BezPath {
+    let (cx, cy) = center;
+    match tip {
+        TipShape::Round => Circle::new(center, scale).to_path(0.05),
+        TipShape::Square => square_path(center, scale),
+        TipShape::Diamond => {
+            let mut p = BezPath::new();
+            p.move_to((cx, cy - scale));
+            p.line_to((cx + scale, cy));
+            p.line_to((cx, cy + scale));
+            p.line_to((cx - scale, cy));
+            p.close_path();
+            p
+        }
+        TipShape::FlatNib { angle_deg, aspect } => {
+            let a = angle_deg.to_radians();
+            let cos = a.cos();
+            let sin = a.sin();
+            let half_long = scale;
+            let half_short = scale * aspect.max(0.05);
+            let pts: [(f64, f64); 4] = [
+                (-half_long, -half_short),
+                (half_long, -half_short),
+                (half_long, half_short),
+                (-half_long, half_short),
+            ];
+            let mut p = BezPath::new();
+            for (i, (x, y)) in pts.iter().enumerate() {
+                let rx = x * cos - y * sin;
+                let ry = x * sin + y * cos;
+                if i == 0 {
+                    p.move_to((cx + rx, cy + ry));
+                } else {
+                    p.line_to((cx + rx, cy + ry));
+                }
+            }
+            p.close_path();
+            p
+        }
+        TipShape::StarN { points, inner_ratio } => {
+            let n = (*points as usize).max(3);
+            let mut p = BezPath::new();
+            for i in 0..(n * 2) {
+                let theta = (i as f64) * std::f64::consts::PI / (n as f64);
+                let r = if i % 2 == 0 { scale } else { scale * inner_ratio };
+                let x = cx + r * theta.cos();
+                let y = cy + r * theta.sin() - scale * 0.0;
+                if i == 0 {
+                    p.move_to((x, y));
+                } else {
+                    p.line_to((x, y));
+                }
+            }
+            p.close_path();
+            p
+        }
+        TipShape::Custom { points } => {
+            if points.len() < 3 {
+                return Circle::new(center, scale).to_path(0.05);
+            }
+            let mut p = BezPath::new();
+            for (i, (ux, uy)) in points.iter().enumerate() {
+                let x = cx + ux * scale;
+                let y = cy + uy * scale;
+                if i == 0 {
+                    p.move_to((x, y));
+                } else {
+                    p.line_to((x, y));
+                }
+            }
+            p.close_path();
+            p
+        }
+    }
 }

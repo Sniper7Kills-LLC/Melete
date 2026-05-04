@@ -13,7 +13,9 @@
 //!
 //! See `docs/brush-engine.md` §4.3 for the design table.
 
-use journal_core::{BlendMode, Brush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
+use journal_core::{
+    BlendMode, Brush, BrushLayer, ColorMod, CursorShape, Geometry, TipShape, WidthMode,
+};
 use uuid::{uuid, Uuid};
 
 #[cfg(feature = "vello")]
@@ -97,6 +99,7 @@ pub fn pencil(
                 blend: BlendMode::Normal,
             },
         ],
+        cursor: CursorShape::Auto,
     }
 }
 
@@ -164,6 +167,7 @@ pub fn paintbrush(
                 blend: BlendMode::Normal,
             },
         ],
+        cursor: CursorShape::Auto,
     }
 }
 
