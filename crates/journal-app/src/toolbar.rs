@@ -4,8 +4,9 @@ use std::rc::Rc;
 use gtk4::graphene::Point as GraphenePoint;
 use gtk4::prelude::*;
 use gtk4::{
-    Box as GtkBox, Button, DrawingArea, GestureDrag, Image, MenuButton, Orientation, Popover,
-    PositionType, PropagationPhase, Scale, Separator, ToggleButton,
+    Box as GtkBox, Button, DrawingArea, FlowBox, GestureDrag, GestureLongPress, Image, Label,
+    MenuButton, Orientation, Popover, PositionType, PropagationPhase, Scale, Separator,
+    ToggleButton,
 };
 
 use crate::state::{SharedState, Tool};
@@ -579,6 +580,153 @@ fn icon_for_tool(tool: Tool) -> &'static str {
     }
 }
 
+/// Long-press palette popover for a color slot. Shows the current hex
+/// value, a "Save to palette" button (writes the slot color into the
+/// active drawing tool's per-tool palette in `state.tool_palettes`),
+/// and a swatch grid of the active tool's saved colors. Tapping a
+/// swatch overwrites the slot's color and dismisses. Audit §7.
+fn build_palette_popover(
+    state: SharedState,
+    slot_color: Rc<Cell<[u8; 4]>>,
+) -> Popover {
+    let popover = Popover::new();
+    popover.set_position(PositionType::Bottom);
+    popover.set_autohide(true);
+
+    let body = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .margin_top(8)
+        .margin_bottom(8)
+        .margin_start(8)
+        .margin_end(8)
+        .build();
+
+    let [r, g, b, _a] = slot_color.get();
+    let hex = format!("#{:02X}{:02X}{:02X}", r, g, b);
+    let hex_lbl = Label::builder().label(&hex).halign(gtk4::Align::Start).build();
+    hex_lbl.add_css_class("kbd");
+    body.append(&hex_lbl);
+
+    let save_btn = Button::with_label("Save to palette");
+    {
+        let state_c = state.clone();
+        let slot_color_c = slot_color.clone();
+        let popover_c = popover.clone();
+        save_btn.connect_clicked(move |_| {
+            let tool = state_c.borrow().tool;
+            let key = crate::tool_settings::tool_key(tool).map(|k| k.to_string());
+            let Some(key) = key else {
+                popover_c.popdown();
+                return;
+            };
+            let color = slot_color_c.get();
+            {
+                let mut s = state_c.borrow_mut();
+                let entry = s.tool_palettes.entry(key).or_default();
+                if !entry.iter().any(|c| *c == color) {
+                    entry.push(color);
+                }
+            }
+            crate::state::persist_tool_state(&state_c);
+            popover_c.popdown();
+        });
+    }
+    body.append(&save_btn);
+
+    let tool = state.borrow().tool;
+    let key = crate::tool_settings::tool_key(tool).map(|k| k.to_string());
+    let palette: Vec<[u8; 4]> = key
+        .as_deref()
+        .and_then(|k| state.borrow().tool_palettes.get(k).cloned())
+        .unwrap_or_default();
+
+    if palette.is_empty() {
+        let hint = Label::builder()
+            .label("No saved swatches yet — pick a color, then long-press the slot to save.")
+            .wrap(true)
+            .max_width_chars(28)
+            .build();
+        hint.add_css_class("dim-label");
+        body.append(&hint);
+    } else {
+        let title = Label::builder()
+            .label("Saved")
+            .halign(gtk4::Align::Start)
+            .build();
+        title.add_css_class("dim-label");
+        body.append(&title);
+
+        let flow = FlowBox::builder()
+            .max_children_per_line(6)
+            .min_children_per_line(6)
+            .selection_mode(gtk4::SelectionMode::None)
+            .row_spacing(4)
+            .column_spacing(4)
+            .build();
+        for color in palette {
+            let swatch = DrawingArea::new();
+            swatch.set_size_request(22, 22);
+            let color_cell: Rc<Cell<[u8; 4]>> = Rc::new(Cell::new(color));
+            {
+                let color_cell = color_cell.clone();
+                swatch.set_draw_func(move |_, cr, w, h| {
+                    let [cr_, cg, cb, ca] = color_cell.get();
+                    let cx = w as f64 / 2.0;
+                    let cy = h as f64 / 2.0;
+                    let radius = (cx.min(cy) - 1.0).max(1.0);
+                    cr.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
+                    cr.set_source_rgba(
+                        cr_ as f64 / 255.0,
+                        cg as f64 / 255.0,
+                        cb as f64 / 255.0,
+                        ca as f64 / 255.0,
+                    );
+                    let _ = cr.fill();
+                    cr.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
+                    cr.set_source_rgba(0.0, 0.0, 0.0, 0.4);
+                    cr.set_line_width(0.8);
+                    let _ = cr.stroke();
+                });
+            }
+            let btn = Button::builder().build();
+            btn.add_css_class("flat");
+            btn.set_size_request(28, 28);
+            btn.set_child(Some(&swatch));
+            {
+                let state_c = state.clone();
+                let slot_color_c = slot_color.clone();
+                let popover_c = popover.clone();
+                let color_cell = color_cell.clone();
+                btn.connect_clicked(move |_| {
+                    let [r, g, b, a] = color_cell.get();
+                    slot_color_c.set([r, g, b, a]);
+                    {
+                        let mut s = state_c.borrow_mut();
+                        s.pen.color = journal_core::Color { r, g, b, a };
+                        if !crate::state::tool_is_drawing(s.tool) {
+                            s.tool = Tool::Pen;
+                        }
+                    }
+                    let mut cfg = crate::config::load();
+                    if cfg.color_slots.is_empty() {
+                        cfg.color_slots.push([r, g, b, a]);
+                    }
+                    if let Err(e) = crate::config::save(&cfg) {
+                        tracing::warn!("save color slot from palette: {e}");
+                    }
+                    popover_c.popdown();
+                });
+            }
+            flow.insert(&btn, -1);
+        }
+        body.append(&flow);
+    }
+
+    popover.set_child(Some(&body));
+    popover
+}
+
 /// Build the color-slot row. Each slot is a small button rendering a filled
 /// circle in the slot's color. Tapping a slot:
 ///   1. Sets `state.pen.color` to the slot's color (and switches to a
@@ -754,6 +902,32 @@ fn build_color_slots(state: SharedState, slots: &[[u8; 4]]) -> GtkBox {
                 picker.popup();
                 *active_picker.borrow_mut() = Some(picker.clone());
             });
+        }
+
+        // Long-press → palette popover. Touch users get a discoverable
+        // path to the per-tool palette (audit §7) without losing the
+        // existing tap-to-pick RGB behaviour.
+        {
+            let state = state.clone();
+            let slot_color = slot_color.clone();
+            let active_picker = active_picker.clone();
+            let btn_for_palette = btn.clone();
+            let long = GestureLongPress::new();
+            long.set_propagation_phase(PropagationPhase::Capture);
+            long.set_touch_only(false);
+            long.connect_pressed(move |_, _, _| {
+                if let Some(prev) = active_picker.borrow_mut().take() {
+                    prev.popdown();
+                }
+                let popover = build_palette_popover(state.clone(), slot_color.clone());
+                popover.set_parent(&btn_for_palette);
+                // Tear the popover off the button on close so repeated
+                // long-presses don't pile up child popovers under the slot.
+                popover.connect_closed(|p| p.unparent());
+                popover.popup();
+                *active_picker.borrow_mut() = Some(popover);
+            });
+            btn.add_controller(long);
         }
 
         row.append(&btn);
