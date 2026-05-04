@@ -92,6 +92,13 @@ pub struct AppConfig {
     /// the developer-mode tool settings dialog.
     #[serde(default)]
     pub brush_params: Option<journal_canvas::vello_renderer::BrushParams>,
+    /// Per-tool composable-brush assignment. Keys are tool keys
+    /// ("pen", "pencil", …); values are `Brush.id`s that resolve to
+    /// either a built-in brush (constant ID) or a user-saved brush
+    /// (`brushes.toml`). Missing/unresolved IDs fall back to the
+    /// legacy adapter at render time.
+    #[serde(default)]
+    pub tool_brush_assignments: std::collections::HashMap<String, uuid::Uuid>,
 }
 
 /// True when developer-only UI (e.g. the per-tool brush settings dialog)
@@ -128,6 +135,7 @@ impl Default for AppConfig {
             tool_options_docked: false,
             tool_palettes: std::collections::HashMap::new(),
             brush_params: None,
+            tool_brush_assignments: std::collections::HashMap::new(),
         }
     }
 }

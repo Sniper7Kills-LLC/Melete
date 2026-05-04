@@ -440,6 +440,7 @@ fn build_ui(app: &adw::Application) -> Result<()> {
     let state = state::new_shared_state(backend, templates, notebook_templates);
     state::reload_placeholder(&state);
     state::load_tool_settings_from_config(&state);
+    state::load_tool_brush_assignments(&state);
 
     let startup_cfg = config::load();
     let default_w = startup_cfg.window_width.unwrap_or(1280);

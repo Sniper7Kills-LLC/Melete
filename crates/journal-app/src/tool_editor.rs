@@ -513,9 +513,26 @@ pub fn build_editor_view(
             s.active_brush_recipe = Some(brush.clone());
             let tool = s.tool;
             if let Some(key) = crate::tool_settings::tool_key(tool) {
-                s.tool_brushes.insert(key.to_string(), brush);
+                s.tool_brushes.insert(key.to_string(), brush.clone());
+            }
+            // Make sure the brush is referenceable across restarts —
+            // built-ins are constructed on demand, but custom brushes
+            // must live in `brushes.toml` so `resolve_id` can find
+            // them next boot.
+            let is_builtin = crate::brush_library::built_ins()
+                .iter()
+                .any(|b| b.id == brush.id);
+            if !is_builtin
+                && !s.brush_library.iter().any(|b| b.id == brush.id)
+            {
+                s.brush_library.push(brush.clone());
+                let snap = s.brush_library.clone();
+                if let Err(e) = crate::brush_library::save(&snap) {
+                    tracing::warn!("brush library save: {e}");
+                }
             }
             drop(s);
+            crate::state::persist_tool_state(&state_outer);
             (on_done)();
         });
     }

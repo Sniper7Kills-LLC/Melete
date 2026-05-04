@@ -372,10 +372,35 @@ pub fn persist_tool_state(state: &SharedState) {
     cfg.active_tool_preset = s.active_tool_preset.clone();
     cfg.brush_params = Some(s.brush_params);
     cfg.tool_palettes = s.tool_palettes.clone();
+    cfg.tool_brush_assignments = s
+        .tool_brushes
+        .iter()
+        .map(|(k, b)| (k.clone(), b.id))
+        .collect();
     drop(s);
     if let Err(e) = crate::config::save(&cfg) {
         tracing::warn!("persist tool state: {e}");
     }
+}
+
+/// Resolve `cfg.tool_brush_assignments` (key→Uuid) against built-in
+/// + user-library brushes; populate `state.tool_brushes`. IDs that
+/// don't resolve (e.g. a custom brush the user has since deleted)
+/// are silently dropped.
+pub fn load_tool_brush_assignments(state: &SharedState) {
+    let cfg = crate::config::load();
+    let mut s = state.borrow_mut();
+    let library = s.brush_library.clone();
+    for (key, id) in cfg.tool_brush_assignments {
+        if let Some(brush) = crate::brush_library::resolve_id(id, &library) {
+            s.tool_brushes.insert(key, brush);
+        }
+    }
+    // After populating, snap the active tool's recipe to its slot.
+    let tool = s.tool;
+    let active = crate::tool_settings::tool_key(tool)
+        .and_then(|k| s.tool_brushes.get(k).cloned());
+    s.active_brush_recipe = active;
 }
 
 /// Reload placeholder image + text from on-disk config into the state.

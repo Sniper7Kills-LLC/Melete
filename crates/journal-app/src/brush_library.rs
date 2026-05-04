@@ -12,8 +12,10 @@
 
 use std::path::PathBuf;
 
+use journal_canvas::built_in_brushes as bi;
 use journal_core::Brush;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BrushLibraryFile {
@@ -42,6 +44,31 @@ pub fn load() -> Vec<Brush> {
             Vec::new()
         }
     }
+}
+
+/// All built-in compositions, freshly constructed with their default
+/// per-style tuning. Used by `resolve_id` to look up an assignment.
+/// (Built-ins aren't stored anywhere persistent because they're
+/// derived from `BrushParams::default()`.)
+pub fn built_ins() -> Vec<Brush> {
+    vec![
+        bi::pen(0.6, 0.4),
+        bi::pencil(0.4, 0.9, 0.12, 8.0, 0.22),
+        bi::highlighter(0.6, 0.4),
+        bi::paintbrush(1.6, 1.4, 0.95, 0.07, 0.20, 0.95),
+        bi::spray(36, 0.06, 0.35),
+        bi::calligraphy(45.0, 0.18, 0.5, true),
+    ]
+}
+
+/// Look up a brush by id across built-ins + the user library. Used
+/// to materialise per-tool brush assignments stored as just the id
+/// in `config.toml::tool_brush_assignments`.
+pub fn resolve_id(id: Uuid, user_library: &[Brush]) -> Option<Brush> {
+    built_ins()
+        .into_iter()
+        .find(|b| b.id == id)
+        .or_else(|| user_library.iter().find(|b| b.id == id).cloned())
 }
 
 pub fn save(brushes: &[Brush]) -> std::io::Result<()> {
