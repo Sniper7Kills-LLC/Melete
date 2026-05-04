@@ -699,7 +699,7 @@ pub fn build_editor_view(
     root.append(&action_row);
 
     // ── Meta row ─────────────────────────────────────────────────────────────
-    let meta_row = build_meta_row(&es);
+    let meta_row = build_meta_row(&es, &page_templates);
     root.append(&meta_row);
 
     root.append(&Separator::new(Orientation::Horizontal));
@@ -792,7 +792,10 @@ pub fn build_editor_view(
 
 // ─── Meta row ────────────────────────────────────────────────────────────────
 
-fn build_meta_row(es: &Rc<RefCell<EditorState>>) -> GtkBox {
+fn build_meta_row(
+    es: &Rc<RefCell<EditorState>>,
+    page_templates: &Rc<Vec<PageTemplate>>,
+) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(12)
@@ -813,8 +816,10 @@ fn build_meta_row(es: &Rc<RefCell<EditorState>>) -> GtkBox {
             .build();
         {
             let es = es.clone();
+            let pts = page_templates.clone();
             entry.connect_changed(move |e| {
                 es.borrow_mut().template.name = e.text().to_string();
+                refresh_layout_preview(&es, &pts);
             });
         }
         col.append(&entry);
@@ -851,11 +856,13 @@ fn build_meta_row(es: &Rc<RefCell<EditorState>>) -> GtkBox {
         let dd = DropDown::builder().model(&model).selected(sel).build();
         {
             let es = es.clone();
+            let pts = page_templates.clone();
             dd.connect_selected_notify(move |d| {
                 es.borrow_mut().template.grouping = match d.selected() {
                     1 => PlannerGrouping::Week,
                     _ => PlannerGrouping::Month,
                 };
+                refresh_layout_preview(&es, &pts);
             });
         }
         col.append(&dd);
