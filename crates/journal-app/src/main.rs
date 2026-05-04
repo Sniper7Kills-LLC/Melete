@@ -171,7 +171,12 @@ scrollbar slider:hover { background-color: alpha(@amber_accent, 0.78); }
     min-width: 28px;
     min-height: 28px;
     padding: 2px;
+    transition: transform 120ms cubic-bezier(0.2, 0.8, 0.4, 1.2),
+                background-color 120ms ease;
 }
+/* Selected tool slot pops; un-selected slots settle back. Keeps the
+   active tool visually emphasized without an extra ring. */
+.floating-toolbar .compact-tool:checked { transform: scale(1.08); }
 .floating-toolbar .compact-tool image { -gtk-icon-size: 16px; }
 .floating-toolbar .compact-scale { min-height: 22px; }
 .floating-toolbar .compact-scale trough { min-height: 4px; }
@@ -199,6 +204,26 @@ scrollbar slider:hover { background-color: alpha(@amber_accent, 0.78); }
     border-color: @accent_color;
     box-shadow: 0 4px 12px alpha(black, 0.15);
 }
+/* FlowBox stagger reveal — first ~12 children fade-in with increasing
+   delay so the home grid lands instead of popping. The grid itself is
+   already double-buffered by GTK; this is purely cosmetic. */
+@keyframes card-rise {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0);    }
+}
+flowbox > flowboxchild .notebook-card { animation: card-rise 240ms ease-out both; }
+flowbox > flowboxchild:nth-child(1)  .notebook-card { animation-delay: 0ms;   }
+flowbox > flowboxchild:nth-child(2)  .notebook-card { animation-delay: 30ms;  }
+flowbox > flowboxchild:nth-child(3)  .notebook-card { animation-delay: 60ms;  }
+flowbox > flowboxchild:nth-child(4)  .notebook-card { animation-delay: 90ms;  }
+flowbox > flowboxchild:nth-child(5)  .notebook-card { animation-delay: 120ms; }
+flowbox > flowboxchild:nth-child(6)  .notebook-card { animation-delay: 150ms; }
+flowbox > flowboxchild:nth-child(7)  .notebook-card { animation-delay: 180ms; }
+flowbox > flowboxchild:nth-child(8)  .notebook-card { animation-delay: 210ms; }
+flowbox > flowboxchild:nth-child(9)  .notebook-card { animation-delay: 240ms; }
+flowbox > flowboxchild:nth-child(10) .notebook-card { animation-delay: 270ms; }
+flowbox > flowboxchild:nth-child(11) .notebook-card { animation-delay: 300ms; }
+flowbox > flowboxchild:nth-child(12) .notebook-card { animation-delay: 330ms; }
 .notebook-card .card-title    { font-weight: 700; font-size: 1.1em; }
 .notebook-card .card-subtitle { opacity: 0.6; font-size: 0.85em; }
 .notebook-card .card-kind     {
@@ -287,6 +312,14 @@ scrollbar slider:hover { background-color: alpha(@amber_accent, 0.78); }
     opacity: 1.0;
     background-color: alpha(@accent_color, 0.20);
 }
+/* Brief pulse when the zoom value changes — the badge reads as "I just
+   updated" without a numeric tween. The class is added by the zoom
+   handler and removed after ~140ms. */
+@keyframes zoom-pulse {
+    0%   { background-color: alpha(@amber_accent, 0.55); transform: scale(1.06); }
+    100% { background-color: transparent;                 transform: scale(1.0);  }
+}
+.zoom-badge.pulse { animation: zoom-pulse 140ms ease-out; }
 
 /* ── Notebook-template editor: drop zones, hints, preview ───────────── */
 .nbtc-drop-zone {

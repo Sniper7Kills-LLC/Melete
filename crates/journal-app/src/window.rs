@@ -850,6 +850,16 @@ fn build_zoom_corner(state: SharedState, canvas: DrawingArea) -> GtkBox {
             if last.get() != pct {
                 last.set(pct);
                 badge_for_tick.set_label(&format!("{}%", pct));
+                // Brief amber pulse on every zoom change so the value
+                // pop reads as "I just updated" — see CSS .zoom-badge.pulse.
+                badge_for_tick.add_css_class("pulse");
+                let badge_for_clear = badge_for_tick.clone();
+                gtk4::glib::timeout_add_local_once(
+                    std::time::Duration::from_millis(160),
+                    move || {
+                        badge_for_clear.remove_css_class("pulse");
+                    },
+                );
             }
             reset_btn.set_visible(has_grid);
             gtk4::glib::ControlFlow::Continue
