@@ -334,6 +334,7 @@ mod tests {
                 geometry: Geometry::Smooth { resample_step_mm: 0.8 },
                 width: WidthMode::Pressure { floor: 0.5, amp: 0.5 },
                 tip: TipShape::Round,
+                tip_scale: 1.0,
                 color: ColorMod { alpha_mult: 0.9, hue_shift_deg: 0.0 },
                 blend: BlendMode::Normal,
             }],

@@ -2427,7 +2427,7 @@ fn emit_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Br
                 canvas_w * (floor + amp * (p.pressure as f64).max(0.05)) * 0.5
             }
             _ => width * 0.5,
-        };
+        } * layer.tip_scale.max(0.0);
         let path = tip_polygon(&layer.tip, (p.x, p.y), r);
         scene.fill(Fill::NonZero, transform, &brush, None, &path);
         return;
@@ -2472,7 +2472,7 @@ fn emit_smooth_stamped(
             }
             WidthMode::DirectionAngled { .. } => canvas_w * 0.5,
             WidthMode::TiltBand { .. } => canvas_w * 0.5,
-        };
+        } * layer.tip_scale.max(0.0);
         let path = tip_polygon(&layer.tip, (x, y), scale);
         scene.fill(Fill::NonZero, transform, &brush, None, &path);
     }
@@ -2635,7 +2635,7 @@ fn emit_scatter(
         _ => 0.06,
     };
     // Match legacy SprayParams::min_dot_radius default.
-    let dot_radius = (radius * dot_factor).max(0.35);
+    let dot_radius = (radius * dot_factor).max(0.35) * layer.tip_scale.max(0.0);
     let brush = layer_brush(pen.color, pen.opacity, layer.color);
     let cone_half = directional_bias_deg.unwrap_or(0.0).to_radians();
 
@@ -2696,7 +2696,7 @@ fn emit_dab_stamp(
             WidthMode::Pressure { floor, amp } => canvas_w * (floor + amp * press) * 0.5,
             WidthMode::DirectionAngled { .. } => canvas_w * 0.5,
             WidthMode::TiltBand { .. } => canvas_w * 0.5,
-        };
+        } * layer.tip_scale.max(0.0);
         let _ = avg_pressure;
         let path = tip_polygon(&layer.tip, (x, y), scale);
         scene.fill(Fill::NonZero, transform, &brush, None, &path);

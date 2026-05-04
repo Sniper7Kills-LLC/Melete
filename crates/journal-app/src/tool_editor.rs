@@ -587,6 +587,7 @@ fn default_layer() -> BrushLayer {
         geometry: Geometry::Smooth { resample_step_mm: 1.0 },
         width: WidthMode::Pressure { floor: 0.6, amp: 0.4 },
         tip: TipShape::Round,
+        tip_scale: 1.0,
         color: ColorMod::default(),
         blend: BlendMode::Normal,
     }
@@ -1500,6 +1501,37 @@ fn build_layer_settings(
     // tip polygon at fixed scale so the user can see what shape
     // they're picking.
     parent.append(&build_nib_preview(layer.tip.clone()));
+
+    // Tip size multiplier — independent from line width. Lets users
+    // build "thin pen line that paints big stars" by combining a
+    // small `width.Constant` with a high `tip_scale`.
+    let tip_scale_spin = SpinButton::with_range(0.05, 50.0, 0.1);
+    tip_scale_spin.set_digits(2);
+    tip_scale_spin.set_value(layer.tip_scale);
+    tip_scale_spin.set_tooltip_text(Some(
+        "Multiplier on the tip stamp size, applied AFTER the Width \
+         formula. 1.0 = same size as the Width says. 5.0 = stamps 5× \
+         bigger. Doesn't affect Round/Square continuous-stroke paths \
+         (those follow Width directly).",
+    ));
+    parent.append(&row("Tip size ×", tip_scale_spin.upcast_ref()));
+    parent.append(&dim(
+        "Decouples stamp size from line width. Set Width to a thin \
+         Constant (e.g. 0.3) and Tip size to a big number (e.g. 8) to \
+         get a thin path that drops giant stamps along it.",
+    ));
+    {
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        tip_scale_spin.connect_value_changed(move |s| {
+            if let Some(l) = editor_state.borrow_mut().brush.layers.get_mut(layer_idx) {
+                l.tip_scale = s.value();
+            }
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
 
     // Nib preset shortcut — pick a curated TipShape (Italic 45°,
     // Star, Leaf, etc.) without touching the dropdown.

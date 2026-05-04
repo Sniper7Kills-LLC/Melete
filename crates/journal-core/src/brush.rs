@@ -77,6 +77,17 @@ pub struct BrushLayer {
     pub geometry: Geometry,
     pub width: WidthMode,
     pub tip: TipShape,
+    /// Multiplier on the computed tip stamp size, applied AFTER the
+    /// width formula. Lets users decouple stamp size from stroke
+    /// width — e.g. a thin pen line that paints big stars
+    /// (`width.Constant{0.3}` + `tip_scale = 8.0`). 1.0 = no
+    /// extra scaling. Affects every code path that stamps a
+    /// `tip_polygon` (Smooth-stamp fallback, DabStamp, Scatter,
+    /// single-point Smooth) but not GPU stroking (Round + Square
+    /// on Smooth) — those follow `width` directly so the trace
+    /// stays continuous.
+    #[serde(default = "default_tip_scale")]
+    pub tip_scale: f64,
     #[serde(default)]
     pub color: ColorMod,
     #[serde(default = "default_blend_normal")]
@@ -85,6 +96,9 @@ pub struct BrushLayer {
 
 fn default_true() -> bool {
     true
+}
+fn default_tip_scale() -> f64 {
+    1.0
 }
 fn default_blend_normal() -> BlendMode {
     BlendMode::Normal
@@ -210,6 +224,7 @@ impl Brush {
                 geometry,
                 width,
                 tip,
+                tip_scale: 1.0,
                 color: ColorMod::default(),
                 blend: BlendMode::Normal,
             }],

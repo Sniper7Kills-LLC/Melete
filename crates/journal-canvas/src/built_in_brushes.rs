@@ -81,6 +81,7 @@ pub fn pencil(
                     max_mm: core_clamp_max,
                 },
                 tip: TipShape::Round,
+                tip_scale: 1.0,
                 color: ColorMod::default(),
                 blend: BlendMode::Normal,
             },
@@ -95,6 +96,7 @@ pub fn pencil(
                     alpha_scale: tilt_alpha_scale,
                 },
                 tip: TipShape::Round,
+                tip_scale: 1.0,
                 color: ColorMod::default(),
                 blend: BlendMode::Normal,
             },
@@ -133,6 +135,7 @@ pub fn paintbrush(
                     amp: outer_w,
                 },
                 tip: TipShape::Round,
+                tip_scale: 1.0,
                 color: ColorMod {
                     alpha_mult: outer_alpha,
                     hue_shift_deg: 0.0,
@@ -147,6 +150,7 @@ pub fn paintbrush(
                     amp: mid_w,
                 },
                 tip: TipShape::Round,
+                tip_scale: 1.0,
                 color: ColorMod {
                     alpha_mult: mid_alpha,
                     hue_shift_deg: 0.0,
@@ -161,6 +165,7 @@ pub fn paintbrush(
                     amp: core_width_mult,
                 },
                 tip: TipShape::Round,
+                tip_scale: 1.0,
                 color: ColorMod {
                     alpha_mult: core_alpha,
                     hue_shift_deg: 0.0,
