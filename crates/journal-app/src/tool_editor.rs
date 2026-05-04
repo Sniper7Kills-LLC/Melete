@@ -612,10 +612,23 @@ pub fn build_editor_view(
         });
     }
 
-    // Cancel.
+    // Cancel — back button + Escape key.
     {
         let on_done = on_done.clone();
         back_btn.connect_clicked(move |_| (on_done)());
+    }
+    {
+        let on_done = on_done.clone();
+        let key = gtk4::EventControllerKey::new();
+        key.set_propagation_phase(gtk4::PropagationPhase::Capture);
+        key.connect_key_pressed(move |_, keyval, _keycode, _state| {
+            if keyval == gtk4::gdk::Key::Escape {
+                (on_done)();
+                return gtk4::glib::Propagation::Stop;
+            }
+            gtk4::glib::Propagation::Proceed
+        });
+        root.add_controller(key);
     }
 
     // Save as…

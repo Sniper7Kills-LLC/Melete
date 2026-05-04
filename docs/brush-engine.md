@@ -1,6 +1,6 @@
 # Change Document: Composable Brush Engine + Tool Editor
 
-**Status:** Draft
+**Status:** Shipped (2026-05-04). Phases 0 → 5 all landed; see "Sign-off" at bottom.
 **Owner:** S7K
 **Date:** 2026-05-04
 **Scope:** Replace the hardcoded `BrushStyle` enum + per-style render
@@ -372,9 +372,38 @@ renderer-only refactor; Phase 2 onward is user-facing.
 
 ## Sign-off Checklist (before merging Phase 5)
 
-- [ ] Golden-image regression green for full built-in corpus
-- [ ] Manual checklist (§8.5) walked through on Framework 12 + stylus
-- [ ] Stroke serialization round-trip green
-- [ ] No `BrushStyle` enum match outside `legacy_brush_for`
-- [ ] CLAUDE.md updated (renderer line, brush engine note)
-- [ ] Tagged release with clear "brush engine v1" notes
+- [ ] Golden-image regression green for full built-in corpus  *(skipped — manual smoke gate used instead; recorded as a follow-up)*
+- [x] Manual checklist (§8.5) walked through on Framework 12 + stylus
+- [x] Stroke serialization round-trip green (storage tests + round_trip_stroke_with_brush_recipe)
+- [x] No `BrushStyle` enum match outside `legacy_brush_for`
+- [x] CLAUDE.md updated (renderer line, brush engine note)
+- [ ] Tagged release with clear "brush engine v1" notes  *(pending user decision)*
+
+## Post-ship additions (not in original plan)
+
+- `BrushLayer.tip_scale` — per-layer multiplier on stamp size,
+  decoupled from `WidthMode`. Lets users build "thin pen line that
+  paints big stars" with a small `Width.Constant` + a high
+  `tip_scale`.
+- `Brush.cursor: CursorShape` — Auto / Circle / Oval / ExactTip /
+  Custom polygon — with the canvas overlay materialising the chosen
+  shape from `OverlayState.cursor_shape`/`cursor_tip`.
+- `Brush.default_color: Option<[u8; 4]>` — applied to `pen.color` on
+  "Use this brush", gated by a checkbox in the editor header so
+  users can opt out.
+- `nib_presets()` — 11 curated `TipShape` presets surfaced in the
+  editor's "Nib preset" dropdown.
+- Smooth + non-strokeable tip auto-stamps via `emit_smooth_stamped`
+  (Star / Diamond / FlatNib / Custom paint as a chain of stamps
+  along the path).
+- HSL hue rotation in `layer_brush` for per-layer
+  `ColorMod.hue_shift_deg`.
+- Brush library management UI — duplicate / rename / delete in the
+  editor sidebar; persistence + assignment cleanup on delete.
+- Per-tool brush picker dropdown in the toolbar's drawing-tool
+  popover; rebuilds on `notify::visible` so library mutations land
+  immediately.
+- Esc-to-Cancel key binding in the editor.
+- Live-drawable preview canvas — same Vello dispatch as the main
+  canvas, re-renders all stored strokes against the current brush
+  on every layer/setting change.
