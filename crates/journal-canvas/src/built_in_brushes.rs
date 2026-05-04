@@ -229,73 +229,187 @@ pub fn calligraphy(
 
 // --- Legacy adapter --------------------------------------------------------
 //
-// Maps an existing (BrushStyle, BrushParams) pair to the matching
-// composed Brush. Returns `None` for the WIP shape variants that
-// don't yet have a native composition (PenShape::{Flat, Marker},
-// PencilShape::{Carpenter, Mechanical}, PaintbrushShape::{Flat, Fan},
-// SprayShape::{Square, Cone}, CalligraphyShape::{Round, BrushNib}).
-// The renderer dispatches `None` cases to the legacy per-style
-// `draw_*` functions until Phase-5 adds primitives for every shape.
+// Maps every (BrushStyle, BrushParams) combination — including all
+// WIP shape variants — to a fully-native composable Brush. After
+// Phase-5 every shape resolves through the composable engine; the
+// per-style legacy `draw_*` fns in `vello_renderer.rs` are no longer
+// reachable.
 
 /// Returns a freshly-constructed `Brush` for the given legacy tool +
-/// params if the tool's *current* shape has a native composition.
-/// `None` means "use the legacy render path".
+/// params. Always `Some` after Phase-5 — every shape has a native
+/// composition. The `Option` return shape is preserved for
+/// back-compat with callers that still treat it as fallible.
 #[cfg(feature = "vello")]
 pub fn legacy_brush_for(style: BrushStyle, params: &BrushParams) -> Option<Brush> {
     match style {
-        BrushStyle::Pen => match params.pen.shape {
-            PenShape::Round => Some(pen(
+        BrushStyle::Pen => Some(pen_for_shape(params, false)),
+        BrushStyle::Highlighter => Some(pen_for_shape(params, true)),
+        BrushStyle::Pencil => Some(pencil_for_shape(params)),
+        BrushStyle::Paintbrush => Some(paintbrush_for_shape(params)),
+        BrushStyle::SprayCan => Some(spray_for_shape(params)),
+        BrushStyle::Calligraphy => Some(calligraphy_for_shape(params)),
+    }
+}
+
+#[cfg(feature = "vello")]
+fn pen_for_shape(params: &BrushParams, highlighter_id: bool) -> Brush {
+    let id = if highlighter_id { ID_HIGHLIGHTER } else { ID_PEN };
+    let name = if highlighter_id { "Highlighter" } else { "Pen" };
+    match params.pen.shape {
+        PenShape::Round => {
+            let mut b = pen(
                 params.pen.width_floor,
                 params.pen.width_pressure_amplitude,
-            )),
-            // Flat / Marker still on legacy path.
-            PenShape::Flat | PenShape::Marker => None,
+            );
+            b.id = id;
+            b.name = name.into();
+            b
+        }
+        PenShape::Flat => Brush::one_layer(
+            id,
+            name,
+            Geometry::Outline {
+                resample_step_mm: 0.5,
+                smooth_outline: true,
+            },
+            WidthMode::Pressure {
+                floor: params.pen.width_floor,
+                amp: params.pen.width_pressure_amplitude,
+            },
+            TipShape::Round,
+        ),
+        PenShape::Marker => Brush::one_layer(
+            id,
+            name,
+            Geometry::Smooth { resample_step_mm: 1.0 },
+            WidthMode::Constant {
+                width_mult: params.pen.marker_width_mult,
+            },
+            TipShape::Round,
+        ),
+    }
+}
+
+#[cfg(feature = "vello")]
+fn pencil_for_shape(params: &BrushParams) -> Brush {
+    match params.pencil.shape {
+        PencilShape::Cylindrical => pencil(
+            params.pencil.core_clamp_min,
+            params.pencil.core_clamp_max,
+            params.pencil.tilt_threshold,
+            params.pencil.tilt_band_mult,
+            params.pencil.tilt_alpha_scale,
+        ),
+        PencilShape::Carpenter => Brush::one_layer(
+            ID_PENCIL,
+            "Pencil — carpenter",
+            Geometry::Outline {
+                resample_step_mm: 0.4,
+                smooth_outline: true,
+            },
+            WidthMode::DirectionAngled {
+                nib_deg: 45.0,
+                min_ratio: 0.35,
+            },
+            TipShape::Round,
+        ),
+        PencilShape::Mechanical => Brush::one_layer(
+            ID_PENCIL,
+            "Pencil — mechanical",
+            Geometry::Smooth { resample_step_mm: 1.0 },
+            WidthMode::ClampedConstant {
+                width_mult: 0.5,
+                min_mm: 0.2,
+                max_mm: 0.6,
+            },
+            TipShape::Round,
+        ),
+    }
+}
+
+#[cfg(feature = "vello")]
+fn paintbrush_for_shape(params: &BrushParams) -> Brush {
+    match params.paintbrush.shape {
+        PaintbrushShape::Round => paintbrush(
+            params.paintbrush.halo_width_mult,
+            params.paintbrush.outer_halo_mult,
+            params.paintbrush.mid_halo_mult,
+            params.paintbrush.outer_alpha,
+            params.paintbrush.mid_alpha,
+            params.paintbrush.core_alpha,
+        ),
+        PaintbrushShape::Flat => Brush::one_layer(
+            ID_PAINTBRUSH,
+            "Paintbrush — flat",
+            Geometry::Smooth { resample_step_mm: 1.0 },
+            WidthMode::Pressure { floor: 0.2, amp: 0.8 },
+            TipShape::Square,
+        ),
+        PaintbrushShape::Fan => Brush::one_layer(
+            ID_PAINTBRUSH,
+            "Paintbrush — fan",
+            Geometry::FanOffset {
+                count: params.paintbrush.fan_count,
+                spread_mult: params.paintbrush.fan_spread_mult,
+            },
+            WidthMode::Pressure { floor: 0.2, amp: 0.8 },
+            TipShape::Round,
+        ),
+    }
+}
+
+#[cfg(feature = "vello")]
+fn spray_for_shape(params: &BrushParams) -> Brush {
+    let directional_bias_deg = match params.spray.shape {
+        SprayShape::Cone => Some(params.spray.cone_spread_deg),
+        _ => None,
+    };
+    let tip = match params.spray.shape {
+        SprayShape::Square => TipShape::Square,
+        _ => TipShape::Round,
+    };
+    Brush::one_layer(
+        ID_SPRAYCAN,
+        "Spray Can",
+        Geometry::Scatter {
+            density: params.spray.dots_per_point,
+            spread_mm: 0.0,
+            falloff: 2.0,
+            directional_bias_deg,
         },
-        BrushStyle::Highlighter => match params.pen.shape {
-            PenShape::Round => Some(highlighter(
-                params.pen.width_floor,
-                params.pen.width_pressure_amplitude,
-            )),
-            PenShape::Flat | PenShape::Marker => None,
+        WidthMode::Constant {
+            width_mult: params.spray.dot_radius_factor,
         },
-        BrushStyle::Pencil => match params.pencil.shape {
-            PencilShape::Cylindrical => Some(pencil(
-                params.pencil.core_clamp_min,
-                params.pencil.core_clamp_max,
-                params.pencil.tilt_threshold,
-                params.pencil.tilt_band_mult,
-                params.pencil.tilt_alpha_scale,
-            )),
-            PencilShape::Carpenter | PencilShape::Mechanical => None,
-        },
-        BrushStyle::Paintbrush => match params.paintbrush.shape {
-            PaintbrushShape::Round => Some(paintbrush(
-                params.paintbrush.halo_width_mult,
-                params.paintbrush.outer_halo_mult,
-                params.paintbrush.mid_halo_mult,
-                params.paintbrush.outer_alpha,
-                params.paintbrush.mid_alpha,
-                params.paintbrush.core_alpha,
-            )),
-            PaintbrushShape::Flat | PaintbrushShape::Fan => None,
-        },
-        BrushStyle::SprayCan => match params.spray.shape {
-            SprayShape::Circle => Some(spray(
-                params.spray.dots_per_point,
-                params.spray.dot_radius_factor,
-                params.spray.min_dot_radius,
-            )),
-            SprayShape::Square | SprayShape::Cone => None,
-        },
-        BrushStyle::Calligraphy => match params.calligraphy.shape {
-            CalligraphyShape::FlatCut => Some(calligraphy(
-                params.calligraphy.nib_angle_deg,
-                params.calligraphy.min_ratio,
-                params.calligraphy.resample_step_mult,
-                params.calligraphy.smooth_outline,
-            )),
-            CalligraphyShape::Round | CalligraphyShape::BrushNib => None,
-        },
+        tip,
+    )
+}
+
+#[cfg(feature = "vello")]
+fn calligraphy_for_shape(params: &BrushParams) -> Brush {
+    match params.calligraphy.shape {
+        CalligraphyShape::FlatCut => calligraphy(
+            params.calligraphy.nib_angle_deg,
+            params.calligraphy.min_ratio,
+            params.calligraphy.resample_step_mult,
+            params.calligraphy.smooth_outline,
+        ),
+        CalligraphyShape::Round => Brush::one_layer(
+            ID_CALLIGRAPHY,
+            "Calligraphy — round",
+            Geometry::Smooth { resample_step_mm: 1.0 },
+            WidthMode::Constant { width_mult: 1.0 },
+            TipShape::Round,
+        ),
+        CalligraphyShape::BrushNib => Brush::one_layer(
+            ID_CALLIGRAPHY,
+            "Calligraphy — brush nib",
+            Geometry::Outline {
+                resample_step_mm: params.calligraphy.resample_step_mult,
+                smooth_outline: params.calligraphy.smooth_outline,
+            },
+            WidthMode::Pressure { floor: 0.4, amp: 0.6 },
+            TipShape::Round,
+        ),
     }
 }
 
@@ -341,16 +455,35 @@ mod tests {
     }
 
     #[test]
-    fn non_default_shapes_fall_back_to_legacy() {
-        let mut params = BrushParams::default();
-        params.pen.shape = PenShape::Marker;
-        assert!(legacy_brush_for(BrushStyle::Pen, &params).is_none());
-        params = BrushParams::default();
-        params.paintbrush.shape = PaintbrushShape::Fan;
-        assert!(legacy_brush_for(BrushStyle::Paintbrush, &params).is_none());
-        params = BrushParams::default();
-        params.calligraphy.shape = CalligraphyShape::BrushNib;
-        assert!(legacy_brush_for(BrushStyle::Calligraphy, &params).is_none());
+    fn every_shape_resolves_natively_post_phase5() {
+        // After Phase 5 the legacy adapter has a composable Brush
+        // for every shape variant — no None fall-throughs left.
+        let combos: &[(BrushStyle, fn(&mut BrushParams))] = &[
+            (BrushStyle::Pen, |p| p.pen.shape = PenShape::Round),
+            (BrushStyle::Pen, |p| p.pen.shape = PenShape::Flat),
+            (BrushStyle::Pen, |p| p.pen.shape = PenShape::Marker),
+            (BrushStyle::Pencil, |p| p.pencil.shape = PencilShape::Cylindrical),
+            (BrushStyle::Pencil, |p| p.pencil.shape = PencilShape::Carpenter),
+            (BrushStyle::Pencil, |p| p.pencil.shape = PencilShape::Mechanical),
+            (BrushStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Round),
+            (BrushStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Flat),
+            (BrushStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Fan),
+            (BrushStyle::SprayCan, |p| p.spray.shape = SprayShape::Circle),
+            (BrushStyle::SprayCan, |p| p.spray.shape = SprayShape::Square),
+            (BrushStyle::SprayCan, |p| p.spray.shape = SprayShape::Cone),
+            (BrushStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::FlatCut),
+            (BrushStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::Round),
+            (BrushStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::BrushNib),
+        ];
+        for (style, mutate) in combos {
+            let mut p = BrushParams::default();
+            mutate(&mut p);
+            assert!(
+                legacy_brush_for(*style, &p).is_some(),
+                "{:?} + variant must resolve natively",
+                style,
+            );
+        }
     }
 
     #[test]
