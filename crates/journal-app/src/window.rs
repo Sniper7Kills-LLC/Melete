@@ -73,13 +73,38 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     header.pack_end(&cheatsheet_btn);
 
     let canvas = canvas_widget::build_canvas(state.clone());
-    input::attach_stylus(&canvas, state.clone());
-    input::attach_mouse(&canvas, state.clone());
-    input::attach_hover(&canvas, state.clone());
-    input::attach_pan_zoom(&canvas, state.clone());
     let bar = toolbar::build_toolbar(state.clone());
     let canvas_overlay = Overlay::new();
-    canvas_overlay.set_child(Some(&canvas));
+
+    // Vello path: GLArea is the canvas surface — Vello renders bg, widgets,
+    // strokes, and overlays. DrawingArea isn't added at all so the GTK
+    // theme can't paint a default opaque background over the GL content.
+    // Cairo path (vello off): the existing DrawingArea handles everything.
+    #[cfg(feature = "vello")]
+    {
+        if let Some(gl_area) = crate::vello_glarea::build(state.clone()) {
+            input::attach_stylus(&gl_area, state.clone());
+            input::attach_mouse(&gl_area, state.clone());
+            input::attach_hover(&gl_area, state.clone());
+            input::attach_pan_zoom(&gl_area, state.clone());
+            canvas_overlay.set_child(Some(&gl_area));
+        } else {
+            input::attach_stylus(&canvas, state.clone());
+            input::attach_mouse(&canvas, state.clone());
+            input::attach_hover(&canvas, state.clone());
+            input::attach_pan_zoom(&canvas, state.clone());
+            canvas_overlay.set_child(Some(&canvas));
+        }
+    }
+    #[cfg(not(feature = "vello"))]
+    {
+        input::attach_stylus(&canvas, state.clone());
+        input::attach_mouse(&canvas, state.clone());
+        input::attach_hover(&canvas, state.clone());
+        input::attach_pan_zoom(&canvas, state.clone());
+        canvas_overlay.set_child(Some(&canvas));
+    }
+
     canvas_overlay.add_overlay(&bar);
 
     // Zoom indicator + fit-page button — bottom-right corner of the canvas.

@@ -6,7 +6,7 @@ use gtk4::gdk::ModifierType;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    DrawingArea, EventControllerMotion, EventControllerScroll, EventControllerScrollFlags,
+    EventControllerMotion, EventControllerScroll, EventControllerScrollFlags,
     GestureDrag, GestureStylus, GestureZoom,
 };
 use journal_canvas::{hit_test_handle, selection_combined_bbox};
@@ -77,7 +77,9 @@ fn stroke_bbox_in_polygon(stroke: &Stroke, polygon: &[(f64, f64)]) -> bool {
     corners.iter().all(|&(x, y)| point_in_polygon(x, y, polygon))
 }
 
-pub fn attach_stylus(area: &DrawingArea, state: SharedState) {
+pub fn attach_stylus(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
+    let area: gtk4::Widget = area_in.clone().upcast();
+    let area = &area;
     let gesture = GestureStylus::new();
     gesture.set_propagation_phase(gtk4::PropagationPhase::Capture);
 
@@ -117,7 +119,9 @@ pub fn attach_stylus(area: &DrawingArea, state: SharedState) {
     area.add_controller(gesture);
 }
 
-pub fn attach_mouse(area: &DrawingArea, state: SharedState) {
+pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
+    let area: gtk4::Widget = area_in.clone().upcast();
+    let area = &area;
     let gesture = gtk4::GestureDrag::new();
     gesture.set_button(gtk4::gdk::BUTTON_PRIMARY);
     gesture.set_propagation_phase(gtk4::PropagationPhase::Bubble);
@@ -158,7 +162,9 @@ pub fn attach_mouse(area: &DrawingArea, state: SharedState) {
 /// gestures already update `pointer_screen` while pressed; this controller
 /// fills in the gap when no button is held so the cursor circle follows
 /// the pointer at all times.
-pub fn attach_hover(area: &DrawingArea, state: SharedState) {
+pub fn attach_hover(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
+    let area: gtk4::Widget = area_in.clone().upcast();
+    let area = &area;
     let motion = EventControllerMotion::new();
     {
         let state = state.clone();
@@ -187,7 +193,9 @@ pub fn attach_hover(area: &DrawingArea, state: SharedState) {
     area.add_controller(motion);
 }
 
-pub fn attach_pan_zoom(area: &DrawingArea, state: SharedState) {
+pub fn attach_pan_zoom(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
+    let area: gtk4::Widget = area_in.clone().upcast();
+    let area = &area;
     let pan = GestureDrag::new();
     pan.set_button(gtk4::gdk::BUTTON_MIDDLE);
 
@@ -330,7 +338,7 @@ fn handle_begin(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, t
     }
 }
 
-fn handle_motion(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, ty: f32, area: &DrawingArea) {
+fn handle_motion(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, ty: f32, area: &gtk4::Widget) {
     {
         let mut s = state.borrow_mut();
         s.pointer_screen = Some((sx, sy));
@@ -440,7 +448,7 @@ fn finish_stroke(state: &SharedState) {
     }
 }
 
-fn erase_at(state: &SharedState, sx: f64, sy: f64, area: &DrawingArea) {
+fn erase_at(state: &SharedState, sx: f64, sy: f64, area: &gtk4::Widget) {
     let (page_id, canvas_pos, zoom, db) = {
         let s = state.borrow();
         if s.current_page_id.is_none() {
@@ -547,7 +555,7 @@ fn split_stroke_by_eraser(stroke: &Stroke, cx: f64, cy: f64, r: f64) -> Vec<Stro
     children
 }
 
-fn partial_erase_at(state: &SharedState, sx: f64, sy: f64, area: &DrawingArea) {
+fn partial_erase_at(state: &SharedState, sx: f64, sy: f64, area: &gtk4::Widget) {
     let (page_id, canvas_pos, zoom, db) = {
         let s = state.borrow();
         if s.current_page_id.is_none() {
@@ -986,7 +994,8 @@ fn finish_selection(state: &SharedState) {
     }
 }
 
-pub fn delete_selection(state: &SharedState, area: &DrawingArea) {
+pub fn delete_selection(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
+    let area: &gtk4::Widget = &area.clone().upcast();
     let (ids, db, page_id) = {
         let s = state.borrow();
         if s.selected_stroke_ids.is_empty() || s.current_page_id.is_none() {
@@ -1021,7 +1030,8 @@ pub fn delete_selection(state: &SharedState, area: &DrawingArea) {
     area.queue_draw();
 }
 
-pub fn undo(state: &SharedState, area: &DrawingArea) {
+pub fn undo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
+    let area: &gtk4::Widget = &area.clone().upcast();
     let op = {
         let mut s = state.borrow_mut();
         s.history.undo.pop()
@@ -1088,7 +1098,8 @@ pub fn undo(state: &SharedState, area: &DrawingArea) {
     area.queue_draw();
 }
 
-pub fn redo(state: &SharedState, area: &DrawingArea) {
+pub fn redo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
+    let area: &gtk4::Widget = &area.clone().upcast();
     let op = {
         let mut s = state.borrow_mut();
         s.history.redo.pop()
@@ -1230,7 +1241,8 @@ pub fn copy_selection(state: &SharedState) {
 /// Each pasted stroke gets a fresh UUID and is offset by ~10 mm in both axes
 /// so it doesn't land exactly on top of the original. The pasted strokes are
 /// immediately selected so the user can drag them into position.
-pub fn paste_clipboard(state: &SharedState, area: &DrawingArea) {
+pub fn paste_clipboard(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
+    let area: &gtk4::Widget = &area.clone().upcast();
     const PASTE_OFFSET: f64 = 10.0; // canvas units (≈ mm for A4-sized pages)
 
     let (page_id, backend, clipboard) = {
