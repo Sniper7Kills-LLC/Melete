@@ -207,13 +207,16 @@ fn draw_placeholder(
     image: Option<&gtk4::cairo::ImageSurface>,
     text: &str,
 ) {
+    // Page-colour fill (matches the Vello placeholder).
     if dark_mode {
-        ctx.set_source_rgb(0.13, 0.13, 0.15);
+        ctx.set_source_rgb(0.110, 0.110, 0.129);
     } else {
-        ctx.set_source_rgb(0.97, 0.97, 0.98);
+        ctx.set_source_rgb(0.969, 0.969, 0.980);
     }
     let _ = ctx.paint();
 
+    // User-supplied splash image short-circuits the branded placeholder
+    // (kept for back-compat with config.placeholder_image_path).
     if let Some(surface) = image {
         let iw = surface.width() as f64;
         let ih = surface.height() as f64;
@@ -235,18 +238,94 @@ fn draw_placeholder(
         }
     }
 
+    // Soft dot grid backdrop.
     if dark_mode {
-        ctx.set_source_rgba(0.7, 0.7, 0.75, 0.6);
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.07);
     } else {
-        ctx.set_source_rgba(0.3, 0.3, 0.35, 0.6);
+        ctx.set_source_rgba(0.0, 0.0, 0.0, 0.07);
     }
-    ctx.set_font_size(20.0);
+    let spacing = 28.0_f64;
+    let radius = 1.1_f64;
+    let mut y = spacing * 0.5;
+    while y < h {
+        let mut x = spacing * 0.5;
+        while x < w {
+            ctx.new_sub_path();
+            ctx.arc(x, y, radius, 0.0, std::f64::consts::TAU);
+            x += spacing;
+        }
+        y += spacing;
+    }
+    let _ = ctx.fill();
+
+    // JOURNAL wordmark — uppercase, bold, tracked.
+    let wordmark = "JOURNAL";
+    let wordmark_size = (h * 0.10).clamp(34.0, 96.0);
+    ctx.select_font_face(
+        "Cantarell",
+        gtk4::cairo::FontSlant::Normal,
+        gtk4::cairo::FontWeight::Bold,
+    );
+    ctx.set_font_size(wordmark_size);
+    let tracking = wordmark_size * 0.18;
+
+    let mut total_w = 0.0_f64;
+    for ch in wordmark.chars() {
+        let mut buf = [0u8; 4];
+        let s: &str = ch.encode_utf8(&mut buf);
+        if let Ok(ext) = ctx.text_extents(s) {
+            total_w += ext.x_advance();
+        }
+        total_w += tracking;
+    }
+    total_w -= tracking;
+
+    let wm_y = h * 0.5 - wordmark_size * 0.05;
+    let mut wm_x = (w - total_w) * 0.5;
+    if dark_mode {
+        ctx.set_source_rgba(0.918, 0.918, 0.941, 0.90);
+    } else {
+        ctx.set_source_rgba(0.141, 0.149, 0.251, 0.94);
+    }
+    for ch in wordmark.chars() {
+        let mut buf = [0u8; 4];
+        let s: &str = ch.encode_utf8(&mut buf);
+        ctx.move_to(wm_x, wm_y);
+        let _ = ctx.show_text(s);
+        if let Ok(ext) = ctx.text_extents(s) {
+            wm_x += ext.x_advance();
+        }
+        wm_x += tracking;
+    }
+
+    // Amber underline (#d6a83a).
+    let underline_w = (w.min(720.0)) * 0.32;
+    let underline_h = (wordmark_size * 0.10).clamp(2.5, 6.0);
+    let underline_x = (w - underline_w) * 0.5;
+    let underline_y = wm_y + wordmark_size * 0.18;
+    ctx.set_source_rgba(0.839, 0.659, 0.227, 0.92);
+    ctx.rectangle(underline_x, underline_y, underline_w, underline_h);
+    let _ = ctx.fill();
+
+    // Subtitle prompt.
+    let subtitle_size = (h * 0.026).clamp(13.0, 20.0);
+    ctx.select_font_face(
+        "Cantarell",
+        gtk4::cairo::FontSlant::Normal,
+        gtk4::cairo::FontWeight::Normal,
+    );
+    ctx.set_font_size(subtitle_size);
+    if dark_mode {
+        ctx.set_source_rgba(0.780, 0.780, 0.820, 0.72);
+    } else {
+        ctx.set_source_rgba(0.298, 0.306, 0.400, 0.78);
+    }
     let extents = match ctx.text_extents(text) {
         Ok(e) => e,
         Err(_) => return,
     };
-    let x = (w - extents.width()) * 0.5 - extents.x_bearing();
-    let y = (h - extents.height()) * 0.5 - extents.y_bearing();
-    ctx.move_to(x, y);
+    let sx = (w - extents.width()) * 0.5 - extents.x_bearing();
+    let sy = underline_y + underline_h + subtitle_size * 1.5;
+    ctx.move_to(sx, sy);
     let _ = ctx.show_text(text);
 }

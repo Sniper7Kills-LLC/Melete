@@ -54,10 +54,11 @@ impl WidgetRenderer {
         }
     }
 
-    /// Render the "no page selected" placeholder: full-screen page-colour
-    /// fill with centered prompt text. Called by the canvas when
-    /// `current_page_id` is None instead of the normal bg/widgets/strokes
-    /// scene.
+    /// Render the "no page selected" placeholder: page-colour fill with a
+    /// soft dot-grid backdrop, a centered JOURNAL wordmark underlined in
+    /// amber, and the caller-supplied prompt text below. Called by the
+    /// canvas when `current_page_id` is None instead of the normal
+    /// bg/widgets/strokes scene.
     pub fn draw_placeholder(
         &mut self,
         scene: &mut Scene,
@@ -66,8 +67,9 @@ impl WidgetRenderer {
         dark_mode: bool,
         text: &str,
     ) {
+        // Page-colour fill.
         let bg = if dark_mode {
-            vello::peniko::Color::from_rgba8(33, 33, 38, 255)
+            vello::peniko::Color::from_rgba8(28, 28, 33, 255)
         } else {
             vello::peniko::Color::from_rgba8(247, 247, 250, 255)
         };
@@ -78,26 +80,99 @@ impl WidgetRenderer {
             None,
             &KRect::new(0.0, 0.0, screen_w, screen_h),
         );
-        let text_color = if dark_mode {
-            Color { r: 178, g: 178, b: 191, a: 153 }
+
+        // Soft dot grid — keeps the surface from reading as "broken / blank".
+        let dot_color = if dark_mode {
+            vello::peniko::Color::from_rgba8(255, 255, 255, 18)
         } else {
-            Color { r: 76, g: 76, b: 89, a: 153 }
+            vello::peniko::Color::from_rgba8(0, 0, 0, 18)
         };
-        let font_size = 22.0_f32;
-        let max_width = screen_w * 0.8;
-        let x = (screen_w - max_width) * 0.5;
-        let y = screen_h * 0.5 - (font_size as f64) * 0.5;
+        let spacing: f64 = 28.0;
+        let radius: f64 = 1.1;
+        let mut dots = BezPath::new();
+        let mut y = spacing * 0.5;
+        while y < screen_h {
+            let mut x = spacing * 0.5;
+            while x < screen_w {
+                dots.extend(Circle::new((x, y), radius).path_elements(0.05));
+                x += spacing;
+            }
+            y += spacing;
+        }
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            &Brush::Solid(dot_color),
+            None,
+            &dots,
+        );
+
+        // Wordmark — branded "JOURNAL" with letter-spacing and amber rule.
+        let wordmark = "JOURNAL";
+        let wordmark_size: f32 = (screen_h * 0.10).clamp(34.0, 96.0) as f32;
+        let wordmark_color = if dark_mode {
+            Color { r: 234, g: 234, b: 240, a: 230 }
+        } else {
+            Color { r: 36, g: 38, b: 64, a: 240 }
+        };
+        let wm_band_w = screen_w.min(720.0);
+        let wm_x = (screen_w - wm_band_w) * 0.5;
+        let wm_y = screen_h * 0.5 - (wordmark_size as f64) * 1.05;
+        draw_tracked_text(
+            scene,
+            &mut self.font_ctx,
+            &mut self.layout_ctx,
+            Affine::IDENTITY,
+            wordmark,
+            wordmark_size,
+            wm_x,
+            wm_y,
+            wm_band_w,
+            wordmark_color,
+            0.18,
+        );
+
+        // Amber underline — same accent as `.page-row.current` (#d6a83a).
+        let amber = vello::peniko::Color::from_rgba8(214, 168, 58, 235);
+        let underline_w = wm_band_w * 0.32;
+        let underline_h = (wordmark_size as f64 * 0.10).clamp(2.5, 6.0);
+        let underline_x = (screen_w - underline_w) * 0.5;
+        let underline_y = wm_y + (wordmark_size as f64) * 1.18;
+        scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            &Brush::Solid(amber),
+            None,
+            &KRect::new(
+                underline_x,
+                underline_y,
+                underline_x + underline_w,
+                underline_y + underline_h,
+            ),
+        );
+
+        // Subtitle prompt text — lifted alpha vs prior placeholder so it
+        // clears WCAG AA against the dark page colour.
+        let subtitle_color = if dark_mode {
+            Color { r: 199, g: 199, b: 209, a: 184 }
+        } else {
+            Color { r: 76, g: 78, b: 102, a: 200 }
+        };
+        let subtitle_size: f32 = (screen_h * 0.026).clamp(13.0, 20.0) as f32;
+        let subtitle_max_w = screen_w * 0.7;
+        let subtitle_x = (screen_w - subtitle_max_w) * 0.5;
+        let subtitle_y = underline_y + underline_h + (subtitle_size as f64) * 1.5;
         draw_text_runs(
             scene,
             &mut self.font_ctx,
             &mut self.layout_ctx,
             Affine::IDENTITY,
             text,
-            font_size,
-            x,
-            y,
-            max_width,
-            text_color,
+            subtitle_size,
+            subtitle_x,
+            subtitle_y,
+            subtitle_max_w,
+            subtitle_color,
             Alignment::Center,
         );
     }
@@ -782,6 +857,47 @@ fn draw_text_runs(
     color: Color,
     alignment: Alignment,
 ) {
+    draw_text_runs_inner(
+        scene, font_ctx, layout_ctx, transform, text, font_size, x, y, max_width, color, alignment,
+        0.0,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_tracked_text(
+    scene: &mut Scene,
+    font_ctx: &mut FontContext,
+    layout_ctx: &mut LayoutContext<Brush>,
+    transform: Affine,
+    text: &str,
+    font_size: f32,
+    x: f64,
+    y: f64,
+    max_width: f64,
+    color: Color,
+    tracking_em: f32,
+) {
+    draw_text_runs_inner(
+        scene, font_ctx, layout_ctx, transform, text, font_size, x, y, max_width, color,
+        Alignment::Center, font_size * tracking_em,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_text_runs_inner(
+    scene: &mut Scene,
+    font_ctx: &mut FontContext,
+    layout_ctx: &mut LayoutContext<Brush>,
+    transform: Affine,
+    text: &str,
+    font_size: f32,
+    x: f64,
+    y: f64,
+    max_width: f64,
+    color: Color,
+    alignment: Alignment,
+    letter_spacing_px: f32,
+) {
     if text.is_empty() || font_size <= 0.0 {
         return;
     }
@@ -789,6 +905,9 @@ fn draw_text_runs(
     let mut builder = layout_ctx.ranged_builder(font_ctx, text, 1.0, true);
     builder.push_default(StyleProperty::FontSize(font_size));
     builder.push_default(StyleProperty::Brush(brush.clone()));
+    if letter_spacing_px != 0.0 {
+        builder.push_default(StyleProperty::LetterSpacing(letter_spacing_px));
+    }
     let mut layout = builder.build(text);
     layout.break_all_lines(Some(max_width as f32));
     layout.align(alignment, AlignmentOptions::default());
