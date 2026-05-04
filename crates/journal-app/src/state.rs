@@ -44,8 +44,8 @@ pub enum Tool {
 pub fn tool_brush_params(
     state: &CanvasState,
     tool: Tool,
-) -> (f32, f64, journal_core::BlendMode, journal_core::BrushStyle) {
-    // BrushStyle is tool-canonical: built-in tools always render with
+) -> (f32, f64, journal_core::BlendMode, journal_core::ToolStyle) {
+    // ToolStyle is tool-canonical: built-in tools always render with
     // their matching style. The `brush_style` field on ToolSettings is
     // reserved for the future custom-tool feature where the user can
     // build a tool that points at any brush style.
@@ -57,8 +57,8 @@ pub fn tool_brush_params(
         let d = crate::tool_settings::default_settings_for(tool);
         return (d.opacity_mult, d.width_mult, d.blend_mode, d.brush_style);
     }
-    use journal_core::{BlendMode, BrushStyle};
-    (1.0, 1.0, BlendMode::Normal, BrushStyle::Pen)
+    use journal_core::{BlendMode, ToolStyle};
+    (1.0, 1.0, BlendMode::Normal, ToolStyle::Pen)
 }
 
 /// True when the tool draws strokes (vs. erase/select).
@@ -156,7 +156,7 @@ pub struct CanvasState {
     /// Per-brush-style internal tuning parameters (nib angle, halo
     /// alphas, dot density, …). Global — every stroke of a given brush
     /// style renders with these params.
-    pub brush_params: journal_canvas::vello_renderer::BrushParams,
+    pub brush_params: journal_canvas::vello_renderer::ToolStyleParams,
 
     /// Per-tool quick-pick color palettes. Each tool key maps to a
     /// list of RGBA swatches the user has saved for fast access from
@@ -165,7 +165,7 @@ pub struct CanvasState {
 
     /// Optional composable-brush recipe stamped onto every new
     /// stroke. `None` means "use the built-in for the active tool's
-    /// brush_style + BrushParams". `Some(brush)` overrides — used by
+    /// brush_style + ToolStyleParams". `Some(brush)` overrides — used by
     /// the Tool Editor when the user is drawing with a custom brush.
     pub active_brush_recipe: Option<journal_core::Brush>,
 
@@ -223,7 +223,7 @@ pub fn new_shared_state(
         base_width: 2.0,
         opacity: 1.0,
         blend_mode: journal_core::BlendMode::Normal,
-        brush_style: journal_core::BrushStyle::Pen,
+        brush_style: journal_core::ToolStyle::Pen,
     };
 
     Rc::new(RefCell::new(CanvasState {
@@ -265,7 +265,7 @@ pub fn new_shared_state(
         tool_settings: crate::tool_settings::default_settings_map(),
         tool_presets: crate::tool_settings::default_presets_map(),
         active_tool_preset: crate::tool_settings::default_active_preset_map(),
-        brush_params: journal_canvas::vello_renderer::BrushParams::default(),
+        brush_params: journal_canvas::vello_renderer::ToolStyleParams::default(),
         tool_palettes: std::collections::HashMap::new(),
         active_brush_recipe: None,
         brush_library: crate::brush_library::load(),

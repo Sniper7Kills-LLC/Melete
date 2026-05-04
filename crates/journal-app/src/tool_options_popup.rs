@@ -18,10 +18,10 @@ use gtk4::{
     SpinButton, Stack, StackTransitionType, StringList, Window,
 };
 use journal_canvas::vello_renderer::{
-    BrushParams, CalligraphyParams, CalligraphyShape, PaintbrushParams, PaintbrushShape, PenParams,
+    ToolStyleParams, CalligraphyParams, CalligraphyShape, PaintbrushParams, PaintbrushShape, PenParams,
     PenShape, PencilParams, PencilShape, SprayParams, SprayShape,
 };
-use journal_core::{BlendMode, BrushStyle};
+use journal_core::{BlendMode, ToolStyle};
 
 use crate::state::{SharedState, Tool};
 use crate::tool_settings::{default_settings_for, settable_tools, tool_key, tool_label, ToolSettings};
@@ -111,7 +111,7 @@ pub fn build_tool_options_panel(
 
     // Three-zone layout so tool switches don't destroy widgets that are
     // identical across tools (audit §2): the brush-style internals are
-    // editor-equivalent for every tool that maps to the same BrushStyle,
+    // editor-equivalent for every tool that maps to the same ToolStyle,
     // so they live in a Stack built once at panel creation. The dynamic
     // top/bottom zones still get cleared and rebuilt per tool, but the
     // expensive grids of spinners stay alive.
@@ -422,14 +422,14 @@ fn rebuild_for_tool(
     }
 }
 
-fn brush_style_stack_name(style: BrushStyle) -> &'static str {
+fn brush_style_stack_name(style: ToolStyle) -> &'static str {
     match style {
-        BrushStyle::Pen => "pen",
-        BrushStyle::Pencil => "pencil",
-        BrushStyle::Highlighter => "highlighter",
-        BrushStyle::Paintbrush => "paintbrush",
-        BrushStyle::SprayCan => "spray",
-        BrushStyle::Calligraphy => "calligraphy",
+        ToolStyle::Pen => "pen",
+        ToolStyle::Pencil => "pencil",
+        ToolStyle::Highlighter => "highlighter",
+        ToolStyle::Paintbrush => "paintbrush",
+        ToolStyle::SprayCan => "spray",
+        ToolStyle::Calligraphy => "calligraphy",
     }
 }
 
@@ -449,7 +449,7 @@ fn populate_internals_stack(stack: &Stack, _state: &SharedState) {
     }
 }
 
-fn repopulate_internals_page(stack: &Stack, state: &SharedState, style: BrushStyle) {
+fn repopulate_internals_page(stack: &Stack, state: &SharedState, style: ToolStyle) {
     let name = brush_style_stack_name(style);
     let Some(page_widget) = stack.child_by_name(name) else {
         return;
@@ -463,12 +463,12 @@ fn repopulate_internals_page(stack: &Stack, state: &SharedState, style: BrushSty
     }
 
     let title = match style {
-        BrushStyle::Pen => "Pen",
-        BrushStyle::Highlighter => "Highlighter",
-        BrushStyle::Pencil => "Pencil",
-        BrushStyle::Paintbrush => "Paintbrush",
-        BrushStyle::SprayCan => "Spray Can",
-        BrushStyle::Calligraphy => "Calligraphy",
+        ToolStyle::Pen => "Pen",
+        ToolStyle::Highlighter => "Highlighter",
+        ToolStyle::Pencil => "Pencil",
+        ToolStyle::Paintbrush => "Paintbrush",
+        ToolStyle::SprayCan => "Spray Can",
+        ToolStyle::Calligraphy => "Calligraphy",
     };
     let header = Label::builder()
         .label(&format!("<b>{} internals</b>", title))
@@ -487,11 +487,11 @@ fn repopulate_internals_page(stack: &Stack, state: &SharedState, style: BrushSty
             .build(),
     );
     match style {
-        BrushStyle::Pen | BrushStyle::Highlighter => append_pen_internals(&page, state),
-        BrushStyle::Pencil => append_pencil_internals(&page, state),
-        BrushStyle::Paintbrush => append_paintbrush_internals(&page, state),
-        BrushStyle::SprayCan => append_spray_internals(&page, state),
-        BrushStyle::Calligraphy => append_calligraphy_internals(&page, state),
+        ToolStyle::Pen | ToolStyle::Highlighter => append_pen_internals(&page, state),
+        ToolStyle::Pencil => append_pencil_internals(&page, state),
+        ToolStyle::Paintbrush => append_paintbrush_internals(&page, state),
+        ToolStyle::SprayCan => append_spray_internals(&page, state),
+        ToolStyle::Calligraphy => append_calligraphy_internals(&page, state),
     }
 }
 
@@ -516,7 +516,7 @@ fn add_brush_recipe_section(
             .cloned()
             .or_else(|| s.active_brush_recipe.clone())
             .or_else(|| {
-                // Fall back to the built-in for the tool's BrushStyle
+                // Fall back to the built-in for the tool's ToolStyle
                 // so the popup always has something to display.
                 use journal_canvas::built_in_brushes as bi;
                 Some(match tool {
@@ -1524,5 +1524,5 @@ fn append_calligraphy_internals(body: &GtkBox, state: &SharedState) {
     }
 
     // Avoid unused-warning when this brush is the only one selected.
-    let _ = BrushParams::default();
+    let _ = ToolStyleParams::default();
 }

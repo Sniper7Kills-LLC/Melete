@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use journal_core::{BlendMode, BrushStyle};
+use journal_core::{BlendMode, ToolStyle};
 use serde::{Deserialize, Serialize};
 
 use crate::state::Tool;
@@ -26,7 +26,7 @@ pub struct ToolSettings {
     pub opacity_mult: f32,
     pub width_mult: f64,
     pub blend_mode: BlendMode,
-    pub brush_style: BrushStyle,
+    pub brush_style: ToolStyle,
     /// Default base brush width (mm) the tool sets when selected. Lets
     /// the user keep e.g. Pen at 2mm and Highlighter at 20mm without
     /// having to touch the toolbar slider every switch. Default is 2.0
@@ -123,49 +123,49 @@ pub fn default_settings_for(tool: Tool) -> ToolSettings {
             opacity_mult: 1.0,
             width_mult: 1.0,
             blend_mode: BlendMode::Normal,
-            brush_style: BrushStyle::Pen,
+            brush_style: ToolStyle::Pen,
             default_base_width: 2.0,
         },
         Tool::Pencil => ToolSettings {
             opacity_mult: 0.85,
             width_mult: 1.0,
             blend_mode: BlendMode::Normal,
-            brush_style: BrushStyle::Pencil,
+            brush_style: ToolStyle::Pencil,
             default_base_width: 1.2,
         },
         Tool::Highlighter => ToolSettings {
             opacity_mult: 0.35,
             width_mult: 1.0,
             blend_mode: BlendMode::Multiply,
-            brush_style: BrushStyle::Highlighter,
+            brush_style: ToolStyle::Highlighter,
             default_base_width: 20.0,
         },
         Tool::Paintbrush => ToolSettings {
             opacity_mult: 0.5,
             width_mult: 1.0,
             blend_mode: BlendMode::Normal,
-            brush_style: BrushStyle::Paintbrush,
+            brush_style: ToolStyle::Paintbrush,
             default_base_width: 7.0,
         },
         Tool::SprayCan => ToolSettings {
             opacity_mult: 0.6,
             width_mult: 1.0,
             blend_mode: BlendMode::Normal,
-            brush_style: BrushStyle::SprayCan,
+            brush_style: ToolStyle::SprayCan,
             default_base_width: 10.0,
         },
         Tool::Calligraphy => ToolSettings {
             opacity_mult: 1.0,
             width_mult: 1.0,
             blend_mode: BlendMode::Normal,
-            brush_style: BrushStyle::Calligraphy,
+            brush_style: ToolStyle::Calligraphy,
             default_base_width: 6.0,
         },
         _ => ToolSettings {
             opacity_mult: 1.0,
             width_mult: 1.0,
             blend_mode: BlendMode::Normal,
-            brush_style: BrushStyle::Pen,
+            brush_style: ToolStyle::Pen,
             default_base_width: 2.0,
         },
     }

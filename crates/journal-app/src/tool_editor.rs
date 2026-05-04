@@ -22,7 +22,7 @@ use gtk4::{
     StringList,
 };
 use journal_canvas::background_renderer::BackgroundConfig;
-use journal_canvas::vello_renderer::{BrushParams, OverlayState, VelloRenderer};
+use journal_canvas::vello_renderer::{ToolStyleParams, OverlayState, VelloRenderer};
 use journal_canvas::ViewportTransform;
 use journal_core::{
     BlendMode, Brush, BrushLayer, ColorMod, Color as JColor, Geometry, PenSettings, Point, Rect,
@@ -2709,7 +2709,7 @@ fn build_preview_area(
                 &strokes,
                 &HashSet::new(),
                 &OverlayState::default(),
-                &BrushParams::default(),
+                &ToolStyleParams::default(),
                 w as u32,
                 h as u32,
                 |_, _, _| {},
@@ -2846,7 +2846,7 @@ fn new_preview_stroke(x: f64, y: f64, pressure: f32, tx: f32, ty: f32) -> Stroke
             base_width: PREVIEW_BASE_WIDTH,
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
-            brush_style: journal_core::BrushStyle::Pen,
+            brush_style: journal_core::ToolStyle::Pen,
         },
         zoom_at_creation: 1.0,
         bounding_box: Rect {

@@ -49,7 +49,7 @@ pub fn load() -> Vec<Brush> {
 /// All built-in compositions, freshly constructed with their default
 /// per-style tuning. Used by `resolve_id` to look up an assignment.
 /// (Built-ins aren't stored anywhere persistent because they're
-/// derived from `BrushParams::default()`.)
+/// derived from `ToolStyleParams::default()`.)
 pub fn built_ins() -> Vec<Brush> {
     vec![
         bi::pen(0.6, 0.4),

@@ -232,7 +232,7 @@ mod tests {
             base_width: 2.0,
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
-            brush_style: journal_core::BrushStyle::Pen,
+            brush_style: journal_core::ToolStyle::Pen,
         }
     }
 

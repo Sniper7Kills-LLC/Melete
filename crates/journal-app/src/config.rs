@@ -91,7 +91,7 @@ pub struct AppConfig {
     /// "use defaults" — populated when the user changes anything via
     /// the developer-mode tool settings dialog.
     #[serde(default)]
-    pub brush_params: Option<journal_canvas::vello_renderer::BrushParams>,
+    pub brush_params: Option<journal_canvas::vello_renderer::ToolStyleParams>,
     /// Per-tool composable-brush assignment. Keys are tool keys
     /// ("pen", "pencil", …); values are `Brush.id`s that resolve to
     /// either a built-in brush (constant ID) or a user-saved brush

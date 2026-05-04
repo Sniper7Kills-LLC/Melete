@@ -151,7 +151,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
     if v < 6 {
         // Brush engine Phase 1 — per-stroke composable-brush recipe.
         // Nullable: legacy strokes have NULL and fall back to the
-        // brush-style + BrushParams legacy adapter at render time.
+        // brush-style + ToolStyleParams legacy adapter at render time.
         if !column_exists(conn, "strokes", "brush_recipe_json")? {
             conn.execute(
                 "ALTER TABLE strokes ADD COLUMN brush_recipe_json TEXT",

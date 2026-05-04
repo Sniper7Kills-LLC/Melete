@@ -20,10 +20,10 @@ use uuid::{uuid, Uuid};
 
 #[cfg(feature = "vello")]
 use crate::vello_renderer::{
-    BrushParams, CalligraphyShape, PaintbrushShape, PenShape, PencilShape, SprayShape,
+    ToolStyleParams, CalligraphyShape, PaintbrushShape, PenShape, PencilShape, SprayShape,
 };
 #[cfg(feature = "vello")]
-use journal_core::BrushStyle;
+use journal_core::ToolStyle;
 
 // --- Stable IDs ------------------------------------------------------------
 
@@ -229,7 +229,7 @@ pub fn calligraphy(
 
 // --- Legacy adapter --------------------------------------------------------
 //
-// Maps every (BrushStyle, BrushParams) combination — including all
+// Maps every (ToolStyle, ToolStyleParams) combination — including all
 // WIP shape variants — to a fully-native composable Brush. After
 // Phase-5 every shape resolves through the composable engine; the
 // per-style legacy `draw_*` fns in `vello_renderer.rs` are no longer
@@ -240,19 +240,19 @@ pub fn calligraphy(
 /// composition. The `Option` return shape is preserved for
 /// back-compat with callers that still treat it as fallible.
 #[cfg(feature = "vello")]
-pub fn legacy_brush_for(style: BrushStyle, params: &BrushParams) -> Option<Brush> {
+pub fn legacy_brush_for(style: ToolStyle, params: &ToolStyleParams) -> Option<Brush> {
     match style {
-        BrushStyle::Pen => Some(pen_for_shape(params, false)),
-        BrushStyle::Highlighter => Some(pen_for_shape(params, true)),
-        BrushStyle::Pencil => Some(pencil_for_shape(params)),
-        BrushStyle::Paintbrush => Some(paintbrush_for_shape(params)),
-        BrushStyle::SprayCan => Some(spray_for_shape(params)),
-        BrushStyle::Calligraphy => Some(calligraphy_for_shape(params)),
+        ToolStyle::Pen => Some(pen_for_shape(params, false)),
+        ToolStyle::Highlighter => Some(pen_for_shape(params, true)),
+        ToolStyle::Pencil => Some(pencil_for_shape(params)),
+        ToolStyle::Paintbrush => Some(paintbrush_for_shape(params)),
+        ToolStyle::SprayCan => Some(spray_for_shape(params)),
+        ToolStyle::Calligraphy => Some(calligraphy_for_shape(params)),
     }
 }
 
 #[cfg(feature = "vello")]
-fn pen_for_shape(params: &BrushParams, highlighter_id: bool) -> Brush {
+fn pen_for_shape(params: &ToolStyleParams, highlighter_id: bool) -> Brush {
     let id = if highlighter_id { ID_HIGHLIGHTER } else { ID_PEN };
     let name = if highlighter_id { "Highlighter" } else { "Pen" };
     match params.pen.shape {
@@ -291,7 +291,7 @@ fn pen_for_shape(params: &BrushParams, highlighter_id: bool) -> Brush {
 }
 
 #[cfg(feature = "vello")]
-fn pencil_for_shape(params: &BrushParams) -> Brush {
+fn pencil_for_shape(params: &ToolStyleParams) -> Brush {
     match params.pencil.shape {
         PencilShape::Cylindrical => pencil(
             params.pencil.core_clamp_min,
@@ -328,7 +328,7 @@ fn pencil_for_shape(params: &BrushParams) -> Brush {
 }
 
 #[cfg(feature = "vello")]
-fn paintbrush_for_shape(params: &BrushParams) -> Brush {
+fn paintbrush_for_shape(params: &ToolStyleParams) -> Brush {
     match params.paintbrush.shape {
         PaintbrushShape::Round => paintbrush(
             params.paintbrush.halo_width_mult,
@@ -359,7 +359,7 @@ fn paintbrush_for_shape(params: &BrushParams) -> Brush {
 }
 
 #[cfg(feature = "vello")]
-fn spray_for_shape(params: &BrushParams) -> Brush {
+fn spray_for_shape(params: &ToolStyleParams) -> Brush {
     let directional_bias_deg = match params.spray.shape {
         SprayShape::Cone => Some(params.spray.cone_spread_deg),
         _ => None,
@@ -385,7 +385,7 @@ fn spray_for_shape(params: &BrushParams) -> Brush {
 }
 
 #[cfg(feature = "vello")]
-fn calligraphy_for_shape(params: &BrushParams) -> Brush {
+fn calligraphy_for_shape(params: &ToolStyleParams) -> Brush {
     match params.calligraphy.shape {
         CalligraphyShape::FlatCut => calligraphy(
             params.calligraphy.nib_angle_deg,
@@ -419,14 +419,14 @@ mod tests {
 
     #[test]
     fn default_shapes_route_through_composable_engine() {
-        let params = BrushParams::default();
+        let params = ToolStyleParams::default();
         for style in [
-            BrushStyle::Pen,
-            BrushStyle::Pencil,
-            BrushStyle::Highlighter,
-            BrushStyle::Paintbrush,
-            BrushStyle::SprayCan,
-            BrushStyle::Calligraphy,
+            ToolStyle::Pen,
+            ToolStyle::Pencil,
+            ToolStyle::Highlighter,
+            ToolStyle::Paintbrush,
+            ToolStyle::SprayCan,
+            ToolStyle::Calligraphy,
         ] {
             assert!(
                 legacy_brush_for(style, &params).is_some(),
@@ -438,15 +438,15 @@ mod tests {
 
     #[test]
     fn pencil_has_two_layers() {
-        let params = BrushParams::default();
-        let brush = legacy_brush_for(BrushStyle::Pencil, &params).unwrap();
+        let params = ToolStyleParams::default();
+        let brush = legacy_brush_for(ToolStyle::Pencil, &params).unwrap();
         assert_eq!(brush.layers.len(), 2, "Pencil = sharp core + tilt band");
     }
 
     #[test]
     fn paintbrush_has_three_layers() {
-        let params = BrushParams::default();
-        let brush = legacy_brush_for(BrushStyle::Paintbrush, &params).unwrap();
+        let params = ToolStyleParams::default();
+        let brush = legacy_brush_for(ToolStyle::Paintbrush, &params).unwrap();
         assert_eq!(
             brush.layers.len(),
             3,
@@ -458,25 +458,25 @@ mod tests {
     fn every_shape_resolves_natively_post_phase5() {
         // After Phase 5 the legacy adapter has a composable Brush
         // for every shape variant — no None fall-throughs left.
-        let combos: &[(BrushStyle, fn(&mut BrushParams))] = &[
-            (BrushStyle::Pen, |p| p.pen.shape = PenShape::Round),
-            (BrushStyle::Pen, |p| p.pen.shape = PenShape::Flat),
-            (BrushStyle::Pen, |p| p.pen.shape = PenShape::Marker),
-            (BrushStyle::Pencil, |p| p.pencil.shape = PencilShape::Cylindrical),
-            (BrushStyle::Pencil, |p| p.pencil.shape = PencilShape::Carpenter),
-            (BrushStyle::Pencil, |p| p.pencil.shape = PencilShape::Mechanical),
-            (BrushStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Round),
-            (BrushStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Flat),
-            (BrushStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Fan),
-            (BrushStyle::SprayCan, |p| p.spray.shape = SprayShape::Circle),
-            (BrushStyle::SprayCan, |p| p.spray.shape = SprayShape::Square),
-            (BrushStyle::SprayCan, |p| p.spray.shape = SprayShape::Cone),
-            (BrushStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::FlatCut),
-            (BrushStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::Round),
-            (BrushStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::BrushNib),
+        let combos: &[(ToolStyle, fn(&mut ToolStyleParams))] = &[
+            (ToolStyle::Pen, |p| p.pen.shape = PenShape::Round),
+            (ToolStyle::Pen, |p| p.pen.shape = PenShape::Flat),
+            (ToolStyle::Pen, |p| p.pen.shape = PenShape::Marker),
+            (ToolStyle::Pencil, |p| p.pencil.shape = PencilShape::Cylindrical),
+            (ToolStyle::Pencil, |p| p.pencil.shape = PencilShape::Carpenter),
+            (ToolStyle::Pencil, |p| p.pencil.shape = PencilShape::Mechanical),
+            (ToolStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Round),
+            (ToolStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Flat),
+            (ToolStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Fan),
+            (ToolStyle::SprayCan, |p| p.spray.shape = SprayShape::Circle),
+            (ToolStyle::SprayCan, |p| p.spray.shape = SprayShape::Square),
+            (ToolStyle::SprayCan, |p| p.spray.shape = SprayShape::Cone),
+            (ToolStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::FlatCut),
+            (ToolStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::Round),
+            (ToolStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::BrushNib),
         ];
         for (style, mutate) in combos {
-            let mut p = BrushParams::default();
+            let mut p = ToolStyleParams::default();
             mutate(&mut p);
             assert!(
                 legacy_brush_for(*style, &p).is_some(),

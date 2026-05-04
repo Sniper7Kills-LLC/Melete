@@ -1,6 +1,6 @@
 //! Composable brush model.
 //!
-//! Replaces the hardcoded `BrushStyle` enum + per-style render-fn
+//! Replaces the hardcoded `ToolStyle` enum + per-style render-fn
 //! dispatch with an ordered list of *layers*. Each layer composes
 //! a `Geometry` (how the path is emitted), a `WidthMode` (how each
 //! emitted point is widened), a `TipShape` (what is stamped at each

@@ -1878,7 +1878,7 @@ fn template_hash(cs: &CreatorState) -> u64 {
 /// the user sees their widgets against ink. Coordinates are in
 /// page-mm; samples are pressure 1.0, no tilt.
 fn dummy_strokes(page_rect: Rect) -> Vec<journal_core::Stroke> {
-    use journal_core::{BlendMode, BrushStyle, Color, PenSettings, Stroke, StrokePoint};
+    use journal_core::{BlendMode, ToolStyle, Color, PenSettings, Stroke, StrokePoint};
 
     fn stroke(points_mm: Vec<(f64, f64)>, color: Color, width: f64) -> Stroke {
         let pen = PenSettings {
@@ -1886,7 +1886,7 @@ fn dummy_strokes(page_rect: Rect) -> Vec<journal_core::Stroke> {
             base_width: width,
             opacity: 1.0,
             blend_mode: BlendMode::Normal,
-            brush_style: BrushStyle::Pen,
+            brush_style: ToolStyle::Pen,
         };
         let pts: Vec<StrokePoint> = points_mm
             .iter()

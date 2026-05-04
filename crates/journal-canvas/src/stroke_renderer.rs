@@ -1,5 +1,5 @@
 use gtk4::cairo;
-use journal_core::{BlendMode, BrushStyle, PenSettings, Rect, Stroke, StrokePoint};
+use journal_core::{BlendMode, ToolStyle, PenSettings, Rect, Stroke, StrokePoint};
 
 use crate::viewport_transform::ViewportTransform;
 
@@ -49,11 +49,11 @@ pub fn draw_stroke(ctx: &cairo::Context, transform: &ViewportTransform, stroke: 
     ctx.set_operator(blend_to_operator(pen.blend_mode));
 
     match pen.brush_style {
-        BrushStyle::Pen | BrushStyle::Highlighter => draw_smooth(ctx, stroke, &pen),
-        BrushStyle::Pencil => draw_pencil(ctx, stroke, &pen),
-        BrushStyle::Paintbrush => draw_paintbrush(ctx, stroke, &pen),
-        BrushStyle::SprayCan => draw_spray(ctx, stroke, &pen),
-        BrushStyle::Calligraphy => draw_calligraphy(ctx, stroke, &pen),
+        ToolStyle::Pen | ToolStyle::Highlighter => draw_smooth(ctx, stroke, &pen),
+        ToolStyle::Pencil => draw_pencil(ctx, stroke, &pen),
+        ToolStyle::Paintbrush => draw_paintbrush(ctx, stroke, &pen),
+        ToolStyle::SprayCan => draw_spray(ctx, stroke, &pen),
+        ToolStyle::Calligraphy => draw_calligraphy(ctx, stroke, &pen),
     }
 
     ctx.restore().ok();

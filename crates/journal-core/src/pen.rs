@@ -29,7 +29,7 @@ pub enum BlendMode {
 /// the path, calligraphy modulates width by stroke direction (nib
 /// simulation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum BrushStyle {
+pub enum ToolStyle {
     #[default]
     Pen,
     Pencil,
@@ -49,5 +49,5 @@ pub struct PenSettings {
     /// Brush family. Defaults to `Pen` for back-compat with older
     /// `pen_json` rows persisted before this field existed.
     #[serde(default)]
-    pub brush_style: BrushStyle,
+    pub brush_style: ToolStyle,
 }

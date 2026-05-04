@@ -914,13 +914,13 @@ const BLEND_MODES: &[(&str, journal_core::BlendMode)] = &[
 ];
 
 #[allow(dead_code)]
-const BRUSH_STYLES: &[(&str, journal_core::BrushStyle)] = &[
-    ("Pen (smooth)", journal_core::BrushStyle::Pen),
-    ("Pencil (sharp + tilt-shading)", journal_core::BrushStyle::Pencil),
-    ("Highlighter", journal_core::BrushStyle::Highlighter),
-    ("Paintbrush (3-pass halo)", journal_core::BrushStyle::Paintbrush),
-    ("Spray Can", journal_core::BrushStyle::SprayCan),
-    ("Calligraphy (variable-width polygon)", journal_core::BrushStyle::Calligraphy),
+const BRUSH_STYLES: &[(&str, journal_core::ToolStyle)] = &[
+    ("Pen (smooth)", journal_core::ToolStyle::Pen),
+    ("Pencil (sharp + tilt-shading)", journal_core::ToolStyle::Pencil),
+    ("Highlighter", journal_core::ToolStyle::Highlighter),
+    ("Paintbrush (3-pass halo)", journal_core::ToolStyle::Paintbrush),
+    ("Spray Can", journal_core::ToolStyle::SprayCan),
+    ("Calligraphy (variable-width polygon)", journal_core::ToolStyle::Calligraphy),
 ];
 
 fn blend_index(b: journal_core::BlendMode) -> u32 {
@@ -928,7 +928,7 @@ fn blend_index(b: journal_core::BlendMode) -> u32 {
 }
 
 #[allow(dead_code)]
-fn style_index(s: journal_core::BrushStyle) -> u32 {
+fn style_index(s: journal_core::ToolStyle) -> u32 {
     BRUSH_STYLES.iter().position(|(_, m)| *m == s).unwrap_or(0) as u32
 }
 
@@ -1140,7 +1140,7 @@ pub fn open_tool_settings(parent: &ApplicationWindow, state: SharedState) {
             .label(
                 "These knobs change the shape of each brush style globally. Editing the \
                  calligraphy section affects every stroke (existing + future) drawn with \
-                 BrushStyle::Calligraphy, regardless of which tool routed to it.",
+                 ToolStyle::Calligraphy, regardless of which tool routed to it.",
             )
             .wrap(true)
             .xalign(0.0)
@@ -1154,7 +1154,7 @@ pub fn open_tool_settings(parent: &ApplicationWindow, state: SharedState) {
 
 fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
     use journal_canvas::vello_renderer::{
-        BrushParams, CalligraphyParams, PaintbrushParams, PenParams, PencilParams, SprayParams,
+        ToolStyleParams, CalligraphyParams, PaintbrushParams, PenParams, PencilParams, SprayParams,
     };
 
     fn row_label(label: &str) -> Label {
@@ -1463,5 +1463,5 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
         body.append(&row);
     }
 
-    let _ = BrushParams::default(); // avoid unused warning if helpers above prune
+    let _ = ToolStyleParams::default(); // avoid unused warning if helpers above prune
 }

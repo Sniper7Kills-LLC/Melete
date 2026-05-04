@@ -38,7 +38,7 @@ use crate::viewport_transform::ViewportTransform;
 // floors, halo alphas, dot densities, nib angles, resample density…)
 // that visibly change how the brush feels. These structs expose them
 // so the developer-mode tool-settings dialog can edit them at runtime.
-// `BrushParams::default()` reproduces the values that were hardcoded
+// `ToolStyleParams::default()` reproduces the values that were hardcoded
 // before this struct existed, so callers that don't pass an override
 // see the same output as before.
 
@@ -254,7 +254,7 @@ impl Default for CalligraphyParams {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-pub struct BrushParams {
+pub struct ToolStyleParams {
     pub pen: PenParams,
     pub pencil: PencilParams,
     pub paintbrush: PaintbrushParams,
@@ -488,7 +488,7 @@ impl VelloRenderer {
         strokes: &[Stroke],
         selected_ids: &HashSet<Uuid>,
         overlays: &OverlayState,
-        brush_params: &BrushParams,
+        brush_params: &ToolStyleParams,
         w: u32,
         h: u32,
         widgets_draw: F,
@@ -734,7 +734,7 @@ fn build_scene<F>(
     strokes: &[Stroke],
     selected_ids: &HashSet<Uuid>,
     overlays: &OverlayState,
-    brush_params: &BrushParams,
+    brush_params: &ToolStyleParams,
     bg_image: Option<&PImage>,
     widgets_draw: F,
 ) where
@@ -1427,7 +1427,7 @@ fn draw_stroke(
     scene: &mut Scene,
     transform: Affine,
     stroke: &Stroke,
-    params: &BrushParams,
+    params: &ToolStyleParams,
 ) {
     // A stroke's own `brush_recipe` (set at creation time from the
     // active Tool Editor brush) wins. Custom brushes survive a
