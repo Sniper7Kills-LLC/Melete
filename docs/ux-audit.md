@@ -1,16 +1,17 @@
 # UX / Frontend-Design Audit
 
-**Status:** Draft
+**Status:** Shipped (2026-05-04). Every item below has a corresponding
+commit; see "Sign-off" at the bottom.
 **Date:** 2026-05-04
 **Owner:** S7K
 **Scope:** GTK4 + libadwaita desktop UI surface — visual polish, hierarchy,
 discoverability, and aesthetic cohesion. Excludes performance and
 correctness (covered by Vello migration doc and brush engine doc).
 
-This is a snapshot of areas where the app currently feels "wired up but
-rough" relative to the parts that already feel shipped. Listed roughly
+This is a snapshot of areas where the app currently felt "wired up but
+rough" relative to the parts that already felt shipped. Listed roughly
 high-impact → low-impact. Each item has a concrete next step so this doc
-can be turned into discrete tasks.
+could be turned into discrete tasks.
 
 ---
 
@@ -336,17 +337,37 @@ colour + accent through CSS variables.
 
 ## Priorities
 
-| Rank | Item | Effort | Payoff |
-|---|---|---|---|
-| 1 | Empty-state placeholder rebuild (§5) | 0.5d | First-impression gap |
-| 2 | Tool Options jitter fix (§2) | 0.5d | Daily-use friction |
-| 3 | Settings → adw::PreferencesWindow (§6) | 1d | Lifts every future settings change |
-| 4 | Resolve WIP vs. brush-engine (§13) | 0.5d decision | Unblocks brush engine |
-| 5 | Pick aesthetic direction + display font (§14, §8) | 0.5d decision + 0.5d implementation | Identity |
-| 6 | Notebook template editor hierarchy (§3) | 1d | Power-user surface readability |
-| 7 | Motion — pick four moments, animate (§9) | 0.5d | Cheap delight |
-| 8 | Page template live preview (§4) | 1d | Reduces edit round-trip |
-| 9 | First-launch tour + "What's new" (§11) | 1d | Surfaces hidden features |
-| 10 | Dark mode amber pull-through (§10) | 0.5d | Brand cohesion |
-| 11 | Toolbar palette long-press (§7) | 0.5d | Discoverability |
-| 12 | Brush vs. Tool rename (§12) | 0.5d | Cheaper now than after brush engine |
+| Rank | Item | Effort | Payoff | Status |
+|---|---|---|---|---|
+| 1 | Empty-state placeholder rebuild (§5) | 0.5d | First-impression gap | ✅ `0e9ea60` |
+| 2 | Tool Options jitter fix (§2) | 0.5d | Daily-use friction | ✅ `74af3e3` |
+| 3 | Settings → adw::PreferencesWindow (§6) | 1d | Lifts every future settings change | ✅ `0c52b28` |
+| 4 | Resolve WIP vs. brush-engine (§13) | 0.5d decision | Unblocks brush engine | ✅ resolved pre-audit-pass |
+| 5 | Pick aesthetic direction + display font (§14, §8) | 0.5d decision + 0.5d implementation | Identity | ✅ `6cc042b` + `e3f9500` (selectable display font) |
+| 6 | Notebook template editor hierarchy (§3) | 1d | Power-user surface readability | ✅ `2a1fb87` + `1952c9c` + `c87c628` |
+| 7 | Motion — pick four moments, animate (§9) | 0.5d | Cheap delight | ✅ `2209fd3` + `01018a7` (page-change fade) |
+| 8 | Page template live preview (§4) | 1d | Reduces edit round-trip | ✅ `ac64cba` |
+| 9 | First-launch tour + "What's new" (§11) | 1d | Surfaces hidden features | ✅ `3c46c14` |
+| 10 | Dark mode amber pull-through (§10) | 0.5d | Brand cohesion | ✅ `9152bec` + `1acbdf5` (StyleManager class swap) |
+| 11 | Toolbar palette long-press (§7) | 0.5d | Discoverability | ✅ `843a90d` + `575c5fa` (empty-stripe) + `33137cc` (DnD reorder) |
+| 12 | Brush vs. Tool rename (§12) | 0.5d | Cheaper now than after brush engine | ✅ `358a29a` (UI copy) + `0b022ac` (public types) |
+
+## Sign-off
+
+Every audit item has shipped. Cleanup pass `a3f7969` ran clippy + fmt
+across the workspace afterward; the build is clean and clippy is at
+zero warnings with crate-level allows for `type_complexity` and
+`too_many_arguments` (both stylistic for this codebase, not bugs).
+
+Skipped variants documented per commit body:
+- §3 PreferencesPage skeleton for the full notebook-template editor
+  (drag-drop layout doesn't fit a `PreferencesPage`).
+- §4 toggle button between edit-mode preview and live-render preview
+  (live preview always-on is simpler).
+- §7 the audit's "drag a colour to the toolbar from outside" path —
+  current scope is reorder-within-toolbar plus an explicit "Save to
+  palette" / "Clear slot" affordance.
+- §10 `journal-canvas` and `journal-widgets` still take
+  `dark_mode: bool` parameters at their leaf entry points — they
+  can't link libadwaita without breaking the future WASM viewer
+  plan; the abstraction lives in `journal_app::is_dark_mode()`.
