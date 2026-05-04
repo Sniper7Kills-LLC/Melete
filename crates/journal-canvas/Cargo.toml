@@ -10,6 +10,7 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
+serde = { workspace = true }
 poppler-rs = { version = "0.24", features = ["v22_7"], optional = true }
 vello = { version = "0.8", optional = true }
 parley = { version = "0.9", optional = true }

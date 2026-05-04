@@ -114,12 +114,14 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
 
             if let Some((px, py)) = s.pointer_screen {
                 ctx.identity_matrix();
+                let (_, width_mult, _, _) = tool_brush_params(&s, s.tool);
                 draw_brush_cursor(
                     ctx,
                     px,
                     py,
                     s.tool,
                     s.pen,
+                    width_mult,
                     s.pointer_drawing,
                     dark_mode,
                 );
@@ -140,15 +142,16 @@ fn draw_brush_cursor(
     py: f64,
     tool: Tool,
     pen: journal_core::PenSettings,
+    width_mult: f64,
     drawing: bool,
     dark_mode: bool,
 ) {
     // pen.base_width is in screen px at the zoom the stroke is created at —
-    // tool_brush_params layers a multiplier per tool. Eraser/Selection get
-    // a constant marker so the user still sees a hit indicator.
+    // `width_mult` is the per-tool multiplier the caller derived from
+    // `tool_brush_params(state, tool)`. Eraser/Selection get a constant
+    // marker so the user still sees a hit indicator.
     let radius = if tool_is_drawing(tool) {
-        let (_, mult, _, _) = tool_brush_params(tool);
-        (pen.base_width * mult * 0.5).max(2.0)
+        (pen.base_width * width_mult * 0.5).max(2.0)
     } else {
         match tool {
             Tool::Eraser(crate::state::EraserMode::Stroke) => 6.0,

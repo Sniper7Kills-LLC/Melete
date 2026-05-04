@@ -195,7 +195,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 return glib::Propagation::Stop;
             }
 
-            let (transform, strokes, background, page_rect, selected_ids, widgets, widget_ctx, overlays) = {
+            let (transform, strokes, background, page_rect, selected_ids, widgets, widget_ctx, overlays, brush_params) = {
                 let s = state.borrow();
                 let mut frame: Vec<journal_core::Stroke> = s.strokes.clone();
                 if let Some(cs) = s.current_stroke.clone() {
@@ -240,6 +240,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     widgets,
                     widget_ctx,
                     overlays,
+                    s.brush_params,
                 )
             };
 
@@ -266,6 +267,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     &strokes,
                     &selected_ids,
                     &overlays,
+                    &brush_params,
                     w,
                     h,
                     |scene, world_to_screen, pr| {
@@ -543,7 +545,7 @@ unsafe fn compile_shader(
 fn compute_cursor_radius(s: &crate::state::CanvasState) -> f64 {
     use crate::state::{tool_brush_params, tool_is_drawing, EraserMode, Tool};
     if tool_is_drawing(s.tool) {
-        let (_, mult, _, _) = tool_brush_params(s.tool);
+        let (_, mult, _, _) = tool_brush_params(s, s.tool);
         (s.pen.base_width * mult * 0.5).max(2.0)
     } else {
         match s.tool {

@@ -11,6 +11,8 @@ mod state;
 mod template_creator;
 mod template_manager;
 mod thumbnail;
+mod tool_options_popup;
+mod tool_settings;
 mod toolbar;
 #[cfg(feature = "vello")]
 mod vello_glarea;
@@ -435,6 +437,7 @@ fn build_ui(app: &adw::Application) -> Result<()> {
     let notebook_templates = Rc::new(RefCell::new(nb_reg));
     let state = state::new_shared_state(backend, templates, notebook_templates);
     state::reload_placeholder(&state);
+    state::load_tool_settings_from_config(&state);
 
     let startup_cfg = config::load();
     let default_w = startup_cfg.window_width.unwrap_or(1280);

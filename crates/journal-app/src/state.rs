@@ -37,21 +37,28 @@ pub enum Tool {
 
 /// Per-tool brush parameters layered on top of the base `pen` at stroke
 /// creation (see `input::begin_stroke`). Returns
-/// `(opacity, base_width_multiplier, blend_mode, brush_style)`. Tools that
-/// don't draw (Eraser, Selection) return neutral values + Pen style.
+/// `(opacity, base_width_multiplier, blend_mode, brush_style)`. Reads
+/// from `state.tool_settings` so any per-tool overrides the user has
+/// configured win over the built-in defaults; tools that don't draw
+/// (Eraser, Selection) return neutral values + Pen style.
 pub fn tool_brush_params(
+    state: &CanvasState,
     tool: Tool,
 ) -> (f32, f64, journal_core::BlendMode, journal_core::BrushStyle) {
-    use journal_core::{BlendMode, BrushStyle};
-    match tool {
-        Tool::Pen => (1.0, 1.0, BlendMode::Normal, BrushStyle::Pen),
-        Tool::Pencil => (0.85, 0.6, BlendMode::Normal, BrushStyle::Pencil),
-        Tool::Highlighter => (0.35, 4.0, BlendMode::Multiply, BrushStyle::Highlighter),
-        Tool::Paintbrush => (0.5, 3.5, BlendMode::Normal, BrushStyle::Paintbrush),
-        Tool::SprayCan => (0.6, 5.0, BlendMode::Normal, BrushStyle::SprayCan),
-        Tool::Calligraphy => (1.0, 3.0, BlendMode::Normal, BrushStyle::Calligraphy),
-        Tool::Eraser(_) | Tool::Selection => (1.0, 1.0, BlendMode::Normal, BrushStyle::Pen),
+    // BrushStyle is tool-canonical: built-in tools always render with
+    // their matching style. The `brush_style` field on ToolSettings is
+    // reserved for the future custom-tool feature where the user can
+    // build a tool that points at any brush style.
+    if let Some(key) = crate::tool_settings::tool_key(tool) {
+        let canonical = crate::tool_settings::default_settings_for(tool).brush_style;
+        if let Some(s) = state.tool_settings.get(key) {
+            return (s.opacity_mult, s.width_mult, s.blend_mode, canonical);
+        }
+        let d = crate::tool_settings::default_settings_for(tool);
+        return (d.opacity_mult, d.width_mult, d.blend_mode, d.brush_style);
     }
+    use journal_core::{BlendMode, BrushStyle};
+    (1.0, 1.0, BlendMode::Normal, BrushStyle::Pen)
 }
 
 /// True when the tool draws strokes (vs. erase/select).
@@ -129,6 +136,28 @@ pub struct CanvasState {
     /// True while a stroke is being actively drawn — the brush cursor
     /// renders filled instead of outlined.
     pub pointer_drawing: bool,
+
+    /// Active per-tool ToolSettings snapshot — derived from the active
+    /// preset for each tool. The renderer reads from this; preset
+    /// switching just copies the chosen preset's settings here.
+    pub tool_settings: std::collections::HashMap<String, crate::tool_settings::ToolSettings>,
+
+    /// Per-tool list of named presets. At least one preset per tool
+    /// (`Default`) always exists.
+    pub tool_presets:
+        std::collections::HashMap<String, Vec<crate::tool_settings::NamedToolSettings>>,
+    /// Per-tool currently-active preset name.
+    pub active_tool_preset: std::collections::HashMap<String, String>,
+
+    /// Per-brush-style internal tuning parameters (nib angle, halo
+    /// alphas, dot density, …). Global — every stroke of a given brush
+    /// style renders with these params.
+    pub brush_params: journal_canvas::vello_renderer::BrushParams,
+
+    /// Per-tool quick-pick color palettes. Each tool key maps to a
+    /// list of RGBA swatches the user has saved for fast access from
+    /// the Tool Options popup.
+    pub tool_palettes: std::collections::HashMap<String, Vec<[u8; 4]>>,
 }
 
 pub type SharedState = Rc<RefCell<CanvasState>>;
@@ -208,7 +237,121 @@ pub fn new_shared_state(
         show_page_bounds: true,
         pointer_screen: None,
         pointer_drawing: false,
+        tool_settings: crate::tool_settings::default_settings_map(),
+        tool_presets: crate::tool_settings::default_presets_map(),
+        active_tool_preset: crate::tool_settings::default_active_preset_map(),
+        brush_params: journal_canvas::vello_renderer::BrushParams::default(),
+        tool_palettes: std::collections::HashMap::new(),
     }))
+}
+
+/// Merge any per-tool overrides loaded from `~/.config/journal/config.toml`
+/// on top of the built-in defaults. Migrates old single-snapshot
+/// `tool_settings` entries into a one-preset list when the user hasn't
+/// adopted the named-preset format yet.
+pub fn load_tool_settings_from_config(state: &SharedState) {
+    let cfg = crate::config::load();
+    let mut s = state.borrow_mut();
+
+    // Pull explicit named presets first (the richer source of truth).
+    for (key, presets) in cfg.tool_presets {
+        if !presets.is_empty() {
+            s.tool_presets.insert(key, presets);
+        }
+    }
+    for (key, name) in cfg.active_tool_preset {
+        s.active_tool_preset.insert(key, name);
+    }
+
+    // Backfill: if the legacy flat `tool_settings` map has a value the
+    // preset list doesn't, treat it as the user's "Default" preset.
+    for (key, value) in cfg.tool_settings {
+        let entry = s
+            .tool_presets
+            .entry(key.clone())
+            .or_insert_with(|| {
+                vec![crate::tool_settings::NamedToolSettings {
+                    name: "Default".into(),
+                    settings: value,
+                }]
+            });
+        if entry.iter().any(|p| p.name == "Default") {
+            for p in entry.iter_mut() {
+                if p.name == "Default" {
+                    p.settings = value;
+                }
+            }
+        }
+        s.tool_settings.insert(key, value);
+    }
+
+    // Sync `tool_settings` (the flat snapshot) to whatever the active
+    // preset says — covers the case where presets were stored but the
+    // legacy flat snapshot wasn't.
+    let keys: Vec<String> = s.tool_presets.keys().cloned().collect();
+    for key in keys {
+        let active_name = s
+            .active_tool_preset
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| "Default".to_string());
+        let resolved = s.tool_presets.get(&key).and_then(|presets| {
+            presets
+                .iter()
+                .find(|p| p.name == active_name)
+                .or_else(|| presets.first())
+                .map(|p| p.settings)
+        });
+        if let Some(settings) = resolved {
+            s.tool_settings.insert(key, settings);
+        }
+    }
+
+    if let Some(params) = cfg.brush_params {
+        s.brush_params = params;
+    }
+
+    s.tool_palettes = cfg.tool_palettes;
+}
+
+/// Activate a named preset for a tool — copies the preset's settings
+/// into `tool_settings` (where the renderer reads from) and updates
+/// `active_tool_preset`. Persists to config.
+pub fn activate_tool_preset(state: &SharedState, tool: Tool, preset_name: &str) {
+    let key = match crate::tool_settings::tool_key(tool) {
+        Some(k) => k.to_string(),
+        None => return,
+    };
+    {
+        let mut s = state.borrow_mut();
+        let to_apply = s
+            .tool_presets
+            .get(&key)
+            .and_then(|v| v.iter().find(|p| p.name == preset_name).cloned());
+        if let Some(p) = to_apply {
+            s.tool_settings.insert(key.clone(), p.settings);
+            s.active_tool_preset.insert(key.clone(), p.name);
+            s.pen.base_width = p.settings.default_base_width;
+        }
+    }
+    persist_tool_state(state);
+}
+
+/// Persist the current preset list + active preset map + flat
+/// tool_settings snapshot + per-tool palettes to disk. Called whenever
+/// the user edits a preset or switches the active one.
+pub fn persist_tool_state(state: &SharedState) {
+    let mut cfg = crate::config::load();
+    let s = state.borrow();
+    cfg.tool_settings = s.tool_settings.clone();
+    cfg.tool_presets = s.tool_presets.clone();
+    cfg.active_tool_preset = s.active_tool_preset.clone();
+    cfg.brush_params = Some(s.brush_params);
+    cfg.tool_palettes = s.tool_palettes.clone();
+    drop(s);
+    if let Err(e) = crate::config::save(&cfg) {
+        tracing::warn!("persist tool state: {e}");
+    }
 }
 
 /// Reload placeholder image + text from on-disk config into the state.
@@ -344,11 +487,38 @@ pub fn toggle_tool_eraser(state: &SharedState) {
 
 /// Set the active tool. Per-tool stroke effects (opacity / width multiplier
 /// / blend mode) are applied at stroke creation in `input::begin_stroke`,
-/// not here, so `state.pen.color` and `state.pen.base_width` remain the
-/// user-chosen base values across tool switches.
+/// not here, so `state.pen.color` remains the user-chosen base across
+/// tool switches. `pen.base_width` IS updated from the tool's
+/// `default_base_width` setting so e.g. picking the Highlighter snaps
+/// the brush back to its 20mm default without the user touching the
+/// width slider. The tool's active preset's settings are copied into
+/// `tool_settings` so the renderer + cursor pick them up.
 pub fn set_tool(state: &SharedState, tool: Tool) {
     let mut s = state.borrow_mut();
     s.tool = tool;
+    if let Some(key) = crate::tool_settings::tool_key(tool) {
+        // Sync flat snapshot to the active preset for this tool, in
+        // case the user edited a different tool's preset and switched
+        // back to this one.
+        let active_name = s
+            .active_tool_preset
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| "Default".to_string());
+        if let Some(presets) = s.tool_presets.get(key) {
+            if let Some(p) = presets.iter().find(|p| p.name == active_name).cloned() {
+                s.tool_settings.insert(key.to_string(), p.settings);
+                s.pen.base_width = p.settings.default_base_width;
+                return;
+            }
+        }
+        let bw = s
+            .tool_settings
+            .get(key)
+            .map(|t| t.default_base_width)
+            .unwrap_or_else(|| crate::tool_settings::default_settings_for(tool).default_base_width);
+        s.pen.base_width = bw;
+    }
 }
 
 pub fn set_tool_pen(state: &SharedState) {

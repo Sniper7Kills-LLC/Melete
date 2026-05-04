@@ -387,7 +387,7 @@ fn begin_stroke(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, t
     let bbox = Rect { x: pt.x, y: pt.y, width: 0.0, height: 0.0 };
 
     let mut pen = s.pen;
-    let (opacity, mult, blend, brush) = crate::state::tool_brush_params(s.tool);
+    let (opacity, mult, blend, brush) = crate::state::tool_brush_params(&s, s.tool);
     pen.opacity = opacity;
     pen.base_width *= mult;
     pen.blend_mode = blend;

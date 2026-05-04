@@ -4,7 +4,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use gtk4::{
     Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Grid, HeaderBar, Label,
-    MenuButton, Orientation, Overlay, Popover, Stack, StackTransitionType,
+    MenuButton, Orientation, Overlay, Popover, Separator, Stack, StackTransitionType,
 };
 use journal_core::{NotebookId, NotebookTemplate, PageTemplate};
 // NotebookStore methods reached via dyn JournalBackend.
@@ -104,6 +104,20 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         input::attach_pan_zoom(&canvas, state.clone());
         canvas_overlay.set_child(Some(&canvas));
     }
+
+    // Right-side dock slot for the Tool Options panel. Sits as a
+    // right-aligned overlay child; visible only when the user toggles
+    // "Dock to right side" in the panel header.
+    let tool_dock_slot = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .width_request(360)
+        .halign(gtk4::Align::End)
+        .valign(gtk4::Align::Fill)
+        .vexpand(true)
+        .build();
+    tool_dock_slot.add_css_class("background");
+    tool_dock_slot.set_visible(false);
+    canvas_overlay.add_overlay(&tool_dock_slot);
 
     canvas_overlay.add_overlay(&bar);
 
@@ -205,6 +219,44 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     build_home_into(&win);
     show_home(&win);
 
+    // Developer-mode Tool Options panel — either a floating window or
+    // docked into the right side of the canvas. Only built when the
+    // user has opted in via app settings or `JOURNAL_DEV=1`. Shown
+    // only when the notebook canvas view is active; on Home /
+    // template-editor views it's hidden so the user isn't staring at
+    // tool tuning while looking at notebook cards.
+    let tool_panel: Rc<RefCell<Option<Rc<crate::tool_options_popup::ToolOptionsPanel>>>> =
+        Rc::new(RefCell::new(None));
+    if crate::config::developer_mode_enabled(&crate::config::load()) {
+        let panel = crate::tool_options_popup::build_tool_options_panel(
+            parent,
+            state.clone(),
+            tool_dock_slot.clone(),
+        );
+        *tool_panel.borrow_mut() = Some(panel);
+    }
+    {
+        let stack = win.borrow().stack.clone();
+        let tool_panel_w = tool_panel.clone();
+        let update_visibility = move || {
+            let on_notebook = stack
+                .visible_child_name()
+                .map(|n| n.as_str() == NOTEBOOK_NAME)
+                .unwrap_or(false);
+            if let Some(panel) = tool_panel_w.borrow().as_ref() {
+                if on_notebook {
+                    panel.show();
+                } else {
+                    panel.hide();
+                }
+            }
+        };
+        update_visibility();
+        let stack = win.borrow().stack.clone();
+        let update_clone = update_visibility.clone();
+        stack.connect_visible_child_notify(move |_| update_clone());
+    }
+
     win
 }
 
@@ -265,6 +317,46 @@ fn build_menu_button(
         });
     }
     vbox.append(&export_nb_btn);
+
+    // Developer-mode toggle. Always visible. Flipping it on shows the
+    // floating Tool Options popup + the per-tool brush-tuning dialog;
+    // off hides them. State persists to config so the next launch
+    // honours the choice.
+    vbox.append(&Separator::new(Orientation::Horizontal));
+    let dev_check = gtk4::CheckButton::with_label("Developer mode");
+    dev_check.set_active(crate::config::load().developer_mode);
+    vbox.append(&dev_check);
+
+    let tool_btn = Button::with_label("Brush tuner…");
+    tool_btn.set_visible(crate::config::developer_mode_enabled(&crate::config::load()));
+    {
+        let state = state.clone();
+        let parent = parent.clone();
+        let popover_clone = popover.clone();
+        tool_btn.connect_clicked(move |_| {
+            popover_clone.popdown();
+            crate::settings_dialogs::open_tool_settings(&parent, state.clone());
+        });
+    }
+    vbox.append(&tool_btn);
+
+    {
+        let tool_btn = tool_btn.clone();
+        dev_check.connect_toggled(move |btn| {
+            let on = btn.is_active();
+            let mut cfg = crate::config::load();
+            cfg.developer_mode = on;
+            if let Err(e) = crate::config::save(&cfg) {
+                tracing::warn!("save dev mode toggle: {e}");
+            }
+            tool_btn.set_visible(on);
+            // The Tool Options panel is wired into the canvas overlay
+            // at app startup so it can dock to the right side; toggling
+            // dev mode mid-session updates the config flag, but the
+            // panel itself only appears / disappears on the next
+            // launch. Cheap enough — restart loads fast.
+        });
+    }
 
     popover.set_child(Some(&vbox));
 

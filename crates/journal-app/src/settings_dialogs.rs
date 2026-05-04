@@ -366,6 +366,33 @@ pub fn open_app_settings(
         });
     }
 
+    // ── Developer mode ────────────────────────────────────────────────
+    body.append(&Separator::new(Orientation::Horizontal));
+    let dev_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    let dev_lbl = Label::builder()
+        .label("Developer mode")
+        .hexpand(true)
+        .halign(gtk4::Align::Start)
+        .build();
+    let dev_check = CheckButton::new();
+    dev_check.set_active(cfg.developer_mode);
+    dev_row.append(&dev_lbl);
+    dev_row.append(&dev_check);
+    body.append(&dev_row);
+    let dev_help = Label::builder()
+        .label(
+            "Enables the per-tool Brush Tuner button in the menu and a floating Tool Options \
+             panel that follows the currently-selected tool.",
+        )
+        .wrap(true)
+        .xalign(0.0)
+        .build();
+    dev_help.add_css_class("dim-label");
+    body.append(&dev_help);
+
     let row2 = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).halign(gtk4::Align::End).build();
     let cancel = Button::with_label("Cancel");
     let save = Button::with_label("Save");
@@ -388,6 +415,7 @@ pub fn open_app_settings(
                 let t = text_entry.text().to_string();
                 if t.trim().is_empty() { None } else { Some(t) }
             };
+            new_cfg.developer_mode = dev_check.is_active();
             if let Err(e) = crate::config::save(&new_cfg) {
                 tracing::error!("save config: {}", e);
             }
@@ -798,4 +826,561 @@ fn open_preset_editor(
 
     ed_win.set_child(Some(&body));
     ed_win.present();
+}
+
+// ---------------------------------------------------------------------------
+// Per-tool brush settings (developer mode only)
+// ---------------------------------------------------------------------------
+
+const BLEND_MODES: &[(&str, journal_core::BlendMode)] = &[
+    ("Normal", journal_core::BlendMode::Normal),
+    ("Multiply", journal_core::BlendMode::Multiply),
+    ("Screen", journal_core::BlendMode::Screen),
+    ("Overlay", journal_core::BlendMode::Overlay),
+    ("Darken", journal_core::BlendMode::Darken),
+    ("Lighten", journal_core::BlendMode::Lighten),
+    ("Erase", journal_core::BlendMode::Erase),
+];
+
+#[allow(dead_code)]
+const BRUSH_STYLES: &[(&str, journal_core::BrushStyle)] = &[
+    ("Pen (smooth)", journal_core::BrushStyle::Pen),
+    ("Pencil (sharp + tilt-shading)", journal_core::BrushStyle::Pencil),
+    ("Highlighter", journal_core::BrushStyle::Highlighter),
+    ("Paintbrush (3-pass halo)", journal_core::BrushStyle::Paintbrush),
+    ("Spray Can", journal_core::BrushStyle::SprayCan),
+    ("Calligraphy (variable-width polygon)", journal_core::BrushStyle::Calligraphy),
+];
+
+fn blend_index(b: journal_core::BlendMode) -> u32 {
+    BLEND_MODES.iter().position(|(_, m)| *m == b).unwrap_or(0) as u32
+}
+
+#[allow(dead_code)]
+fn style_index(s: journal_core::BrushStyle) -> u32 {
+    BRUSH_STYLES.iter().position(|(_, m)| *m == s).unwrap_or(0) as u32
+}
+
+pub fn open_tool_settings(parent: &ApplicationWindow, state: SharedState) {
+    use gtk4::{DropDown, StringList};
+
+    let dialog = modal(parent, "Tool Settings (developer)");
+    dialog.set_default_height(560);
+    dialog.set_default_width(620);
+
+    let scroll = ScrolledWindow::builder().hexpand(true).vexpand(true).build();
+    let body = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(10)
+        .margin_top(10)
+        .margin_bottom(10)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+
+    let header = Label::builder()
+        .label(
+            "Per-tool brush-pipeline overrides. Width / opacity multipliers stack on top of the \
+             toolbar's pen settings; blend mode and brush style override how the renderer \
+             dispatches the stroke. Defaults reset to the built-in values.",
+        )
+        .wrap(true)
+        .xalign(0.0)
+        .build();
+    body.append(&header);
+
+    for tool in crate::tool_settings::settable_tools().iter().copied() {
+        let key = match crate::tool_settings::tool_key(tool) {
+            Some(k) => k.to_string(),
+            None => continue,
+        };
+        let initial = state
+            .borrow()
+            .tool_settings
+            .get(&key)
+            .copied()
+            .unwrap_or_else(|| crate::tool_settings::default_settings_for(tool));
+
+        let row = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(6)
+            .build();
+        let title = Label::builder()
+            .label(&format!("<b>{}</b>", crate::tool_settings::tool_label(tool)))
+            .use_markup(true)
+            .xalign(0.0)
+            .build();
+        row.append(&title);
+
+        let grid = gtk4::Grid::builder()
+            .row_spacing(4)
+            .column_spacing(10)
+            .build();
+
+        // Default base width (mm) — applied when the tool is selected
+        grid.attach(
+            &Label::builder().label("Default size (mm)").xalign(1.0).build(),
+            0,
+            0,
+            1,
+            1,
+        );
+        let bw_spin = SpinButton::with_range(0.1, 60.0, 0.5);
+        bw_spin.set_digits(1);
+        bw_spin.set_value(initial.default_base_width);
+        bw_spin.set_hexpand(true);
+        grid.attach(&bw_spin, 1, 0, 1, 1);
+
+        // Opacity multiplier
+        grid.attach(
+            &Label::builder().label("Opacity ×").xalign(1.0).build(),
+            0,
+            1,
+            1,
+            1,
+        );
+        let op_spin = SpinButton::with_range(0.0, 2.0, 0.05);
+        op_spin.set_digits(2);
+        op_spin.set_value(initial.opacity_mult as f64);
+        op_spin.set_hexpand(true);
+        grid.attach(&op_spin, 1, 1, 1, 1);
+
+        // Width multiplier
+        grid.attach(
+            &Label::builder().label("Width ×").xalign(1.0).build(),
+            0,
+            2,
+            1,
+            1,
+        );
+        let w_spin = SpinButton::with_range(0.05, 12.0, 0.1);
+        w_spin.set_digits(2);
+        w_spin.set_value(initial.width_mult);
+        w_spin.set_hexpand(true);
+        grid.attach(&w_spin, 1, 2, 1, 1);
+
+        // Blend mode
+        grid.attach(
+            &Label::builder().label("Blend").xalign(1.0).build(),
+            0,
+            3,
+            1,
+            1,
+        );
+        let blend_strs = StringList::new(
+            &BLEND_MODES.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
+        );
+        let blend_dd = DropDown::builder().model(&blend_strs).hexpand(true).build();
+        blend_dd.set_selected(blend_index(initial.blend_mode));
+        grid.attach(&blend_dd, 1, 3, 1, 1);
+
+        row.append(&grid);
+
+        // Reset button
+        let reset_btn = Button::with_label("Reset to defaults");
+        {
+            let bw_spin = bw_spin.clone();
+            let op_spin = op_spin.clone();
+            let w_spin = w_spin.clone();
+            let blend_dd = blend_dd.clone();
+            reset_btn.connect_clicked(move |_| {
+                let d = crate::tool_settings::default_settings_for(tool);
+                bw_spin.set_value(d.default_base_width);
+                op_spin.set_value(d.opacity_mult as f64);
+                w_spin.set_value(d.width_mult);
+                blend_dd.set_selected(blend_index(d.blend_mode));
+            });
+        }
+        row.append(&reset_btn);
+        row.append(&Separator::new(Orientation::Horizontal));
+
+        // Live updates: write back to state on every value change so the
+        // canvas reflects the change immediately. Persist to config is
+        // batched on dialog close.
+        let apply = {
+            let state = state.clone();
+            let key = key.clone();
+            let bw_spin = bw_spin.clone();
+            let op_spin = op_spin.clone();
+            let w_spin = w_spin.clone();
+            let blend_dd = blend_dd.clone();
+            move || {
+                let canonical = crate::tool_settings::default_settings_for(tool).brush_style;
+                let s = crate::tool_settings::ToolSettings {
+                    opacity_mult: op_spin.value() as f32,
+                    width_mult: w_spin.value(),
+                    blend_mode: BLEND_MODES[blend_dd.selected() as usize].1,
+                    brush_style: canonical,
+                    default_base_width: bw_spin.value(),
+                };
+                state.borrow_mut().tool_settings.insert(key.clone(), s);
+            }
+        };
+        {
+            let apply = apply.clone();
+            bw_spin.connect_value_changed(move |_| apply());
+        }
+        {
+            let apply = apply.clone();
+            op_spin.connect_value_changed(move |_| apply());
+        }
+        {
+            let apply = apply.clone();
+            w_spin.connect_value_changed(move |_| apply());
+        }
+        {
+            let apply = apply.clone();
+            blend_dd.connect_selected_notify(move |_| apply());
+        }
+
+        body.append(&row);
+    }
+
+    scroll.set_child(Some(&body));
+    dialog.set_child(Some(&scroll));
+
+    // Persist to config when the dialog closes.
+    {
+        let state = state.clone();
+        dialog.connect_close_request(move |_| {
+            let mut cfg = crate::config::load();
+            cfg.tool_settings = state.borrow().tool_settings.clone();
+            cfg.brush_params = Some(state.borrow().brush_params);
+            if let Err(e) = crate::config::save(&cfg) {
+                tracing::warn!("save tool settings: {e}");
+            }
+            gtk4::glib::Propagation::Proceed
+        });
+    }
+
+    // ----------------------------------------------------------------
+    // Per-brush-style internal tuning (the "edit brush guts" section)
+    // ----------------------------------------------------------------
+    body.append(&Separator::new(Orientation::Horizontal));
+    body.append(
+        &Label::builder()
+            .label("<b>Brush internals</b>")
+            .use_markup(true)
+            .xalign(0.0)
+            .build(),
+    );
+    body.append(
+        &Label::builder()
+            .label(
+                "These knobs change the shape of each brush style globally. Editing the \
+                 calligraphy section affects every stroke (existing + future) drawn with \
+                 BrushStyle::Calligraphy, regardless of which tool routed to it.",
+            )
+            .wrap(true)
+            .xalign(0.0)
+            .build(),
+    );
+
+    add_brush_param_sections(&body, &state);
+
+    dialog.present();
+}
+
+fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
+    use journal_canvas::vello_renderer::{
+        BrushParams, CalligraphyParams, PaintbrushParams, PenParams, PencilParams, SprayParams,
+    };
+
+    fn row_label(label: &str) -> Label {
+        Label::builder().label(label).xalign(1.0).build()
+    }
+
+    fn spin_for(min: f64, max: f64, step: f64, digits: u32, val: f64) -> SpinButton {
+        let s = SpinButton::with_range(min, max, step);
+        s.set_digits(digits);
+        s.set_value(val);
+        s.set_hexpand(true);
+        s
+    }
+
+    let read_pen = || -> PenParams { state.borrow().brush_params.pen };
+    let read_pencil = || -> PencilParams { state.borrow().brush_params.pencil };
+    let read_paintbrush = || -> PaintbrushParams { state.borrow().brush_params.paintbrush };
+    let read_spray = || -> SprayParams { state.borrow().brush_params.spray };
+    let read_calligraphy = || -> CalligraphyParams { state.borrow().brush_params.calligraphy };
+
+    fn make_section(title: &str) -> (GtkBox, gtk4::Grid) {
+        let row = GtkBox::builder().orientation(Orientation::Vertical).spacing(6).build();
+        row.append(
+            &Label::builder()
+                .label(&format!("<b>{}</b>", title))
+                .use_markup(true)
+                .xalign(0.0)
+                .build(),
+        );
+        let grid = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
+        row.append(&grid);
+        (row, grid)
+    }
+
+    // Pen / Highlighter (same params apply to both since draw_smooth handles both).
+    {
+        let (row, grid) = make_section("Pen / Highlighter (draw_smooth)");
+        let p = read_pen();
+        grid.attach(&row_label("Width floor"), 0, 0, 1, 1);
+        let floor = spin_for(0.0, 1.5, 0.05, 2, p.width_floor);
+        grid.attach(&floor, 1, 0, 1, 1);
+        grid.attach(&row_label("Pressure amplitude"), 0, 1, 1, 1);
+        let amp = spin_for(0.0, 1.5, 0.05, 2, p.width_pressure_amplitude);
+        grid.attach(&amp, 1, 1, 1, 1);
+
+        let reset = Button::with_label("Reset");
+        {
+            let floor = floor.clone();
+            let amp = amp.clone();
+            reset.connect_clicked(move |_| {
+                let d = PenParams::default();
+                floor.set_value(d.width_floor);
+                amp.set_value(d.width_pressure_amplitude);
+            });
+        }
+        row.append(&reset);
+        row.append(&Separator::new(Orientation::Horizontal));
+
+        let apply: Rc<dyn Fn()> = {
+            let state = state.clone();
+            let floor = floor.clone();
+            let amp = amp.clone();
+            Rc::new(move || {
+                state.borrow_mut().brush_params.pen = PenParams {
+                    width_floor: floor.value(),
+                    width_pressure_amplitude: amp.value(),
+                };
+            })
+        };
+        {
+            let a = apply.clone();
+            floor.connect_value_changed(move |_| a());
+        }
+        {
+            let a = apply.clone();
+            amp.connect_value_changed(move |_| a());
+        }
+        body.append(&row);
+    }
+
+    // Pencil
+    {
+        let (row, grid) = make_section("Pencil");
+        let p = read_pencil();
+        grid.attach(&row_label("Core min (mm)"), 0, 0, 1, 1);
+        let cmin = spin_for(0.05, 3.0, 0.05, 2, p.core_clamp_min);
+        grid.attach(&cmin, 1, 0, 1, 1);
+        grid.attach(&row_label("Core max (mm)"), 0, 1, 1, 1);
+        let cmax = spin_for(0.05, 5.0, 0.05, 2, p.core_clamp_max);
+        grid.attach(&cmax, 1, 1, 1, 1);
+        grid.attach(&row_label("Tilt threshold"), 0, 2, 1, 1);
+        let thr = spin_for(0.0, 1.0, 0.02, 2, p.tilt_threshold);
+        grid.attach(&thr, 1, 2, 1, 1);
+        grid.attach(&row_label("Tilt band width ×"), 0, 3, 1, 1);
+        let tband = spin_for(0.0, 30.0, 0.5, 1, p.tilt_band_mult);
+        grid.attach(&tband, 1, 3, 1, 1);
+        grid.attach(&row_label("Tilt alpha scale"), 0, 4, 1, 1);
+        let talpha = spin_for(0.0, 1.0, 0.02, 2, p.tilt_alpha_scale);
+        grid.attach(&talpha, 1, 4, 1, 1);
+
+        let reset = Button::with_label("Reset");
+        {
+            let (cmin, cmax, thr, tband, talpha) =
+                (cmin.clone(), cmax.clone(), thr.clone(), tband.clone(), talpha.clone());
+            reset.connect_clicked(move |_| {
+                let d = PencilParams::default();
+                cmin.set_value(d.core_clamp_min);
+                cmax.set_value(d.core_clamp_max);
+                thr.set_value(d.tilt_threshold);
+                tband.set_value(d.tilt_band_mult);
+                talpha.set_value(d.tilt_alpha_scale);
+            });
+        }
+        row.append(&reset);
+        row.append(&Separator::new(Orientation::Horizontal));
+
+        let apply: Rc<dyn Fn()> = {
+            let state = state.clone();
+            let (cmin, cmax, thr, tband, talpha) =
+                (cmin.clone(), cmax.clone(), thr.clone(), tband.clone(), talpha.clone());
+            Rc::new(move || {
+                state.borrow_mut().brush_params.pencil = PencilParams {
+                    core_clamp_min: cmin.value(),
+                    core_clamp_max: cmax.value(),
+                    tilt_threshold: thr.value(),
+                    tilt_band_mult: tband.value(),
+                    tilt_alpha_scale: talpha.value(),
+                };
+            })
+        };
+        for s in [&cmin, &cmax, &thr, &tband, &talpha] {
+            let a = apply.clone();
+            s.connect_value_changed(move |_| a());
+        }
+        body.append(&row);
+    }
+
+    // Paintbrush
+    {
+        let (row, grid) = make_section("Paintbrush");
+        let p = read_paintbrush();
+        grid.attach(&row_label("Halo width ×"), 0, 0, 1, 1);
+        let hw = spin_for(1.0, 5.0, 0.05, 2, p.halo_width_mult);
+        grid.attach(&hw, 1, 0, 1, 1);
+        grid.attach(&row_label("Outer halo ×"), 0, 1, 1, 1);
+        let oh = spin_for(0.5, 4.0, 0.05, 2, p.outer_halo_mult);
+        grid.attach(&oh, 1, 1, 1, 1);
+        grid.attach(&row_label("Mid halo ×"), 0, 2, 1, 1);
+        let mh = spin_for(0.2, 3.0, 0.05, 2, p.mid_halo_mult);
+        grid.attach(&mh, 1, 2, 1, 1);
+        grid.attach(&row_label("Outer alpha"), 0, 3, 1, 1);
+        let oa = spin_for(0.0, 1.0, 0.01, 2, p.outer_alpha);
+        grid.attach(&oa, 1, 3, 1, 1);
+        grid.attach(&row_label("Mid alpha"), 0, 4, 1, 1);
+        let ma = spin_for(0.0, 1.0, 0.01, 2, p.mid_alpha);
+        grid.attach(&ma, 1, 4, 1, 1);
+        grid.attach(&row_label("Core alpha"), 0, 5, 1, 1);
+        let ca = spin_for(0.0, 1.0, 0.01, 2, p.core_alpha);
+        grid.attach(&ca, 1, 5, 1, 1);
+
+        let reset = Button::with_label("Reset");
+        {
+            let (hw, oh, mh, oa, ma, ca) =
+                (hw.clone(), oh.clone(), mh.clone(), oa.clone(), ma.clone(), ca.clone());
+            reset.connect_clicked(move |_| {
+                let d = PaintbrushParams::default();
+                hw.set_value(d.halo_width_mult);
+                oh.set_value(d.outer_halo_mult);
+                mh.set_value(d.mid_halo_mult);
+                oa.set_value(d.outer_alpha);
+                ma.set_value(d.mid_alpha);
+                ca.set_value(d.core_alpha);
+            });
+        }
+        row.append(&reset);
+        row.append(&Separator::new(Orientation::Horizontal));
+
+        let apply: Rc<dyn Fn()> = {
+            let state = state.clone();
+            let (hw, oh, mh, oa, ma, ca) =
+                (hw.clone(), oh.clone(), mh.clone(), oa.clone(), ma.clone(), ca.clone());
+            Rc::new(move || {
+                state.borrow_mut().brush_params.paintbrush = PaintbrushParams {
+                    halo_width_mult: hw.value(),
+                    outer_halo_mult: oh.value(),
+                    mid_halo_mult: mh.value(),
+                    outer_alpha: oa.value(),
+                    mid_alpha: ma.value(),
+                    core_alpha: ca.value(),
+                };
+            })
+        };
+        for s in [&hw, &oh, &mh, &oa, &ma, &ca] {
+            let a = apply.clone();
+            s.connect_value_changed(move |_| a());
+        }
+        body.append(&row);
+    }
+
+    // Spray
+    {
+        let (row, grid) = make_section("Spray Can");
+        let p = read_spray();
+        grid.attach(&row_label("Dots per point"), 0, 0, 1, 1);
+        let dpp = spin_for(1.0, 200.0, 1.0, 0, p.dots_per_point as f64);
+        grid.attach(&dpp, 1, 0, 1, 1);
+        grid.attach(&row_label("Dot radius factor"), 0, 1, 1, 1);
+        let drf = spin_for(0.01, 1.0, 0.01, 2, p.dot_radius_factor);
+        grid.attach(&drf, 1, 1, 1, 1);
+        grid.attach(&row_label("Min dot radius"), 0, 2, 1, 1);
+        let mdr = spin_for(0.05, 4.0, 0.05, 2, p.min_dot_radius);
+        grid.attach(&mdr, 1, 2, 1, 1);
+
+        let reset = Button::with_label("Reset");
+        {
+            let (dpp, drf, mdr) = (dpp.clone(), drf.clone(), mdr.clone());
+            reset.connect_clicked(move |_| {
+                let d = SprayParams::default();
+                dpp.set_value(d.dots_per_point as f64);
+                drf.set_value(d.dot_radius_factor);
+                mdr.set_value(d.min_dot_radius);
+            });
+        }
+        row.append(&reset);
+        row.append(&Separator::new(Orientation::Horizontal));
+
+        let apply: Rc<dyn Fn()> = {
+            let state = state.clone();
+            let (dpp, drf, mdr) = (dpp.clone(), drf.clone(), mdr.clone());
+            Rc::new(move || {
+                state.borrow_mut().brush_params.spray = SprayParams {
+                    dots_per_point: dpp.value() as u32,
+                    dot_radius_factor: drf.value(),
+                    min_dot_radius: mdr.value(),
+                };
+            })
+        };
+        for s in [&dpp, &drf, &mdr] {
+            let a = apply.clone();
+            s.connect_value_changed(move |_| a());
+        }
+        body.append(&row);
+    }
+
+    // Calligraphy
+    {
+        let (row, grid) = make_section("Calligraphy");
+        let p = read_calligraphy();
+        grid.attach(&row_label("Nib angle (°)"), 0, 0, 1, 1);
+        let nib = spin_for(-90.0, 90.0, 1.0, 0, p.nib_angle_deg);
+        grid.attach(&nib, 1, 0, 1, 1);
+        grid.attach(&row_label("Min ratio"), 0, 1, 1, 1);
+        let mr = spin_for(0.0, 1.0, 0.02, 2, p.min_ratio);
+        grid.attach(&mr, 1, 1, 1, 1);
+        grid.attach(&row_label("Resample step ×"), 0, 2, 1, 1);
+        let rs = spin_for(0.05, 2.0, 0.05, 2, p.resample_step_mult);
+        grid.attach(&rs, 1, 2, 1, 1);
+        let smooth_chk = CheckButton::with_label("Smooth outline (quad-through-midpoints)");
+        smooth_chk.set_active(p.smooth_outline);
+        grid.attach(&smooth_chk, 0, 3, 2, 1);
+
+        let reset = Button::with_label("Reset");
+        {
+            let (nib, mr, rs, smooth_chk) = (nib.clone(), mr.clone(), rs.clone(), smooth_chk.clone());
+            reset.connect_clicked(move |_| {
+                let d = CalligraphyParams::default();
+                nib.set_value(d.nib_angle_deg);
+                mr.set_value(d.min_ratio);
+                rs.set_value(d.resample_step_mult);
+                smooth_chk.set_active(d.smooth_outline);
+            });
+        }
+        row.append(&reset);
+        row.append(&Separator::new(Orientation::Horizontal));
+
+        let apply: Rc<dyn Fn()> = {
+            let state = state.clone();
+            let (nib, mr, rs, smooth_chk) = (nib.clone(), mr.clone(), rs.clone(), smooth_chk.clone());
+            Rc::new(move || {
+                state.borrow_mut().brush_params.calligraphy = CalligraphyParams {
+                    nib_angle_deg: nib.value(),
+                    min_ratio: mr.value(),
+                    resample_step_mult: rs.value(),
+                    smooth_outline: smooth_chk.is_active(),
+                };
+            })
+        };
+        for s in [&nib, &mr, &rs] {
+            let a = apply.clone();
+            s.connect_value_changed(move |_| a());
+        }
+        {
+            let a = apply.clone();
+            smooth_chk.connect_toggled(move |_| a());
+        }
+        body.append(&row);
+    }
+
+    let _ = BrushParams::default(); // avoid unused warning if helpers above prune
 }

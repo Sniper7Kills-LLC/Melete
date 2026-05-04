@@ -30,6 +30,110 @@ use vello::{AaConfig, RenderParams, Renderer, RendererOptions, Scene};
 
 use crate::viewport_transform::ViewportTransform;
 
+// ---------------------------------------------------------------------------
+// Per-brush-style tuning parameters
+// ---------------------------------------------------------------------------
+//
+// Each brush style's renderer has a handful of magic numbers (width
+// floors, halo alphas, dot densities, nib angles, resample density…)
+// that visibly change how the brush feels. These structs expose them
+// so the developer-mode tool-settings dialog can edit them at runtime.
+// `BrushParams::default()` reproduces the values that were hardcoded
+// before this struct existed, so callers that don't pass an override
+// see the same output as before.
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PenParams {
+    pub width_floor: f64,
+    pub width_pressure_amplitude: f64,
+}
+impl Default for PenParams {
+    fn default() -> Self {
+        Self { width_floor: 0.6, width_pressure_amplitude: 0.4 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PencilParams {
+    pub core_clamp_min: f64,
+    pub core_clamp_max: f64,
+    pub tilt_threshold: f64,
+    pub tilt_band_mult: f64,
+    pub tilt_alpha_scale: f64,
+}
+impl Default for PencilParams {
+    fn default() -> Self {
+        Self {
+            core_clamp_min: 0.4,
+            core_clamp_max: 0.9,
+            tilt_threshold: 0.12,
+            tilt_band_mult: 8.0,
+            tilt_alpha_scale: 0.22,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PaintbrushParams {
+    pub halo_width_mult: f64,
+    pub outer_halo_mult: f64,
+    pub mid_halo_mult: f64,
+    pub outer_alpha: f64,
+    pub mid_alpha: f64,
+    pub core_alpha: f64,
+}
+impl Default for PaintbrushParams {
+    fn default() -> Self {
+        Self {
+            halo_width_mult: 1.6,
+            outer_halo_mult: 1.4,
+            mid_halo_mult: 0.95,
+            outer_alpha: 0.07,
+            mid_alpha: 0.20,
+            core_alpha: 0.95,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SprayParams {
+    pub dots_per_point: u32,
+    pub dot_radius_factor: f64,
+    pub min_dot_radius: f64,
+}
+impl Default for SprayParams {
+    fn default() -> Self {
+        Self { dots_per_point: 36, dot_radius_factor: 0.06, min_dot_radius: 0.35 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CalligraphyParams {
+    pub nib_angle_deg: f64,
+    pub min_ratio: f64,
+    pub resample_step_mult: f64,
+    pub smooth_outline: bool,
+}
+impl Default for CalligraphyParams {
+    fn default() -> Self {
+        Self {
+            nib_angle_deg: 45.0,
+            min_ratio: 0.18,
+            resample_step_mult: 0.5,
+            smooth_outline: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct BrushParams {
+    pub pen: PenParams,
+    pub pencil: PencilParams,
+    pub paintbrush: PaintbrushParams,
+    pub spray: SprayParams,
+    pub calligraphy: CalligraphyParams,
+}
+
 /// Screen-space overlay state passed to the renderer for the on-canvas
 /// overlays (selection handles, lasso, brush cursor, page-bounds outline).
 /// The caller computes pointer-derived values (cursor radius, drawing
@@ -239,6 +343,7 @@ impl VelloRenderer {
         strokes: &[Stroke],
         selected_ids: &HashSet<Uuid>,
         overlays: &OverlayState,
+        brush_params: &BrushParams,
         w: u32,
         h: u32,
         widgets_draw: F,
@@ -268,6 +373,7 @@ impl VelloRenderer {
             strokes,
             selected_ids,
             overlays,
+            brush_params,
             bg_image.as_ref(),
             widgets_draw,
         );
@@ -483,6 +589,7 @@ fn build_scene<F>(
     strokes: &[Stroke],
     selected_ids: &HashSet<Uuid>,
     overlays: &OverlayState,
+    brush_params: &BrushParams,
     bg_image: Option<&PImage>,
     widgets_draw: F,
 ) where
@@ -554,7 +661,7 @@ fn build_scene<F>(
     }
 
     for s in &normal {
-        draw_stroke(scene, world_to_screen, s);
+        draw_stroke(scene, world_to_screen, s, brush_params);
     }
 
     let coverage = full_coverage_path();
@@ -571,7 +678,7 @@ fn build_scene<F>(
         }
         scene.push_layer(Fill::NonZero, mode, 1.0_f32, Affine::IDENTITY, &coverage);
         for s in &group {
-            draw_stroke(scene, world_to_screen, s);
+            draw_stroke(scene, world_to_screen, s, brush_params);
         }
         scene.pop_layer();
     }
@@ -1093,13 +1200,22 @@ fn draw_selection_underlay(
     scene.stroke(&style, transform, &highlight, None, &path);
 }
 
-fn draw_stroke(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
+fn draw_stroke(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    params: &BrushParams,
+) {
     match stroke.pen.brush_style {
-        BrushStyle::Pen | BrushStyle::Highlighter => draw_smooth(scene, transform, stroke),
-        BrushStyle::Pencil => draw_pencil(scene, transform, stroke),
-        BrushStyle::Paintbrush => draw_paintbrush(scene, transform, stroke),
-        BrushStyle::SprayCan => draw_spray(scene, transform, stroke),
-        BrushStyle::Calligraphy => draw_calligraphy(scene, transform, stroke),
+        BrushStyle::Pen | BrushStyle::Highlighter => {
+            draw_smooth(scene, transform, stroke, &params.pen)
+        }
+        BrushStyle::Pencil => draw_pencil(scene, transform, stroke, &params.pencil),
+        BrushStyle::Paintbrush => draw_paintbrush(scene, transform, stroke, &params.paintbrush),
+        BrushStyle::SprayCan => draw_spray(scene, transform, stroke, &params.spray),
+        BrushStyle::Calligraphy => {
+            draw_calligraphy(scene, transform, stroke, &params.calligraphy)
+        }
     }
 }
 
@@ -1118,7 +1234,7 @@ fn solid_color(color: journal_core::Color, alpha: f64) -> Color {
 // Pen / Highlighter
 // ---------------------------------------------------------------------------
 
-fn draw_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
+fn draw_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &PenParams) {
     let pen = stroke.pen;
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let canvas_width_full = pen.base_width / zoc;
@@ -1135,20 +1251,11 @@ fn draw_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
         return;
     }
 
-    // Single continuous BezPath drawn with one stroke call. Per-segment
-    // strokes (Cairo's approach) leave round-cap circles at every vertex
-    // when adjacent segment widths differ, which read as dots/blotches —
-    // especially visible on Highlighter where opacity is low. A unified
-    // path with Join::Round eliminates those caps; the tradeoff is a
-    // constant width across the stroke (avg of all sample pressures).
-    // Width floor: 60% of base, so Pen always reads as a substantive line
-    // even at light pressure. Without this, default base_width=2 + avg
-    // pressure ~0.5 collapses Pen to ~1px, which is thinner than Pencil's
-    // clamped width and reverses the visual hierarchy users expect.
     let avg_pressure = (pts.iter().map(|p| p.pressure as f64).sum::<f64>()
         / pts.len() as f64)
         .max(0.05);
-    let width = canvas_width_full * (0.6 + 0.4 * avg_pressure);
+    let width =
+        canvas_width_full * (params.width_floor + params.width_pressure_amplitude * avg_pressure);
 
     let mut path = BezPath::new();
     path.move_to((pts[0].x, pts[0].y));
@@ -1190,14 +1297,10 @@ fn draw_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
 // per segment when the stylus is tilted. Tilt magnitude is averaged across
 // each segment so the band width tracks the user's wrist angle smoothly.
 
-fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
+fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &PencilParams) {
     let pen = stroke.pen;
     let zoc = stroke.zoom_at_creation.max(1e-6);
-    // Tighter clamp than Cairo's reference: pencil should always render
-    // visually thinner than Pen. With base_width=2 default, Pen ends up
-    // ~1.4px effective (60% floor of base × 1.0 mult) so Pencil's max
-    // 0.9 keeps it subordinate.
-    let core_w = (pen.base_width / zoc).clamp(0.4, 0.9);
+    let core_w = (pen.base_width / zoc).clamp(params.core_clamp_min, params.core_clamp_max);
 
     let pts = &stroke.points;
     if pts.is_empty() {
@@ -1223,11 +1326,9 @@ fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
 
     // 2) Per-segment tilt shading. Stylus drivers report tilt_x/tilt_y in
     //    radians (typically ±π/2). Magnitude in [0, π/2]; normalize by π/2
-    //    so tilt_factor ∈ [0, 1]. Below threshold the overlay is a no-op,
-    //    so an upright stylus leaves only the sharp core.
-    let max_band_mult = 8.0;
-    let band_alpha_scale = 0.22;
-    let tilt_threshold = 0.12_f64;
+    //    so tilt_factor ∈ [0, 1]. Below `params.tilt_threshold` the
+    //    overlay is a no-op, so an upright stylus leaves only the sharp
+    //    core.
     let inv_half_pi = 2.0 / std::f64::consts::PI;
 
     for i in 0..pts.len() - 1 {
@@ -1236,12 +1337,12 @@ fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
         let mag_a = ((a.tilt_x as f64).hypot(a.tilt_y as f64) * inv_half_pi).clamp(0.0, 1.0);
         let mag_b = ((b.tilt_x as f64).hypot(b.tilt_y as f64) * inv_half_pi).clamp(0.0, 1.0);
         let tilt = (mag_a + mag_b) * 0.5;
-        if tilt < tilt_threshold {
+        if tilt < params.tilt_threshold {
             continue;
         }
         let avg_press = (((a.pressure + b.pressure) * 0.5) as f64).max(0.15);
-        let band_w = core_w * (1.0 + max_band_mult * tilt * avg_press);
-        let band_alpha = (pen.opacity as f64) * band_alpha_scale * tilt;
+        let band_w = core_w * (1.0 + params.tilt_band_mult * tilt * avg_press);
+        let band_alpha = (pen.opacity as f64) * params.tilt_alpha_scale * tilt;
         let band_brush = Brush::Solid(solid_color(pen.color, band_alpha));
 
         let mut seg = BezPath::new();
@@ -1265,7 +1366,12 @@ fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
 // the canvas is a single Vello layer (no per-dab radial gradients →
 // fewer paths, much faster, and overlaps don't darken to opacity).
 
-fn draw_paintbrush(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
+fn draw_paintbrush(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    params: &PaintbrushParams,
+) {
     let pen = stroke.pen;
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let canvas_width_full = pen.base_width / zoc;
@@ -1280,12 +1386,12 @@ fn draw_paintbrush(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
         / pts.len() as f64)
         .max(0.2);
     let core_w = canvas_width_full * avg_pressure;
-    let halo_w = core_w * 1.6;
+    let halo_w = core_w * params.halo_width_mult;
 
     if n == 1 {
         let p = &pts[0];
-        let halo_brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64 * 0.18));
-        let core_brush = solid(pen.color, pen.opacity * 0.65);
+        let halo_brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64 * params.mid_alpha));
+        let core_brush = solid(pen.color, pen.opacity * params.core_alpha as f32);
         let halo = Circle::new((p.x, p.y), halo_w * 0.5).to_path(0.05);
         scene.fill(Fill::NonZero, transform, &halo_brush, None, &halo);
         let core = Circle::new((p.x, p.y), core_w * 0.5).to_path(0.05);
@@ -1318,9 +1424,9 @@ fn draw_paintbrush(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
     // the saturated core sits inside. Stacked, they read as a watercolor
     // brush instead of a flat band like the Highlighter.
     let bands: [(f64, f64); 3] = [
-        (halo_w * 1.4, 0.07), // outer fringe
-        (halo_w * 0.95, 0.20), // mid body
-        (core_w, 0.95),        // saturated core
+        (halo_w * params.outer_halo_mult, params.outer_alpha),
+        (halo_w * params.mid_halo_mult, params.mid_alpha),
+        (core_w, params.core_alpha),
     ];
     for &(w, alpha_mult) in &bands {
         let brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64 * alpha_mult));
@@ -1336,12 +1442,12 @@ fn draw_paintbrush(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
 // SprayCan — dense scatter, density biased toward center
 // ---------------------------------------------------------------------------
 
-fn draw_spray(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
+fn draw_spray(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &SprayParams) {
     let pen = stroke.pen;
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let radius = pen.base_width / zoc * 0.5;
-    let dot_radius = (radius * 0.06).max(0.35);
-    let dots_per_point = 36;
+    let dot_radius = (radius * params.dot_radius_factor).max(params.min_dot_radius);
+    let dots_per_point = params.dots_per_point;
     let brush = solid(pen.color, pen.opacity);
 
     for (idx, p) in stroke.points.iter().enumerate() {
@@ -1364,12 +1470,17 @@ fn draw_spray(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
 // Calligraphy — variable-width filled polygon, nib angle 45°
 // ---------------------------------------------------------------------------
 
-fn draw_calligraphy(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
+fn draw_calligraphy(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    params: &CalligraphyParams,
+) {
     let pen = stroke.pen;
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let max_width = pen.base_width / zoc;
-    let nib_angle: f64 = std::f64::consts::FRAC_PI_4;
-    let min_ratio: f64 = 0.18;
+    let nib_angle = params.nib_angle_deg.to_radians();
+    let min_ratio = params.min_ratio;
 
     let pts = &stroke.points;
     if pts.is_empty() {
@@ -1383,7 +1494,7 @@ fn draw_calligraphy(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
         return;
     }
 
-    let max_step = (max_width * 0.5).max(1.0);
+    let max_step = (max_width * params.resample_step_mult).max(0.25);
     let mut samples: Vec<(f64, f64, f64)> = Vec::with_capacity(pts.len() * 2);
     for i in 0..pts.len() {
         let p = &pts[i];
@@ -1436,23 +1547,32 @@ fn draw_calligraphy(scene: &mut Scene, transform: Affine, stroke: &Stroke) {
         right.push((x - nxn * w, y - nyn * w));
     }
 
-    // Build the outline as smooth quadratic-through-midpoints curves on
-    // both sides instead of straight `line_to` edges. Same smoothing as
-    // the Pen path uses, applied to the offset polygon — gets rid of the
-    // visible polygon facets that read as a "rigid" stroke.
+    // Build the outline. With `params.smooth_outline = true` (default)
+    // both sides are connected with quadratic-through-midpoints curves so
+    // the polygon reads as a continuous nib trace; `false` falls back to
+    // straight `line_to` edges (rigid, polygonal — Cairo-faithful).
     let mut path = BezPath::new();
     path.move_to(left[0]);
-    smooth_polyline(&mut path, &left[1..]);
-    if let Some(&last_left) = left.last() {
-        let first_right = right[right.len() - 1];
-        let mid = (
-            (last_left.0 + first_right.0) * 0.5,
-            (last_left.1 + first_right.1) * 0.5,
-        );
-        path.quad_to(last_left, mid);
+    if params.smooth_outline {
+        smooth_polyline(&mut path, &left[1..]);
+        if let Some(&last_left) = left.last() {
+            let first_right = right[right.len() - 1];
+            let mid = (
+                (last_left.0 + first_right.0) * 0.5,
+                (last_left.1 + first_right.1) * 0.5,
+            );
+            path.quad_to(last_left, mid);
+        }
+        let right_rev: Vec<(f64, f64)> = right.iter().rev().copied().collect();
+        smooth_polyline(&mut path, &right_rev);
+    } else {
+        for &p in left.iter().skip(1) {
+            path.line_to(p);
+        }
+        for &p in right.iter().rev() {
+            path.line_to(p);
+        }
     }
-    let right_rev: Vec<(f64, f64)> = right.iter().rev().copied().collect();
-    smooth_polyline(&mut path, &right_rev);
     path.close_path();
     scene.fill(Fill::NonZero, transform, &brush, None, &path);
 }
