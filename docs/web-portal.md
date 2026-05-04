@@ -170,6 +170,36 @@ Hand off to journal-canvas (WASM):
 wgpu (WebGPU) draws the same scene the desktop app draws.
 ```
 
+**WASM glue crate (`journal-web-viewer`):** wraps `journal-canvas::vello_renderer::VelloRenderer` + `journal-widgets::WidgetRenderer` for `wasm-bindgen` consumption. Public API mirrors what the GLArea on desktop calls today:
+
+```rust
+#[wasm_bindgen]
+pub struct Viewer { /* VelloRenderer, WidgetRenderer, decoded bundle */ }
+
+#[wasm_bindgen]
+impl Viewer {
+    pub async fn init(canvas: web_sys::HtmlCanvasElement) -> Result<Viewer, JsValue>;
+    pub fn load_notebook(&mut self, body: &[u8]) -> Result<(), JsValue>;
+    pub fn render_page(&mut self, page_index: u32, w: u32, h: u32);
+    pub fn pan(&mut self, dx: f64, dy: f64);
+    pub fn zoom_at(&mut self, sx: f64, sy: f64, factor: f64);
+}
+```
+
+**Backend selection:** wgpu picks WebGPU when `navigator.gpu` is present (Chrome 121+, Edge 121+, Firefox 127+ behind flag, Safari 18+). Falls back to WebGL2 — Vello's compute pipeline does **not** run on WebGL2, so the WebGL2 path uses the upcoming `vello_hybrid` (tile prepass on CPU, raster on GPU) when it stabilizes; until then the viewer surfaces a "WebGPU required" banner with a browser-support link instead of silently degrading. Detection sequence:
+
+```ts
+const hasWebGPU = "gpu" in navigator;
+if (!hasWebGPU) showWebgpuRequiredBanner();
+else await wasmViewer.init(canvas);
+```
+
+**Asset routing:** any `BackgroundType::Image { path }` referenced inside an inlined `PageTemplate` has its path rewritten by the export step to a public-bucket S3 URL. The WASM viewer fetches each unique URL once via `fetch()` + `arrayBuffer()`, hands the bytes to a small `ImageCache` keyed by URL on the Rust side, and re-uses the resulting `peniko::ImageBrush` across pages — same shape as `VelloRenderer::ensure_image_for_bg` on desktop, just sourced from HTTP instead of the filesystem.
+
+**PDF backgrounds in the viewer:** the export bundle pre-rasterizes any `BackgroundType::Pdf` page on the desktop side at 200 dpi (the same path `journal-canvas` uses for desktop PDF backgrounds), embeds the resulting PNG in the bundle, and rewrites the `Pdf` variant to an `Image` variant pointing at it. The WASM viewer never carries `poppler` — that stays a desktop-only dependency.
+
+**Read-only enforcement (in the WASM bindings, not just convention):** the Viewer struct exposes pan/zoom but no stroke begin/extend/end methods. There is no path from JS → renderer that mutates strokes.
+
 **Export bundle format** (new but minimal — a JSON envelope around existing types):
 
 ```json
@@ -188,9 +218,7 @@ wgpu (WebGPU) draws the same scene the desktop app draws.
 
 A new `journal-export` crate produces this envelope from the desktop app via "Share notebook" action. Bincode is **not** used here — JSON keeps the body inspectable and the WASM viewer's deserializer trivial. Stroke `points` arrays are the bulk; expect ~150 KB per page of dense notes uncompressed, ~25 KB gzipped. Acceptable.
 
-**Read-only enforcement:** the WASM viewer never exposes input handlers (no stroke begin/extend/end); zoom and pan are the only interactions. There is no edit path from the web side.
-
-See [renderer-vello-migration.md §7.4](renderer-vello-migration.md#74-web-target-forward-looking-not-part-of-this-migration) for the wgpu-on-WebGPU surface. The viewer cannot ship until that migration's Phase 5 lands (Cairo gone, `journal-canvas` WASM-clean).
+See [renderer-vello-migration.md §7.4](renderer-vello-migration.md#74-web-target-forward-looking-not-part-of-this-migration) for the original wgpu-on-WebGPU sketch. With that migration **done** (renderer is Vello on the desktop, `journal-widgets` is GTK-free, and `journal-canvas` builds WASM-clean without its `pdf` feature) the viewer is unblocked from a renderer-architecture standpoint — remaining work is the `wasm-bindgen` glue, asset fetch wiring, and the WebGPU/WebGL2 detection above.
 
 ### 5.5 QR share flow
 
@@ -458,7 +486,10 @@ The egress line dominates; CloudFront cache hit ratio matters. WASM blob version
      - Parse on the desktop (`journal-templates::parse_template_toml`), serialize back out → must match input byte-for-byte (`serialize_template_toml` golden).
      - Parse in WASM via `journal-web-shim` → serialize back out → must match input byte-for-byte.
    - Failure here = schema drift, bug.
-2. **Viewer visual regression**: same harness as renderer-vello-migration §11, but rendered via the WASM viewer in headless Chrome (Playwright). Diff against the desktop-Vello golden.
+2. **Viewer visual regression**: a fixture corpus of `(notebook bundle, page index, viewport)` triples is rendered via two paths and pixel-diffed:
+   - **Desktop golden** — a small `cargo test -p journal-canvas --features vello -- --ignored render_golden` test boots `VelloRenderer` headlessly (`wgpu::Backends::VULKAN`), calls `render_rgba`, writes PNG to `tests/golden/`. Goldens are checked in.
+   - **Web replay** — Playwright loads the WASM viewer, calls `render_page` with the same bundle + viewport, snapshots the canvas via `canvas.toBlob('image/png')`, diffs against the golden with `pixelmatch` (tolerance: <2% pixels for stroke/bg, <8% for text-heavy widgets — same thresholds as the renderer migration).
+   - Failure here surfaces backend drift (WebGPU vs Vulkan) or any divergence between `journal-canvas` desktop builds and the WASM build of the same crate.
 3. **AppSync resolver tests**: unit-test VTL via `appsync-mock` or end-to-end against a CDK-spun ephemeral stack in CI (slow, run nightly).
 4. **Auth happy paths** (Playwright):
    - Anonymous → can browse, can't fork → sees sign-in prompt.
@@ -470,15 +501,15 @@ The egress line dominates; CloudFront cache hit ratio matters. WASM blob version
 ## 11. Open questions
 
 1. **Frontend stack:** React + Vite is the default in §5.2 — but Solid + Vite ships a smaller bundle and the surface is small enough to reconsider. Worth a half-day spike before Phase 1 commits. Decide before Phase 0 exit.
-2. **Designer fonts:** the live preview needs to render `WidgetKind::TextBlock` text. WASM viewer uses parley (per renderer-migration); does the designer need parley too, or fake text with rectangles in Phase 3 and add real text in Phase 4 alongside the viewer?
-3. **Notebook export size cap:** at what page count or stroke count do we reject "Share notebook" with a "too big" message? Need real numbers from desktop usage. Soft cap 50 MB compressed for MVP; revisit.
-4. **Asset bucket for template images:** images referenced in `BackgroundType::Image { path }` are local file paths today. Publishing a template needs to upload the asset and rewrite the path to an S3 URL. Do we hash-deduplicate user-uploaded assets, or charge them once per publish? Lean toward dedup-by-SHA256 — bandwidth saved on a popular template.
-5. **Comments/ratings on public templates:** worth shipping in MVP? Simplest: thumbs-up only, no comments (moderation cost). Defer to a v1.1 doc.
-6. **Search relevance:** DDB query-by-category covers MVP. If users want full-text search, OpenSearch is the cheap-ish answer (~$25/month dev cluster). Defer.
-7. **Mobile designer:** the drag-and-drop designer assumes a pointer + mid-size canvas. Phone usability is poor. Block via UA detection in Phase 3 with a "designer requires desktop" message? Or attempt a touch-mode? Lean toward blocking.
-8. **WebAssembly threading:** Vello/wgpu can use SharedArrayBuffer for parallelism, which requires COOP/COEP headers. Amplify Hosting supports custom headers. Worth enabling? Likely yes for the viewer but it's a future-perf concern, not MVP.
-9. **Public-vs-private toggle on a template:** a user might want to fork-and-iterate before publishing. The schema already separates `templates_public` and `templates_user`; UI flow is "Save (private)" vs. "Publish (public)". Confirm in Phase 2 mockups.
-10. **Renderer responsibility for designer preview:** during Phase 3 the desktop renderer is still Cairo, so a true Vello-rendered preview can't ship. Acceptable to ship Phase 3 designer with a schematic (boxes + labels) preview and upgrade it during Phase 4 once WASM Vello lands. Confirm in Phase 0.
+2. **Notebook export size cap:** at what page count or stroke count do we reject "Share notebook" with a "too big" message? Need real numbers from desktop usage. Soft cap 50 MB compressed for MVP; revisit.
+3. **Asset bucket for template images:** images referenced in `BackgroundType::Image { path }` are local file paths today. Publishing a template needs to upload the asset and rewrite the path to an S3 URL. Do we hash-deduplicate user-uploaded assets, or charge them once per publish? Lean toward dedup-by-SHA256 — bandwidth saved on a popular template.
+4. **Comments/ratings on public templates:** worth shipping in MVP? Simplest: thumbs-up only, no comments (moderation cost). Defer to a v1.1 doc.
+5. **Search relevance:** DDB query-by-category covers MVP. If users want full-text search, OpenSearch is the cheap-ish answer (~$25/month dev cluster). Defer.
+6. **Mobile designer:** the drag-and-drop designer assumes a pointer + mid-size canvas. Phone usability is poor. Block via UA detection in Phase 3 with a "designer requires desktop" message? Or attempt a touch-mode? Lean toward blocking.
+7. **WebAssembly threading:** Vello/wgpu can use SharedArrayBuffer for parallelism, which requires COOP/COEP headers. Amplify Hosting supports custom headers. Worth enabling? Likely yes for the viewer but it's a future-perf concern, not MVP.
+8. **Public-vs-private toggle on a template:** a user might want to fork-and-iterate before publishing. The schema already separates `templates_public` and `templates_user`; UI flow is "Save (private)" vs. "Publish (public)". Confirm in Phase 2 mockups.
+9. **WebGL2 fallback strategy:** Vello requires WebGPU for compute. Browsers without it (older Safari, locked-down enterprise Chrome) can't render. Options: (a) ship `vello_hybrid` once it stabilizes — CPU tile prepass + WebGL2 raster, (b) ship a thumbnail-only fallback (server-rendered PNGs from a Lambda layer using `journal-canvas` headlessly), (c) hard-block with a "WebGPU required" banner. Lean (c) at launch, (a) once Linebender ships hybrid.
+10. **Bundle pre-rasterization on desktop:** §5.4 calls for the `journal-export` step to pre-render PDF backgrounds at 200 dpi so the WASM viewer doesn't need poppler. Open question: do we also pre-rasterize image backgrounds (avoids the WASM `image` decode pass) or leave that JIT in the viewer? Lean leave-JIT — `image` is small in WASM, raster cost is one-shot per page open.
 
 ## 12. Out of scope (listed so they're not forgotten)
 
@@ -497,11 +528,14 @@ The egress line dominates; CloudFront cache hit ratio matters. WASM blob version
 
 - [ ] CDK stack reproducibly deploys from a fresh AWS account in <30 min
 - [ ] `cargo test -p journal-templates` green + WASM round-trip CI green
+- [ ] `journal-canvas --no-default-features --features vello` + `journal-widgets` build clean for `wasm32-unknown-unknown`
+- [ ] WASM viewer bundle ≤ 4 MB compressed (brotli) — Vello + parley + skrifa fonts is the bulk
 - [ ] Marketplace search returns within 500ms p95 (CloudFront-cached)
 - [ ] Cognito federation + email signup both verified end-to-end
 - [ ] Designer round-trips ten reference templates byte-for-byte
-- [ ] Viewer renders ten reference notebooks within visual-regression threshold
+- [ ] Viewer renders ten reference notebooks within visual-regression threshold (desktop golden vs Playwright snapshot)
 - [ ] QR share works on iPhone Safari + Pixel Chrome (mobile camera scan to load)
+- [ ] WebGPU absence shows the "WebGPU required" banner (test on Firefox release without flag)
 - [ ] CloudWatch billing alarm armed at $50/month
 - [ ] Privacy notice page covers: DDB attributes stored per user, S3 retention, Cognito data, deletion path
 - [ ] Tagged release `web-portal-v0.1`
