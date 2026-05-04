@@ -180,6 +180,7 @@ pub fn build_editor_view(
 
     let (preview_frame, preview_area) = build_preview_area(
         editor_state.clone(),
+        state.clone(),
         preview_renderer.clone(),
         preview_brush.clone(),
         preview_strokes.clone(),
@@ -963,6 +964,7 @@ fn build_brush_header(
     {
         let editor_state = editor_state.clone();
         let color_btn_c = color_btn.clone();
+        let rebuild = rebuild.clone();
         color_chk.connect_toggled(move |chk| {
             color_btn_c.set_sensitive(chk.is_active());
             if !chk.is_active() {
@@ -976,11 +978,15 @@ fn build_brush_header(
                     (r.alpha() * 255.0).clamp(0.0, 255.0) as u8,
                 ]);
             }
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
         });
     }
     {
         let editor_state = editor_state.clone();
         let color_chk_c = color_chk.clone();
+        let rebuild = rebuild.clone();
         color_btn.connect_rgba_notify(move |btn| {
             if !color_chk_c.is_active() {
                 return;
@@ -992,6 +998,9 @@ fn build_brush_header(
                 (r.blue() * 255.0).clamp(0.0, 255.0) as u8,
                 (r.alpha() * 255.0).clamp(0.0, 255.0) as u8,
             ]);
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
         });
     }
 
@@ -2033,7 +2042,8 @@ const PREVIEW_H: i32 = 200;
 const PREVIEW_BASE_WIDTH: f64 = 8.0;
 
 fn build_preview_area(
-    editor_state: Rc<RefCell<EditorState>>,
+    _editor_state: Rc<RefCell<EditorState>>,
+    state: SharedState,
     renderer: Rc<RefCell<Option<VelloRenderer>>>,
     preview_brush: Rc<RefCell<Brush>>,
     preview_strokes: Rc<RefCell<Vec<Stroke>>>,
@@ -2068,7 +2078,7 @@ fn build_preview_area(
         let preview_brush = preview_brush.clone();
         let preview_strokes = preview_strokes.clone();
         let preview_in_progress = preview_in_progress.clone();
-        let _editor_state = editor_state.clone();
+        let state_outer = state.clone();
         area.set_draw_func(move |_, ctx, w, h| {
             // Cream page surface.
             ctx.set_source_rgb(0.96, 0.95, 0.92);
@@ -2088,22 +2098,46 @@ fn build_preview_area(
             let r = renderer_slot.as_mut().unwrap();
 
             let brush = preview_brush.borrow().clone();
+            // Pen settings come from the live state (toolbar color,
+            // opacity, blend mode) so the preview matches what a real
+            // stroke would look like on the canvas. The brush's
+            // `default_color` overrides if set — same precedence as
+            // "Use this brush" applies on canvas.
+            let (pen_color, pen_opacity, pen_blend, pen_base_width) = {
+                let s = state_outer.borrow();
+                let color = match brush.default_color {
+                    Some(rgba) => journal_core::Color {
+                        r: rgba[0],
+                        g: rgba[1],
+                        b: rgba[2],
+                        a: rgba[3],
+                    },
+                    None => s.pen.color,
+                };
+                (color, s.pen.opacity, s.pen.blend_mode, s.pen.base_width)
+            };
+
             // Compose all strokes (committed + in-progress) with the
-            // current brush as their recipe — so changing the brush
-            // re-renders every prior stroke with the new look.
+            // current brush as their recipe and overwrite their pen
+            // settings with the live state — changing the toolbar
+            // color or the brush's default-color or opacity instantly
+            // re-tints every prior preview stroke.
+            let inject = |s: &Stroke| -> Stroke {
+                let mut s2 = s.clone();
+                s2.brush_recipe = Some(brush.clone());
+                s2.pen.color = pen_color;
+                s2.pen.opacity = pen_opacity;
+                s2.pen.blend_mode = pen_blend;
+                s2.pen.base_width = pen_base_width;
+                s2
+            };
             let mut strokes: Vec<Stroke> = preview_strokes
                 .borrow()
                 .iter()
-                .map(|s| {
-                    let mut s2 = s.clone();
-                    s2.brush_recipe = Some(brush.clone());
-                    s2
-                })
+                .map(inject)
                 .collect();
             if let Some(ip) = preview_in_progress.borrow().as_ref() {
-                let mut s2 = ip.clone();
-                s2.brush_recipe = Some(brush.clone());
-                strokes.push(s2);
+                strokes.push(inject(ip));
             }
             if strokes.is_empty() {
                 draw_preview_hint(ctx, w, h);
