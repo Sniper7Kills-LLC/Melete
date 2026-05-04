@@ -132,7 +132,18 @@ pub fn build_editor_view(
     sidebar.append(&lib_scroll);
 
     let new_btn = Button::with_label("+ New blank");
-    sidebar.append(&new_btn);
+    let dup_btn = Button::with_label("Duplicate");
+    let rename_btn = Button::with_label("Rename");
+    let delete_btn = Button::with_label("Delete");
+    let lib_btn_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .build();
+    lib_btn_row.append(&new_btn);
+    lib_btn_row.append(&dup_btn);
+    lib_btn_row.append(&rename_btn);
+    lib_btn_row.append(&delete_btn);
+    sidebar.append(&lib_btn_row);
 
     sidebar.append(&Separator::new(Orientation::Horizontal));
 
@@ -412,6 +423,109 @@ pub fn build_editor_view(
         let rebuild = rebuild.clone();
         new_btn.connect_clicked(move |_| {
             editor_state.borrow_mut().brush = default_seed_brush();
+            editor_state.borrow_mut().selected_layer = 0;
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+
+    // Duplicate — fork the currently-loaded brush into a new entry
+    // in the library with a fresh UUID and " (copy)" appended.
+    // Built-ins fork into the library too — useful when the user
+    // wants to start from Pen and tweak.
+    {
+        let editor_state = editor_state.clone();
+        let state_outer = state.clone();
+        let rebuild = rebuild.clone();
+        dup_btn.connect_clicked(move |_| {
+            let mut new_brush = editor_state.borrow().brush.clone();
+            new_brush.id = Uuid::new_v4();
+            new_brush.name = format!("{} (copy)", new_brush.name);
+            state_outer.borrow_mut().brush_library.push(new_brush.clone());
+            let snap = state_outer.borrow().brush_library.clone();
+            if let Err(e) = brush_library::save(&snap) {
+                tracing::warn!("brush library save: {e}");
+            }
+            editor_state.borrow_mut().brush = new_brush;
+            editor_state.borrow_mut().selected_layer = 0;
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+
+    // Rename — only meaningful for custom brushes; built-ins ignore.
+    {
+        let editor_state = editor_state.clone();
+        let state_outer = state.clone();
+        let parent_clone = _parent.clone();
+        let rebuild = rebuild.clone();
+        rename_btn.connect_clicked(move |_| {
+            let id = editor_state.borrow().brush.id;
+            let is_builtin = brush_library::built_ins().iter().any(|b| b.id == id);
+            if is_builtin {
+                tracing::info!("rename: cannot rename a built-in brush");
+                return;
+            }
+            let editor_state = editor_state.clone();
+            let state_outer = state_outer.clone();
+            let rebuild = rebuild.clone();
+            prompt_save_as(&parent_clone, move |new_name| {
+                let new_name = new_name.trim().to_string();
+                if new_name.is_empty() {
+                    return;
+                }
+                editor_state.borrow_mut().brush.name = new_name.clone();
+                let id = editor_state.borrow().brush.id;
+                let mut s = state_outer.borrow_mut();
+                if let Some(b) = s.brush_library.iter_mut().find(|b| b.id == id) {
+                    b.name = new_name;
+                }
+                let snap = s.brush_library.clone();
+                drop(s);
+                if let Err(e) = brush_library::save(&snap) {
+                    tracing::warn!("brush library save: {e}");
+                }
+                if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                    f();
+                }
+            });
+        });
+    }
+
+    // Delete — only custom brushes. Removes from library +
+    // brushes.toml. Snaps editor to a built-in afterwards so the
+    // user isn't staring at a dangling reference.
+    {
+        let editor_state = editor_state.clone();
+        let state_outer = state.clone();
+        let rebuild = rebuild.clone();
+        delete_btn.connect_clicked(move |_| {
+            let id = editor_state.borrow().brush.id;
+            let is_builtin = brush_library::built_ins().iter().any(|b| b.id == id);
+            if is_builtin {
+                tracing::info!("delete: cannot delete a built-in brush");
+                return;
+            }
+            {
+                let mut s = state_outer.borrow_mut();
+                s.brush_library.retain(|b| b.id != id);
+                // Drop any per-tool slot pointing at this brush so
+                // tool switching doesn't reload a deleted recipe.
+                s.tool_brushes.retain(|_, b| b.id != id);
+                if s.active_brush_recipe.as_ref().map(|b| b.id) == Some(id) {
+                    s.active_brush_recipe = None;
+                }
+            }
+            let snap = state_outer.borrow().brush_library.clone();
+            if let Err(e) = brush_library::save(&snap) {
+                tracing::warn!("brush library save: {e}");
+            }
+            crate::state::persist_tool_state(&state_outer);
+            // Snap editor to Pen built-in.
+            editor_state.borrow_mut().brush =
+                brush_library::built_ins().into_iter().next().unwrap();
             editor_state.borrow_mut().selected_layer = 0;
             if let Some(f) = rebuild.borrow().as_ref().cloned() {
                 f();
