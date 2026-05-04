@@ -509,7 +509,17 @@ pub fn toggle_tool_eraser(state: &SharedState) {
 /// `tool_settings` so the renderer + cursor pick them up.
 pub fn set_tool(state: &SharedState, tool: Tool) {
     let mut s = state.borrow_mut();
+    let prev_tool = s.tool;
     s.tool = tool;
+    // Custom brush_recipe is a one-shot override for the *current*
+    // drawing session. Switching tool snaps back to that tool's
+    // built-in composition, so the user has to consciously re-enter
+    // the editor to apply a custom brush to a different tool. Within
+    // a single tool, the override survives until they Cancel out of
+    // the editor or pick a different built-in.
+    if prev_tool != tool {
+        s.active_brush_recipe = None;
+    }
     if let Some(key) = crate::tool_settings::tool_key(tool) {
         // Sync flat snapshot to the active preset for this tool, in
         // case the user edited a different tool's preset and switched
