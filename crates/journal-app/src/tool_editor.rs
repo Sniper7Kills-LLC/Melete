@@ -964,8 +964,10 @@ fn polygon_editor_cursor(
         let pts_d = pts.clone();
         let drag_idx_d = drag_idx.clone();
         let editor_state2 = editor_state.clone();
-        let rebuild2 = rebuild.clone();
         let area_clone = area.clone();
+        // Mid-drag: only mutate brush + repaint cursor canvas (see
+        // `polygon_editor` for the rationale — calling rebuild
+        // mid-drag tears down the widget the drag is attached to).
         g.connect_drag_update(move |g, dx, dy| {
             let Some((sx, sy)) = g.start_point() else { return };
             let cx = sx + dx;
@@ -987,13 +989,14 @@ fn polygon_editor_cursor(
                 points: pts_d.borrow().clone(),
             };
             area_clone.queue_draw();
+        });
+        let drag_idx_d = drag_idx.clone();
+        let rebuild2 = rebuild.clone();
+        g.connect_drag_end(move |_, _, _| {
+            *drag_idx_d.borrow_mut() = None;
             if let Some(f) = rebuild2.borrow().as_ref().cloned() {
                 f();
             }
-        });
-        let drag_idx_d = drag_idx.clone();
-        g.connect_drag_end(move |_, _, _| {
-            *drag_idx_d.borrow_mut() = None;
         });
         area_widget.add_controller(g);
     }
@@ -2156,8 +2159,11 @@ fn polygon_editor(
         let pts_d = pts.clone();
         let drag_idx_d = drag_idx.clone();
         let editor_state2 = editor_state.clone();
-        let rebuild2 = rebuild.clone();
         let area_clone = area.clone();
+        // Mid-drag: only mutate brush + repaint the polygon canvas.
+        // Calling `rebuild` here would tear down the very widget the
+        // drag is attached to, ending the drag prematurely. Preview
+        // catches up at drag_end.
         g.connect_drag_update(move |g, dx, dy| {
             let Some((sx, sy)) = g.start_point() else { return };
             let cx = sx + dx;
@@ -2175,20 +2181,20 @@ fn polygon_editor(
                     *v = (ux, uy);
                 }
             }
-            // Push into brush.
             if let Some(l) = editor_state2.borrow_mut().brush.layers.get_mut(layer_idx) {
                 l.tip = TipShape::Custom {
                     points: pts_d.borrow().clone(),
                 };
             }
             area_clone.queue_draw();
+        });
+        let drag_idx_d = drag_idx.clone();
+        let rebuild2 = rebuild.clone();
+        g.connect_drag_end(move |_, _, _| {
+            *drag_idx_d.borrow_mut() = None;
             if let Some(f) = rebuild2.borrow().as_ref().cloned() {
                 f();
             }
-        });
-        let drag_idx_d = drag_idx.clone();
-        g.connect_drag_end(move |_, _, _| {
-            *drag_idx_d.borrow_mut() = None;
         });
         area_widget.add_controller(g);
     }
