@@ -99,6 +99,39 @@ pub struct AppConfig {
     /// legacy adapter at render time.
     #[serde(default)]
     pub tool_brush_assignments: std::collections::HashMap<String, uuid::Uuid>,
+    /// Editorial display font key — slug picked by the user from the
+    /// App Settings → "Display" group. `None` = use the default chain;
+    /// otherwise the value is one of [`DISPLAY_FONT_OPTIONS`]'s slugs
+    /// and the matching `font-family` chain is applied to the
+    /// `.display-font` CSS class at startup and on settings save.
+    #[serde(default)]
+    pub display_font: Option<String>,
+}
+
+/// (slug, label, font-family chain). The slug is what's persisted in
+/// `AppConfig::display_font`; the chain is what's slotted into the
+/// regenerated CSS template at runtime. The first slug is treated as
+/// the default — selecting it clears the persisted value.
+pub const DISPLAY_FONT_OPTIONS: &[(&str, &str, &str)] = &[
+    ("default",      "Editorial default (auto)", "\"EB Garamond\", \"Lora\", \"Crimson Pro\", \"Source Serif 4\", \"Source Serif Pro\", \"Liberation Serif\", \"DejaVu Serif\", \"Cantarell\", serif"),
+    ("noto-serif",   "Noto Serif",               "\"Noto Serif\", \"Source Serif 4\", \"Liberation Serif\", \"DejaVu Serif\", serif"),
+    ("noto-sans",    "Noto Sans",                "\"Noto Sans\", \"Cantarell\", \"DejaVu Sans\", sans-serif"),
+    ("eb-garamond",  "EB Garamond",              "\"EB Garamond\", \"Liberation Serif\", \"DejaVu Serif\", serif"),
+    ("lora",         "Lora",                     "\"Lora\", \"Liberation Serif\", \"DejaVu Serif\", serif"),
+    ("source-serif", "Source Serif",             "\"Source Serif 4\", \"Source Serif Pro\", \"Liberation Serif\", \"DejaVu Serif\", serif"),
+    ("liberation",   "Liberation Serif",         "\"Liberation Serif\", \"DejaVu Serif\", serif"),
+    ("system",       "System (Cantarell)",       "\"Cantarell\", \"Source Sans 3\", sans-serif"),
+];
+
+pub fn display_font_chain(slug: Option<&str>) -> &'static str {
+    match slug {
+        None => DISPLAY_FONT_OPTIONS[0].2,
+        Some(s) => DISPLAY_FONT_OPTIONS
+            .iter()
+            .find(|(k, _, _)| *k == s)
+            .map(|(_, _, c)| *c)
+            .unwrap_or(DISPLAY_FONT_OPTIONS[0].2),
+    }
 }
 
 /// True when developer-only UI (e.g. the per-tool brush settings dialog)
@@ -136,6 +169,7 @@ impl Default for AppConfig {
             tool_palettes: std::collections::HashMap::new(),
             brush_params: None,
             tool_brush_assignments: std::collections::HashMap::new(),
+            display_font: None,
         }
     }
 }

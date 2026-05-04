@@ -341,6 +341,50 @@ pub fn open_app_settings(
 
     page.add(&empty_group);
 
+    // ── Display ─────────────────────────────────────────────────────
+    let display_group = adw::PreferencesGroup::builder()
+        .title("Display")
+        .description("Font used for headers, the wordmark, and notebook titles.")
+        .build();
+    let font_options = crate::config::DISPLAY_FONT_OPTIONS;
+    let font_labels: Vec<&str> = font_options.iter().map(|(_, l, _)| *l).collect();
+    let font_model = gtk4::StringList::new(&font_labels);
+    let active_idx = font_options
+        .iter()
+        .position(|(slug, _, _)| {
+            cfg.display_font.as_deref() == Some(*slug)
+                || (cfg.display_font.is_none() && *slug == "default")
+        })
+        .unwrap_or(0) as u32;
+    let font_row = adw::ComboRow::builder()
+        .title("Display font")
+        .subtitle("Falls back through a serif chain if the chosen face isn't installed.")
+        .model(&font_model)
+        .selected(active_idx)
+        .build();
+    display_group.add(&font_row);
+    page.add(&display_group);
+    {
+        let font_row = font_row.clone();
+        font_row.connect_selected_notify(move |row| {
+            let idx = row.selected() as usize;
+            let slug = crate::config::DISPLAY_FONT_OPTIONS
+                .get(idx)
+                .map(|(s, _, _)| *s)
+                .unwrap_or("default");
+            let mut new_cfg = crate::config::load();
+            new_cfg.display_font = if slug == "default" {
+                None
+            } else {
+                Some(slug.to_string())
+            };
+            if let Err(e) = crate::config::save(&new_cfg) {
+                tracing::error!("save display_font: {e}");
+            }
+            crate::reload_css();
+        });
+    }
+
     // ── Drawing ─────────────────────────────────────────────────────
     let drawing_group = adw::PreferencesGroup::builder()
         .title("Drawing")

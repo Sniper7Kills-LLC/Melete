@@ -51,7 +51,7 @@ fn main() -> Result<()> {
     std::process::exit(exit_code.value());
 }
 
-const APP_CSS: &str = r#"
+const APP_CSS_TEMPLATE: &str = r#"
 /* ────────────────────────────────────────────────────────────────────
    Journal — visual identity (paper-journal mood: deep indigo + amber)
    ──────────────────────────────────────────────────────────────────── */
@@ -77,9 +77,7 @@ const APP_CSS: &str = r#"
 .notebook-card .card-title,
 .empty-state-title,
 .title-1, .title-2, .title-3, .title-4 {
-    font-family: "EB Garamond", "Lora", "Crimson Pro", "Source Serif 4",
-                 "Source Serif Pro", "Liberation Serif", "DejaVu Serif",
-                 "Cantarell", serif;
+    font-family: __DISPLAY_FONT__;
 }
 
 .wordmark {
@@ -90,9 +88,7 @@ const APP_CSS: &str = r#"
 }
 
 .section-header-label {
-    font-family: "EB Garamond", "Lora", "Crimson Pro", "Source Serif 4",
-                 "Source Serif Pro", "Liberation Serif", "DejaVu Serif",
-                 "Cantarell", serif;
+    font-family: __DISPLAY_FONT__;
     font-weight: 700;
     font-size: 1.10em;
     letter-spacing: 0.01em;
@@ -401,9 +397,24 @@ scrollbar slider:hover { background-color: alpha(@amber_accent, 0.78); }
 }
 "#;
 
+thread_local! {
+    /// Holds the application's CssProvider so that runtime settings
+    /// changes (e.g. the user picking a different display font) can
+    /// reload the same provider via `reload_css` instead of stacking
+    /// new providers on top.
+    static CSS_PROVIDER: std::cell::RefCell<Option<CssProvider>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn build_css() -> String {
+    let cfg = crate::config::load();
+    let chain = crate::config::display_font_chain(cfg.display_font.as_deref());
+    APP_CSS_TEMPLATE.replace("__DISPLAY_FONT__", chain)
+}
+
 fn load_css() {
     let provider = CssProvider::new();
-    provider.load_from_string(APP_CSS);
+    provider.load_from_string(&build_css());
     if let Some(display) = gtk4::gdk::Display::default() {
         gtk4::style_context_add_provider_for_display(
             &display,
@@ -411,6 +422,19 @@ fn load_css() {
             gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
     }
+    CSS_PROVIDER.with(|c| *c.borrow_mut() = Some(provider));
+}
+
+/// Re-evaluate the CSS template against the current `AppConfig` and
+/// push the result through the existing CssProvider. Settings dialogs
+/// call this after persisting changes that affect chrome (e.g. the
+/// display-font selector) so the swap is live without a restart.
+pub fn reload_css() {
+    CSS_PROVIDER.with(|c| {
+        if let Some(p) = c.borrow().as_ref() {
+            p.load_from_string(&build_css());
+        }
+    });
 }
 
 fn data_dir() -> Result<PathBuf> {
