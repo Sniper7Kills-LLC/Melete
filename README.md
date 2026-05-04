@@ -6,7 +6,7 @@ Optimized for Framework 12 with touchscreen + stylus.
 
 ## Tech stack
 
-- Rust, GTK4 (gtk4-rs), Cairo (CPU rendering via DrawingArea)
+- Rust, GTK4 (gtk4-rs), Vello (GPU compute via wgpu Vulkan, drawn into a `GLArea`); Cairo retained for PDF export
 - SQLite per notebook (`.journal` files)
 - See [PLAN.md](PLAN.md) for full architecture and phase status.
 

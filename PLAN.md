@@ -505,14 +505,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 ```
 
-(Cairo accessed via `gtk4::cairo` re-export — no separate dep.)
+(Vello / wgpu / parley pulled in by the `vello` feature on `journal-canvas` and `journal-app`. Cairo accessed via `gtk4::cairo` re-export — used now only by `pdf_export` for vector PDF output.)
 
 ---
 
 ## Resolved Decisions
 
 - **System color-scheme detection:** Uses `adw::StyleManager` (libadwaita 0.7) instead of `gtk4::Settings::is_gtk_application_prefer_dark_theme`. The `StyleManager` queries the XDG desktop portal so it reflects the user's OS-level dark/light preference and fires `notify::dark` when it changes, regardless of DE (GNOME, KDE, Hyprland, etc.).
-- **Renderer:** Cairo via `gtk4::DrawingArea`, not Skia. Phase 1 GPU Skia integration via GLArea hit Mesa/Wayland incompatibility (`direct_contexts::make_gl` returned None despite valid GL 4.6 context and resolved entry points). Cairo CPU rendering is fast enough for Phase 1 stroke counts; migrate to GSK paths (GTK 4.14+) if perf becomes a bottleneck.
+- **Renderer:** Vello (GPU compute via wgpu Vulkan) drawn into a `gtk4::GLArea` — see `docs/renderer-vello-migration.md` for the migration record. Strokes / backgrounds / widgets / overlays / image / PDF / placeholder all render through `journal_canvas::vello_renderer::VelloRenderer`. `pdf_export` retains Cairo to keep PDF output vector. The original Phase 1 Cairo-on-DrawingArea path remains as a fallback when `JOURNAL_VELLO=0` is set.
 - **Touch gesture mode-lock:** A two-finger gesture is locked to either pan or zoom on the first frame that crosses a threshold (12px centroid drift → pan; 8% scale change → zoom). Avoids GestureZoom's tendency to interpret minor finger-distance jitter as zoom during a pure pan.
 - **Template backgrounds:** Fixed size. Canvas extends as blank beyond. Grid templates tile infinitely.
 - **Template size:** Physical units (mm). Default: US Letter (215.9mm × 279.4mm). Viewport fits full page on screen by default.

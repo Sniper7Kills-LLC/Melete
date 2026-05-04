@@ -1,9 +1,16 @@
 # Change Document: Migrate Renderer from Cairo to Vello
 
-**Status:** Draft
+**Status:** Done (Phase 5 partial — Cairo retained for `pdf_export` only)
 **Owner:** S7K
 **Date:** 2026-05-03
+**Merged:** 2026-05-03 (commit `b0406d0`, branch `renderer-vello-phase0`)
 **Scope:** Native canvas renderer migration with eye on future cloud sync (DynamoDB + AppSync) and view-only web viewer.
+
+**Outcome summary:**
+- Vello is the default canvas renderer (`journal-app` feature `vello`, on by default). `JOURNAL_VELLO=0` opts back to the Cairo `DrawingArea` for diagnostics.
+- All canvas content — strokes (6 brush styles, blend modes), backgrounds (analytic + raster image + PDF), template widgets, selection handles, lasso, brush cursor, page-bounds outline, and the no-page placeholder — now renders into a `vello::Scene` and is presented via Path B (offscreen wgpu texture → readback → GL upload → fullscreen quad on a `gtk4::GLArea`).
+- New crate `journal-widgets` holds parley-driven widget rendering, kept GTK/SQLite-free so a future WASM viewer can link it directly.
+- Cairo paths still live in `journal-canvas` solely because `pdf_export` continues to emit vector PDF via `cairo::PdfSurface`. Migrating PDF export to Vello would mean rasterizing every page (~5 MB at 200 dpi vs. ~50 KB vector); kept as a deliberate trade-off.
 
 ---
 
@@ -354,10 +361,10 @@ Phase 6 (web viewer) is separate work, ~3–4 days to bring up against the now-p
 
 ## Sign-off Checklist (before merging Phase 5)
 
-- [ ] Visual regression harness green for full test corpus
-- [ ] Manual checklist (§11.4) walked through on Framework 12 (touchscreen + stylus)
-- [ ] No `gtk4::cairo` references in `journal-canvas` crate
-- [ ] `journal-canvas` builds with `--target wasm32-unknown-unknown` (no GTK deps leaking)
-- [ ] CLAUDE.md updated (renderer line, GPU note removed/changed)
-- [ ] Cairo-final SHA tagged in git
-- [ ] Tagged release pushed
+- [ ] Visual regression harness green for full test corpus *(deferred — manual user testing)*
+- [x] Manual checklist (§11.4) walked through on Framework 12 (touchscreen + stylus)
+- [ ] No `gtk4::cairo` references in `journal-canvas` crate *(retained for `pdf_export`; see Outcome summary)*
+- [ ] `journal-canvas` builds with `--target wasm32-unknown-unknown` (no GTK deps leaking) *(blocked by `pdf_export` Cairo dep; web viewer can use `journal-widgets` directly which is WASM-clean)*
+- [x] CLAUDE.md updated (renderer line, GPU note removed/changed)
+- [ ] Cairo-final SHA tagged in git *(pre-merge SHA `7486213`; `git tag renderer-cairo-final 7486213` if desired)*
+- [ ] Tagged release pushed *(no release process configured)*
