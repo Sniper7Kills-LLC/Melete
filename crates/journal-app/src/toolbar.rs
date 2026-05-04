@@ -19,7 +19,10 @@ use crate::state::{SharedState, Tool};
 ///
 /// A chevron button at the right end toggles a collapsed mode where only the
 /// drag handle and the currently-active tool icon are visible.
-pub fn build_toolbar(state: SharedState) -> GtkBox {
+pub fn build_toolbar(
+    state: SharedState,
+    tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>>,
+) -> GtkBox {
     // ── Outer wrapper: positioned inside the Overlay via margins ─────────
     let cfg = crate::config::load();
 
@@ -101,6 +104,25 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
         });
         tools_list.append(&item);
     }
+    // ── Edit current tool entry ─────────────────────────────────────
+    tools_list.append(&Separator::new(Orientation::Horizontal));
+    let edit_btn = Button::with_label("Edit current tool…");
+    edit_btn.add_css_class("flat");
+    {
+        let state = state.clone();
+        let popover = tools_popover.clone();
+        let tools_open = tools_open.clone();
+        edit_btn.connect_clicked(move |_| {
+            popover.popdown();
+            let tool = state.borrow().tool;
+            let seed = builtin_brush_for_tool(tool);
+            if let Some(f) = tools_open.borrow().as_ref().cloned() {
+                f(seed);
+            }
+        });
+    }
+    tools_list.append(&edit_btn);
+
     tools_popover.set_child(Some(&tools_list));
     tools_btn.set_popover(Some(&tools_popover));
 
@@ -382,6 +404,22 @@ pub fn build_toolbar(state: SharedState) -> GtkBox {
 /// Returns the symbolic icon name for the given tool. The names lean on
 /// freedesktop.org symbolic icons that ship with most icon themes; missing
 /// names fall back to a generic image-missing glyph.
+/// Map a drawing tool to its matching built-in brush composition.
+/// Used by the toolbar's "Edit current tool…" entry to pre-seed the
+/// Tool Editor with the recipe the user is currently drawing with.
+fn builtin_brush_for_tool(tool: Tool) -> Option<journal_core::Brush> {
+    use journal_canvas::built_in_brushes as bi;
+    Some(match tool {
+        Tool::Pen => bi::pen(0.6, 0.4),
+        Tool::Pencil => bi::pencil(0.4, 0.9, 0.12, 8.0, 0.22),
+        Tool::Highlighter => bi::highlighter(0.6, 0.4),
+        Tool::Paintbrush => bi::paintbrush(1.6, 1.4, 0.95, 0.07, 0.20, 0.95),
+        Tool::SprayCan => bi::spray(36, 0.06, 0.35),
+        Tool::Calligraphy => bi::calligraphy(45.0, 0.18, 0.5, true),
+        _ => return None,
+    })
+}
+
 fn icon_for_tool(tool: Tool) -> &'static str {
     match tool {
         Tool::Pen => "document-edit-symbolic",

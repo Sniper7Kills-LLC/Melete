@@ -70,7 +70,10 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
 
     // Tools…  menu entry is built before `win` exists, so it forwards
     // through this closure cell that's populated after `win` is built.
-    let tools_open: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    // The closure takes an optional seed brush — `None` opens
+    // blank-slate; `Some(b)` opens focused on `b`.
+    let tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>> =
+        Rc::new(RefCell::new(None));
 
     let menu_btn = build_menu_button(
         parent,
@@ -84,7 +87,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     header.pack_end(&cheatsheet_btn);
 
     let canvas = canvas_widget::build_canvas(state.clone());
-    let bar = toolbar::build_toolbar(state.clone());
+    let bar = toolbar::build_toolbar(state.clone(), tools_open.clone());
     let canvas_overlay = Overlay::new();
 
     // Vello path: GLArea is the canvas surface — Vello renders bg, widgets,
@@ -208,8 +211,8 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     // Wire the Tools… menu entry now that `win` exists.
     {
         let win = win.clone();
-        *tools_open.borrow_mut() = Some(Rc::new(move || {
-            show_tool_editor(&win, None);
+        *tools_open.borrow_mut() = Some(Rc::new(move |seed: Option<journal_core::Brush>| {
+            show_tool_editor(&win, seed);
         }));
     }
 
@@ -290,7 +293,7 @@ fn build_menu_button(
     parent: &ApplicationWindow,
     state: SharedState,
     current_notebook: Rc<RefCell<Option<NotebookId>>>,
-    tools_open: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+    tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>>,
 ) -> MenuButton {
     let popover = Popover::new();
     let vbox = GtkBox::builder()
@@ -376,7 +379,7 @@ fn build_menu_button(
         tool_editor_btn.connect_clicked(move |_| {
             popover_clone.popdown();
             if let Some(f) = tools_open.borrow().as_ref().cloned() {
-                f();
+                f(None);
             }
         });
     }
