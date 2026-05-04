@@ -9,7 +9,9 @@ use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, ColorDialog, ColorDialogButton, DrawingArea, Entry,
     Label, MenuButton, Orientation, Paned, Popover, ScrolledWindow, SpinButton, Switch,
 };
-use journal_canvas::{draw_widgets_with_context, ViewportTransform, WidgetRenderContext};
+use journal_canvas::{
+    draw_widgets_with_context, paint_with_widgets_ctx, ViewportTransform, WidgetRenderContext,
+};
 use journal_core::{
     Color, PageTemplate, Rect, TemplateWidget, WidgetKind, WidgetRect, WidgetStyle,
 };
@@ -357,6 +359,19 @@ pub fn build_editor_view(
         .width_request(260)
         .vexpand(true)
         .build();
+    let props_outer = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(0)
+        .build();
+
+    // ── Live preview thumbnail (audit §4) ──
+    // Repaints the template through the same Cairo widget pipeline used
+    // for real pages, with three baked-in dummy strokes so the user can
+    // see how their widgets sit relative to ink. Refreshes on a tick
+    // when the template hash changes.
+    let live_preview = build_live_preview(&cs);
+    props_outer.append(&live_preview);
+
     let props_box = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(8)
@@ -365,7 +380,8 @@ pub fn build_editor_view(
         .margin_end(8)
         .margin_bottom(8)
         .build();
-    props_scroll.set_child(Some(&props_box));
+    props_outer.append(&props_box);
+    props_scroll.set_child(Some(&props_outer));
     let props_box_rc = Rc::new(props_box);
 
     // ── Feature 4: wire up the selection observer ─────────────────────────
@@ -1750,6 +1766,206 @@ fn default_kind_for(tool: PlaceTool) -> WidgetKind {
         PlaceTool::WeeklyCompass => WidgetKind::WeeklyCompass,
         PlaceTool::None => WidgetKind::Rectangle,
     }
+}
+
+/// "On a real page" preview thumbnail — paints the template + dummy
+/// strokes through the live render pipeline. Audit §4: lets the user
+/// see how widgets sit relative to ink without saving + opening a page.
+fn build_live_preview(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
+    use std::cell::Cell;
+
+    let outer = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_top(8)
+        .margin_bottom(8)
+        .margin_start(8)
+        .margin_end(8)
+        .build();
+
+    let header = Label::builder()
+        .label("On a real page")
+        .halign(gtk4::Align::Start)
+        .build();
+    header.add_css_class("dim-label");
+    outer.append(&header);
+
+    let area = DrawingArea::builder()
+        .height_request(280)
+        .hexpand(true)
+        .build();
+    area.add_css_class("template-preview-frame");
+
+    {
+        let cs = cs.clone();
+        area.set_draw_func(move |_a, ctx, w, h| {
+            if w <= 0 || h <= 0 {
+                return;
+            }
+            let s = cs.borrow();
+            let template = &s.template;
+            let dark_mode = libadwaita::StyleManager::default().is_dark();
+            let (tw, th) = template.size_mm;
+            let page_rect = Rect { x: 0.0, y: 0.0, width: tw, height: th };
+            let margin = 0.92;
+            let zoom = ((w as f64 / tw).min(h as f64 / th)) * margin;
+            let viewport = journal_core::Viewport {
+                center: journal_core::Point { x: tw * 0.5, y: th * 0.5 },
+                zoom,
+                rotation: 0.0,
+            };
+            let transform = ViewportTransform::new(viewport, w as f64, h as f64);
+            let bg = journal_templates::page_template_to_background_config(template);
+            let strokes = dummy_strokes(page_rect);
+            let render_ctx = WidgetRenderContext {
+                date: Some(chrono::Local::now().date_naive()),
+                overrides: Default::default(),
+            };
+            let empty: HashSet<Uuid> = HashSet::new();
+            paint_with_widgets_ctx(
+                ctx,
+                &transform,
+                &bg,
+                page_rect,
+                &template.widgets,
+                &strokes,
+                &empty,
+                dark_mode,
+                &render_ctx,
+            );
+        });
+    }
+
+    // Cheap dirty check: hash widget count + each widget rect's (x, y,
+    // w, h) into a u64 every tick. Repaint only when it changes — keeps
+    // the thumbnail responsive without burning CPU on idle frames.
+    {
+        let area_for_tick = area.clone();
+        let cs = cs.clone();
+        let last_hash: Rc<Cell<u64>> = Rc::new(Cell::new(0));
+        area.add_tick_callback(move |_, _| {
+            let h = template_hash(&cs.borrow());
+            if h != last_hash.get() {
+                last_hash.set(h);
+                area_for_tick.queue_draw();
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
+
+    outer.append(&area);
+    outer
+}
+
+fn template_hash(cs: &CreatorState) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    cs.template.widgets.len().hash(&mut h);
+    let (sw, sh) = cs.template.size_mm;
+    sw.to_bits().hash(&mut h);
+    sh.to_bits().hash(&mut h);
+    format!("{:?}", cs.template.background).hash(&mut h);
+    for w in &cs.template.widgets {
+        w.rect.x.to_bits().hash(&mut h);
+        w.rect.y.to_bits().hash(&mut h);
+        w.rect.width.to_bits().hash(&mut h);
+        w.rect.height.to_bits().hash(&mut h);
+    }
+    h.finish()
+}
+
+/// Three small hand-drawn-feel strokes baked into the live preview so
+/// the user sees their widgets against ink. Coordinates are in
+/// page-mm; samples are pressure 1.0, no tilt.
+fn dummy_strokes(page_rect: Rect) -> Vec<journal_core::Stroke> {
+    use journal_core::{BlendMode, BrushStyle, Color, PenSettings, Stroke, StrokePoint};
+
+    fn stroke(points_mm: Vec<(f64, f64)>, color: Color, width: f64) -> Stroke {
+        let pen = PenSettings {
+            color,
+            base_width: width,
+            opacity: 1.0,
+            blend_mode: BlendMode::Normal,
+            brush_style: BrushStyle::Pen,
+        };
+        let pts: Vec<StrokePoint> = points_mm
+            .iter()
+            .enumerate()
+            .map(|(i, (x, y))| StrokePoint {
+                x: *x,
+                y: *y,
+                pressure: 1.0,
+                tilt_x: 0.0,
+                tilt_y: 0.0,
+                timestamp_ms: i as u64 * 16,
+            })
+            .collect();
+        let (mut min_x, mut min_y, mut max_x, mut max_y) =
+            (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        for p in &pts {
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
+        let bbox = Rect {
+            x: min_x,
+            y: min_y,
+            width: (max_x - min_x).max(0.0),
+            height: (max_y - min_y).max(0.0),
+        };
+        Stroke {
+            id: Uuid::new_v4(),
+            points: pts,
+            pen,
+            zoom_at_creation: 1.0,
+            bounding_box: bbox,
+            brush_recipe: None,
+        }
+    }
+
+    let pw = page_rect.width;
+    let ph = page_rect.height;
+    let ink = Color { r: 30, g: 36, b: 64, a: 255 };
+    let amber = Color { r: 214, g: 168, b: 58, a: 230 };
+
+    // Diagonal, scribble, check mark — each scaled to a corner of the
+    // page so they don't stomp on the centered widget areas.
+    vec![
+        stroke(
+            vec![
+                (pw * 0.06, ph * 0.10),
+                (pw * 0.18, ph * 0.06),
+                (pw * 0.30, ph * 0.10),
+                (pw * 0.22, ph * 0.18),
+                (pw * 0.34, ph * 0.20),
+            ],
+            ink,
+            0.9,
+        ),
+        stroke(
+            vec![
+                (pw * 0.62, ph * 0.06),
+                (pw * 0.66, ph * 0.10),
+                (pw * 0.70, ph * 0.06),
+                (pw * 0.74, ph * 0.10),
+                (pw * 0.78, ph * 0.06),
+                (pw * 0.82, ph * 0.10),
+                (pw * 0.86, ph * 0.06),
+            ],
+            amber,
+            1.4,
+        ),
+        stroke(
+            vec![
+                (pw * 0.10, ph * 0.92),
+                (pw * 0.16, ph * 0.96),
+                (pw * 0.28, ph * 0.84),
+            ],
+            ink,
+            1.1,
+        ),
+    ]
 }
 
 fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) {
