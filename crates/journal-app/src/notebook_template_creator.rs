@@ -38,8 +38,8 @@ thread_local! {
     static LAYOUT_PREVIEW: RefCell<Option<GtkBox>> = const { RefCell::new(None) };
 }
 
-const MINI_W: i32 = 32;
-const MINI_H: i32 = 42;
+const MINI_W: i32 = 64;
+const MINI_H: i32 = 84;
 
 /// Render a single page template as a small Cairo preview wrapped in a
 /// thin Frame, suitable for the bottom-of-editor preview strip. Tooltip
@@ -138,6 +138,41 @@ fn refresh_layout_preview(
         }
         let s = es.borrow();
         let pts = page_templates.as_ref();
+
+        // ── Status line: one-glance summary of what's in the template ──
+        // Audit §3 — gives the editor a left-to-right read order so the
+        // user sees what they're working with before scanning the strip.
+        let total_pages: usize = s.template.year_start.len()
+            + s.template.before_quarter.len()
+            + s.template.before_month.len()
+            + s.template.before_week.len()
+            + s.template.daily_slots.iter().map(|d| d.templates.len()).sum::<usize>();
+        let daily_slot_count = s.template.daily_slots.len();
+        let grouping = match s.template.grouping {
+            PlannerGrouping::Week => "Week",
+            _ => "Month",
+        };
+        let name = if s.template.name.is_empty() {
+            "(untitled)".to_string()
+        } else {
+            s.template.name.clone()
+        };
+        let summary = format!(
+            "<span weight=\"600\">{}</span>  ·  {} page{}, {} daily slot{}  ·  groups by {}",
+            glib::markup_escape_text(&name),
+            total_pages,
+            if total_pages == 1 { "" } else { "s" },
+            daily_slot_count,
+            if daily_slot_count == 1 { "" } else { "s" },
+            grouping,
+        );
+        let status_lbl = Label::builder()
+            .use_markup(true)
+            .halign(Align::Start)
+            .build();
+        status_lbl.set_markup(&summary);
+        status_lbl.add_css_class("dim-label");
+        body.append(&status_lbl);
 
         // Append page chips (mini Cairo previews) for the given ids,
         // or a single empty placeholder when ids is empty.
