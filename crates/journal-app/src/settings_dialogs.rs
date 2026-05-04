@@ -414,7 +414,7 @@ pub fn open_app_settings(
     let dev_row = adw::SwitchRow::builder()
         .title("Developer mode")
         .subtitle(
-            "Enables the per-tool Brush Tuner button in the menu and a floating Tool Options \
+            "Enables the per-tool Tool Settings button in the menu and a floating Tool Options \
              panel that follows the currently-selected tool.",
         )
         .active(cfg.developer_mode)

@@ -358,7 +358,7 @@ fn build_menu_button(
     dev_check.set_active(crate::config::load().developer_mode);
     vbox.append(&dev_check);
 
-    let tool_btn = Button::with_label("Brush tuner…");
+    let tool_btn = Button::with_label("Tool settings…");
     tool_btn.set_visible(crate::config::developer_mode_enabled(&crate::config::load()));
     {
         let state = state.clone();
