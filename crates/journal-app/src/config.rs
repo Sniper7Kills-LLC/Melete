@@ -106,6 +106,17 @@ pub struct AppConfig {
     /// `.display-font` CSS class at startup and on settings save.
     #[serde(default)]
     pub display_font: Option<String>,
+    /// True once the first-launch guided tour has been dismissed by the
+    /// user. The tour shows on every launch until dismissed and never
+    /// shows again.
+    #[serde(default)]
+    pub tour_dismissed: bool,
+    /// Crate version the user was last shown a "What's new" pane for.
+    /// `None` = never seen one (a brand-new install). On every boot,
+    /// compare to `env!("CARGO_PKG_VERSION")`; if different, show the
+    /// pane and overwrite this field.
+    #[serde(default)]
+    pub last_seen_version: Option<String>,
 }
 
 /// (slug, label, font-family chain). The slug is what's persisted in
@@ -170,6 +181,8 @@ impl Default for AppConfig {
             brush_params: None,
             tool_brush_assignments: std::collections::HashMap::new(),
             display_font: None,
+            tour_dismissed: false,
+            last_seen_version: None,
         }
     }
 }

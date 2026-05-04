@@ -5,6 +5,7 @@ mod dialogs;
 mod history;
 mod input;
 mod notebook_template_creator;
+mod onboarding;
 mod pdf_export;
 mod settings_dialogs;
 mod shortcuts;
@@ -571,6 +572,13 @@ fn build_ui(app: &adw::Application) -> Result<()> {
     bind_system_dark_mode(state.clone(), canvas);
 
     window.present();
+
+    // Discoverability nudges (audit §11). Tour fires on first launch
+    // until dismissed; what's-new fires once per crate version after the
+    // tour has been seen at least once.
+    onboarding::show_first_launch_tour(&window);
+    onboarding::show_whats_new_if_upgraded(&window);
+
     Ok(())
 }
 
