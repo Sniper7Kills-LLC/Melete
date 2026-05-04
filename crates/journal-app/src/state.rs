@@ -164,6 +164,12 @@ pub struct CanvasState {
     /// brush_style + BrushParams". `Some(brush)` overrides — used by
     /// the Tool Editor when the user is drawing with a custom brush.
     pub active_brush_recipe: Option<journal_core::Brush>,
+
+    /// User-defined brush library. Loaded from
+    /// `~/.config/journal/brushes.toml` at boot; written back when
+    /// the Tool Editor saves. Built-in brushes are NOT in this list —
+    /// the editor merges built-ins + this library at display time.
+    pub brush_library: Vec<journal_core::Brush>,
 }
 
 pub type SharedState = Rc<RefCell<CanvasState>>;
@@ -249,6 +255,7 @@ pub fn new_shared_state(
         brush_params: journal_canvas::vello_renderer::BrushParams::default(),
         tool_palettes: std::collections::HashMap::new(),
         active_brush_recipe: None,
+        brush_library: crate::brush_library::load(),
     }))
 }
 

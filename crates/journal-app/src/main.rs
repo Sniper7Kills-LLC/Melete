@@ -1,3 +1,4 @@
+mod brush_library;
 mod canvas_widget;
 mod config;
 mod dialogs;
@@ -11,6 +12,7 @@ mod state;
 mod template_creator;
 mod template_manager;
 mod thumbnail;
+mod tool_editor;
 mod tool_options_popup;
 mod tool_settings;
 mod toolbar;

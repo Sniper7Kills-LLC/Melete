@@ -19,6 +19,7 @@ const HOME_NAME: &str = "home";
 const NOTEBOOK_NAME: &str = "notebook";
 const TEMPLATE_EDITOR_NAME: &str = "template_editor";
 pub const NOTEBOOK_TEMPLATE_EDITOR_NAME: &str = "notebook_template_editor";
+const TOOL_EDITOR_NAME: &str = "tool_editor";
 
 pub struct AppWindow {
     pub root: GtkBox,
@@ -28,6 +29,7 @@ pub struct AppWindow {
     notebook_container: GtkBox,
     template_editor_container: GtkBox,
     notebook_template_editor_container: GtkBox,
+    tool_editor_container: GtkBox,
     canvas_overlay: Overlay,
     back_btn: Button,
     sidebar_toggle_btn: Button,
@@ -66,7 +68,16 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     // Create current_notebook early so build_menu_button can share it.
     let current_notebook: Rc<RefCell<Option<NotebookId>>> = Rc::new(RefCell::new(None));
 
-    let menu_btn = build_menu_button(parent, state.clone(), current_notebook.clone());
+    // Tools…  menu entry is built before `win` exists, so it forwards
+    // through this closure cell that's populated after `win` is built.
+    let tools_open: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+
+    let menu_btn = build_menu_button(
+        parent,
+        state.clone(),
+        current_notebook.clone(),
+        tools_open.clone(),
+    );
     header.pack_end(&menu_btn);
 
     let cheatsheet_btn = build_cheatsheet_button();
@@ -145,6 +156,11 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         .hexpand(true)
         .vexpand(true)
         .build();
+    let tool_editor_container = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
 
     let stack = Stack::new();
     stack.set_transition_type(StackTransitionType::SlideLeftRight);
@@ -154,6 +170,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     stack.add_named(&notebook_container, Some(NOTEBOOK_NAME));
     stack.add_named(&template_editor_container, Some(TEMPLATE_EDITOR_NAME));
     stack.add_named(&notebook_template_editor_container, Some(NOTEBOOK_TEMPLATE_EDITOR_NAME));
+    stack.add_named(&tool_editor_container, Some(TOOL_EDITOR_NAME));
 
     parent.set_titlebar(Some(&header));
 
@@ -170,6 +187,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         notebook_container,
         template_editor_container,
         notebook_template_editor_container,
+        tool_editor_container,
         canvas_overlay,
         back_btn: back_btn.clone(),
         sidebar_toggle_btn: sidebar_toggle_btn.clone(),
@@ -185,6 +203,14 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     {
         let win = win.clone();
         back_btn.connect_clicked(move |_| show_home(&win));
+    }
+
+    // Wire the Tools… menu entry now that `win` exists.
+    {
+        let win = win.clone();
+        *tools_open.borrow_mut() = Some(Rc::new(move || {
+            show_tool_editor(&win, None);
+        }));
     }
 
     {
@@ -264,6 +290,7 @@ fn build_menu_button(
     parent: &ApplicationWindow,
     state: SharedState,
     current_notebook: Rc<RefCell<Option<NotebookId>>>,
+    tools_open: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
 ) -> MenuButton {
     let popover = Popover::new();
     let vbox = GtkBox::builder()
@@ -339,6 +366,21 @@ fn build_menu_button(
         });
     }
     vbox.append(&tool_btn);
+
+    // Tool Editor — composable-brush full-screen page. Available to
+    // every user (not gated on dev mode).
+    let tool_editor_btn = Button::with_label("Tools…");
+    {
+        let popover_clone = popover.clone();
+        let tools_open = tools_open.clone();
+        tool_editor_btn.connect_clicked(move |_| {
+            popover_clone.popdown();
+            if let Some(f) = tools_open.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+    vbox.append(&tool_editor_btn);
 
     {
         let tool_btn = tool_btn.clone();
@@ -613,6 +655,42 @@ pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
     w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
     w.stack.set_visible_child_name(TEMPLATE_EDITOR_NAME);
+}
+
+/// Switch the stack to the full-screen Tool Editor.
+/// `seed_brush` — `Some(b)` opens the editor on a specific brush;
+/// `None` opens blank-slate (a default Pen composition).
+pub fn show_tool_editor(win: &SharedWindow, seed_brush: Option<journal_core::Brush>) {
+    let container = win.borrow().tool_editor_container.clone();
+    while let Some(child) = container.first_child() {
+        container.remove(&child);
+    }
+
+    // Remember where we came from so Done/Cancel can return.
+    let return_notebook = *win.borrow().current_notebook.borrow();
+    *win.borrow().previous_view.borrow_mut() = return_notebook;
+
+    let state = win.borrow().state.clone();
+    let parent = win.borrow().parent.clone();
+
+    let win_for_done = win.clone();
+    let on_done: Rc<dyn Fn()> = Rc::new(move || {
+        let prev = *win_for_done.borrow().previous_view.borrow();
+        match prev {
+            Some(nb_id) => show_notebook(&win_for_done, nb_id),
+            None => show_home(&win_for_done),
+        }
+    });
+
+    let view = crate::tool_editor::build_editor_view(&parent, state, seed_brush, on_done);
+    container.append(&view);
+
+    let w = win.borrow();
+    w.title_label.set_text("Tool Editor");
+    w.back_btn.set_visible(false);
+    w.sidebar_toggle_btn.set_visible(false);
+    w.notebook_settings_btn.set_visible(false);
+    w.stack.set_visible_child_name(TOOL_EDITOR_NAME);
 }
 
 /// Switch the stack to the full-screen notebook template editor.
