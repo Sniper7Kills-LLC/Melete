@@ -189,7 +189,10 @@ scrollbar slider:hover { background-color: alpha(@amber_accent, 0.78); }
 }
 .drag-handle-compact:hover {
     opacity: 1.0;
-    background-color: alpha(@accent_color, 0.18);
+    background-color: alpha(@amber_accent, 0.22);
+}
+.drag-handle-compact:active {
+    background-color: alpha(@amber_accent, 0.45);
 }
 
 .notebook-card {
