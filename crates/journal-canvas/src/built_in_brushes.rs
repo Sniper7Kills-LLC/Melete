@@ -100,6 +100,7 @@ pub fn pencil(
             },
         ],
         cursor: CursorShape::Auto,
+        default_color: None,
     }
 }
 
@@ -168,6 +169,7 @@ pub fn paintbrush(
             },
         ],
         cursor: CursorShape::Auto,
+        default_color: None,
     }
 }
 

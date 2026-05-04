@@ -338,6 +338,7 @@ mod tests {
                 blend: BlendMode::Normal,
             }],
             cursor: CursorShape::Auto,
+            default_color: None,
         };
         s.brush_recipe = Some(recipe.clone());
         insert_stroke(db.conn(), &s, pid).unwrap();

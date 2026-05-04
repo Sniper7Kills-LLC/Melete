@@ -518,6 +518,16 @@ pub fn build_editor_view(
             let brush = editor_state.borrow().brush.clone();
             let mut s = state_outer.borrow_mut();
             s.active_brush_recipe = Some(brush.clone());
+            // Brush carries an optional default ink color. Apply
+            // it to the active pen so the next stroke uses it.
+            if let Some(rgba) = brush.default_color {
+                s.pen.color = journal_core::Color {
+                    r: rgba[0],
+                    g: rgba[1],
+                    b: rgba[2],
+                    a: rgba[3],
+                };
+            }
             let tool = s.tool;
             if let Some(key) = crate::tool_settings::tool_key(tool) {
                 s.tool_brushes.insert(key.to_string(), brush.clone());
@@ -566,6 +576,7 @@ fn default_seed_brush() -> Brush {
         name: "New brush".into(),
         layers: vec![default_layer()],
         cursor: journal_core::CursorShape::Auto,
+        default_color: None,
     }
 }
 
@@ -739,6 +750,137 @@ fn blend_from_idx(idx: u32) -> BlendMode {
     }
 }
 
+// ── Description helpers ──────────────────────────────────────────
+//
+// Plain-English explanations surfaced beneath each enum dropdown so
+// the user knows what the variant they just picked actually does.
+// Updated on every selection change via a small label widget.
+
+fn geometry_description(g: &Geometry) -> &'static str {
+    match g {
+        Geometry::Smooth { .. } => {
+            "Smooth: paints one continuous curve along the input path. \
+             Width comes from the Width mode; tip from the Tip shape."
+        }
+        Geometry::Outline { .. } => {
+            "Outline: builds a variable-width filled polygon (offset \
+             left + right of the path). Best for calligraphy nibs and \
+             pressure-fed shapes."
+        }
+        Geometry::Scatter { .. } => {
+            "Scatter: stamps the tip many times per input point at \
+             randomized offsets. Good for spray cans and noisy \
+             texture brushes."
+        }
+        Geometry::DabStamp { .. } => {
+            "Dab stamp: stamps the tip at fixed intervals along the \
+             path. Use this with non-circular tips (Star, Custom) when \
+             you want a chain of stamps rather than a continuous curve."
+        }
+        Geometry::FanOffset { .. } => {
+            "Fan offset: emits multiple thin parallel offset strokes \
+             spread perpendicular to the path — fan-bristle hair effect."
+        }
+    }
+}
+
+fn width_mode_description(w: &WidthMode) -> &'static str {
+    match w {
+        WidthMode::Constant { .. } => {
+            "Constant: width × the brush base width, regardless of \
+             pressure. Marker / fixed-tip pens."
+        }
+        WidthMode::ClampedConstant { .. } => {
+            "Clamped constant: width × base, then clamped between \
+             min/max in mm. Sharp pencil cores live here."
+        }
+        WidthMode::Pressure { .. } => {
+            "Pressure: width = base × (floor + amp × pressure). \
+             Floor is the unpressured-touch width; amp scales how \
+             much pressure adds."
+        }
+        WidthMode::DirectionAngled { .. } => {
+            "Direction-angled: width modulates by stroke direction \
+             relative to a fixed nib axis. Real italic-nib calligraphy \
+             behaviour."
+        }
+        WidthMode::TiltBand { .. } => {
+            "Tilt band: emits *additional* per-segment overlay paint \
+             only where stylus tilt exceeds the threshold. Designed \
+             to layer on top of a constant-width core (Pencil pattern)."
+        }
+    }
+}
+
+fn tip_shape_description(t: &TipShape) -> &'static str {
+    match t {
+        TipShape::Round => "Round: circular tip. Standard pen feel.",
+        TipShape::Square => "Square: square tip with sharp corners.",
+        TipShape::FlatNib { .. } => {
+            "Flat nib: rectangular tip rotated by `angle°` and \
+             squished by `aspect`. The classic angled italic nib."
+        }
+        TipShape::Diamond => "Diamond: 4-point rhombus.",
+        TipShape::StarN { .. } => {
+            "Star N: N-pointed star. `inner_ratio` is the inner/outer \
+             radius ratio — lower = pointier."
+        }
+        TipShape::Custom { .. } => {
+            "Custom polygon: user-designed shape. Drag the orange \
+             handles in the editor below to move points; use the \
+             buttons to add/remove/reset vertices."
+        }
+    }
+}
+
+fn cursor_shape_description(c: &journal_core::CursorShape) -> &'static str {
+    use journal_core::CursorShape as CS;
+    match c {
+        CS::Auto => {
+            "Auto: hover cursor matches the first layer's tip shape \
+             at the active brush size."
+        }
+        CS::Circle => "Circle: fixed circular outline regardless of tip.",
+        CS::Oval { .. } => {
+            "Oval: ellipse with the given height : width aspect ratio. \
+             1.0 = circle; <1 = wider, >1 = taller."
+        }
+        CS::ExactTip => {
+            "Exact tip: cursor mirrors the first layer's tip exactly. \
+             Useful so the calligraphy nib angle is visible while \
+             hovering."
+        }
+        CS::Custom { .. } => {
+            "Custom polygon: user-designed cursor (independent of \
+             what the brush actually paints). Edit below."
+        }
+    }
+}
+
+fn blend_description(b: BlendMode) -> &'static str {
+    match b {
+        BlendMode::Normal => "Normal: alpha-over compositing (default).",
+        BlendMode::Multiply => "Multiply: darkens — colour × destination. Highlighter mode.",
+        BlendMode::Screen => "Screen: brightens — inverse-multiply.",
+        BlendMode::Overlay => "Overlay: multiply if dest is dark, screen if light. High-contrast.",
+        BlendMode::Darken => "Darken: keeps the darker of source/dest.",
+        BlendMode::Lighten => "Lighten: keeps the lighter of source/dest.",
+        BlendMode::Erase => "Erase: subtracts paint (rubs out underlying strokes).",
+    }
+}
+
+fn dim(s: &str) -> Label {
+    let l = Label::builder()
+        .label(s)
+        .halign(gtk4::Align::Start)
+        .wrap(true)
+        .wrap_mode(gtk4::pango::WrapMode::WordChar)
+        .max_width_chars(50)
+        .build();
+    l.add_css_class("dim-label");
+    l
+}
+
 // ── Brush-level header (name + cursor shape) ────────────────────
 
 const CURSOR_NAMES: &[&str] = &["Auto (matches tip)", "Circle", "Oval", "Exact tip", "Custom polygon"];
@@ -790,7 +932,70 @@ fn build_brush_header(
         });
     }
 
-    // Cursor shape dropdown.
+    // Default ink color — applied to the active pen when "Use this
+    // brush" runs. Checkbox-gated so users can pick "no default
+    // color" (use whatever the toolbar has).
+    let color_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    let color_chk = CheckButton::with_label("Set default color");
+    color_chk.set_active(editor_state.borrow().brush.default_color.is_some());
+    let color_btn = gtk4::ColorDialogButton::builder().build();
+    color_btn.set_dialog(&gtk4::ColorDialog::new());
+    if let Some(rgba) = editor_state.borrow().brush.default_color {
+        color_btn.set_rgba(&gtk4::gdk::RGBA::new(
+            rgba[0] as f32 / 255.0,
+            rgba[1] as f32 / 255.0,
+            rgba[2] as f32 / 255.0,
+            rgba[3] as f32 / 255.0,
+        ));
+    }
+    color_btn.set_sensitive(color_chk.is_active());
+    color_row.append(&color_chk);
+    color_row.append(&color_btn);
+    parent.append(&color_row);
+    parent.append(&dim(
+        "Default color: when this brush is applied via \"Use this brush\", \
+         the pen color snaps to this RGBA value. Off = keep whatever \
+         color the toolbar has now.",
+    ));
+    {
+        let editor_state = editor_state.clone();
+        let color_btn_c = color_btn.clone();
+        color_chk.connect_toggled(move |chk| {
+            color_btn_c.set_sensitive(chk.is_active());
+            if !chk.is_active() {
+                editor_state.borrow_mut().brush.default_color = None;
+            } else {
+                let r = color_btn_c.rgba();
+                editor_state.borrow_mut().brush.default_color = Some([
+                    (r.red() * 255.0).clamp(0.0, 255.0) as u8,
+                    (r.green() * 255.0).clamp(0.0, 255.0) as u8,
+                    (r.blue() * 255.0).clamp(0.0, 255.0) as u8,
+                    (r.alpha() * 255.0).clamp(0.0, 255.0) as u8,
+                ]);
+            }
+        });
+    }
+    {
+        let editor_state = editor_state.clone();
+        let color_chk_c = color_chk.clone();
+        color_btn.connect_rgba_notify(move |btn| {
+            if !color_chk_c.is_active() {
+                return;
+            }
+            let r = btn.rgba();
+            editor_state.borrow_mut().brush.default_color = Some([
+                (r.red() * 255.0).clamp(0.0, 255.0) as u8,
+                (r.green() * 255.0).clamp(0.0, 255.0) as u8,
+                (r.blue() * 255.0).clamp(0.0, 255.0) as u8,
+                (r.alpha() * 255.0).clamp(0.0, 255.0) as u8,
+            ]);
+        });
+    }
+
+    // Cursor shape dropdown + description + sub-params.
     let cursor_strs = StringList::new(CURSOR_NAMES);
     let cursor_dd = DropDown::builder()
         .model(&cursor_strs)
@@ -798,8 +1003,10 @@ fn build_brush_header(
         .build();
     cursor_dd.set_selected(cursor_idx(&editor_state.borrow().brush.cursor));
     parent.append(&row("Cursor", cursor_dd.upcast_ref()));
+    parent.append(&dim(cursor_shape_description(
+        &editor_state.borrow().brush.cursor,
+    )));
 
-    // Cursor sub-params.
     let cursor_box = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(4)
@@ -1086,6 +1293,7 @@ fn build_layer_settings(
     let geo_dd = DropDown::builder().model(&geo_strs).hexpand(true).build();
     geo_dd.set_selected(geom_idx(&layer.geometry));
     parent.append(&row("Geometry", geo_dd.upcast_ref()));
+    parent.append(&dim(geometry_description(&layer.geometry)));
 
     // Geometry sub-params.
     let geo_box = GtkBox::builder()
@@ -1115,6 +1323,7 @@ fn build_layer_settings(
     let width_dd = DropDown::builder().model(&width_strs).hexpand(true).build();
     width_dd.set_selected(width_idx(&layer.width));
     parent.append(&row("Width", width_dd.upcast_ref()));
+    parent.append(&dim(width_mode_description(&layer.width)));
 
     let width_box = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -1138,11 +1347,17 @@ fn build_layer_settings(
         });
     }
 
-    // Tip dropdown + presets row + sub-params.
+    // Tip dropdown + presets row + nib swatch + sub-params.
     let tip_strs = StringList::new(TIP_NAMES);
     let tip_dd = DropDown::builder().model(&tip_strs).hexpand(true).build();
     tip_dd.set_selected(tip_idx(&layer.tip));
     parent.append(&row("Tip", tip_dd.upcast_ref()));
+    parent.append(&dim(tip_shape_description(&layer.tip)));
+
+    // Nib preview swatch — small Cairo canvas drawing the current
+    // tip polygon at fixed scale so the user can see what shape
+    // they're picking.
+    parent.append(&build_nib_preview(layer.tip.clone()));
 
     // Nib preset shortcut — pick a curated TipShape (Italic 45°,
     // Star, Leaf, etc.) without touching the dropdown.
@@ -1243,6 +1458,7 @@ fn build_layer_settings(
         .build();
     blend_dd.set_selected(blend_idx(layer.blend));
     parent.append(&row("Blend", blend_dd.upcast_ref()));
+    parent.append(&dim(blend_description(layer.blend)));
     {
         let editor_state = editor_state.clone();
         let rebuild = rebuild.clone();
@@ -1254,6 +1470,144 @@ fn build_layer_settings(
                 f();
             }
         });
+    }
+}
+
+/// Tiny Cairo canvas that draws the current TipShape so the user
+/// can see what shape they just picked. Sits below the Tip dropdown.
+fn build_nib_preview(tip: TipShape) -> GtkBox {
+    const SIZE: i32 = 96;
+    let outer = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .margin_start(20)
+        .build();
+    let label = Label::builder()
+        .label("Nib preview")
+        .halign(gtk4::Align::Start)
+        .build();
+    label.add_css_class("dim-label");
+    outer.append(&label);
+    let area = DrawingArea::builder()
+        .content_width(SIZE)
+        .content_height(SIZE)
+        .build();
+    let tip_rc = Rc::new(tip);
+    {
+        let tip_rc = tip_rc.clone();
+        area.set_draw_func(move |_, ctx, w, h| {
+            ctx.set_source_rgb(0.96, 0.95, 0.92);
+            let _ = ctx.paint();
+            // Crosshair.
+            ctx.set_source_rgba(0.55, 0.55, 0.6, 0.25);
+            ctx.set_line_width(0.6);
+            ctx.move_to(0.0, h as f64 * 0.5);
+            ctx.line_to(w as f64, h as f64 * 0.5);
+            ctx.move_to(w as f64 * 0.5, 0.0);
+            ctx.line_to(w as f64 * 0.5, h as f64);
+            let _ = ctx.stroke();
+            // Tip polygon at fixed radius (40% of canvas).
+            let cx = w as f64 * 0.5;
+            let cy = h as f64 * 0.5;
+            let r = (w.min(h) as f64) * 0.40;
+            ctx.set_source_rgba(0.15, 0.20, 0.45, 0.85);
+            draw_tip_to_cairo(ctx, &tip_rc, (cx, cy), r);
+        });
+    }
+    outer.append(&area);
+    outer
+}
+
+/// Cairo equivalent of `vello_renderer::tip_polygon` — kept here so
+/// the editor can draw nib previews without booting a Vello render
+/// pipeline for every preview swatch. Stays in sync with
+/// `tip_polygon` semantics.
+fn draw_tip_to_cairo(
+    ctx: &gtk4::cairo::Context,
+    tip: &TipShape,
+    center: (f64, f64),
+    scale: f64,
+) {
+    let (cx, cy) = center;
+    match tip {
+        TipShape::Round => {
+            ctx.arc(cx, cy, scale, 0.0, std::f64::consts::TAU);
+            let _ = ctx.fill();
+        }
+        TipShape::Square => {
+            ctx.rectangle(cx - scale, cy - scale, scale * 2.0, scale * 2.0);
+            let _ = ctx.fill();
+        }
+        TipShape::Diamond => {
+            ctx.move_to(cx, cy - scale);
+            ctx.line_to(cx + scale, cy);
+            ctx.line_to(cx, cy + scale);
+            ctx.line_to(cx - scale, cy);
+            ctx.close_path();
+            let _ = ctx.fill();
+        }
+        TipShape::FlatNib { angle_deg, aspect } => {
+            let a = angle_deg.to_radians();
+            let cos = a.cos();
+            let sin = a.sin();
+            let half_long = scale;
+            let half_short = scale * aspect.max(0.05);
+            let pts: [(f64, f64); 4] = [
+                (-half_long, -half_short),
+                (half_long, -half_short),
+                (half_long, half_short),
+                (-half_long, half_short),
+            ];
+            for (i, (x, y)) in pts.iter().enumerate() {
+                let rx = x * cos - y * sin;
+                let ry = x * sin + y * cos;
+                if i == 0 {
+                    ctx.move_to(cx + rx, cy + ry);
+                } else {
+                    ctx.line_to(cx + rx, cy + ry);
+                }
+            }
+            ctx.close_path();
+            let _ = ctx.fill();
+        }
+        TipShape::StarN { points, inner_ratio } => {
+            let n = (*points as usize).max(3);
+            for i in 0..(n * 2) {
+                let theta = (i as f64) * std::f64::consts::PI / (n as f64);
+                let r = if i % 2 == 0 {
+                    scale
+                } else {
+                    scale * inner_ratio
+                };
+                let x = cx + r * theta.cos();
+                let y = cy + r * theta.sin();
+                if i == 0 {
+                    ctx.move_to(x, y);
+                } else {
+                    ctx.line_to(x, y);
+                }
+            }
+            ctx.close_path();
+            let _ = ctx.fill();
+        }
+        TipShape::Custom { points } => {
+            if points.len() < 3 {
+                ctx.arc(cx, cy, scale, 0.0, std::f64::consts::TAU);
+                let _ = ctx.fill();
+                return;
+            }
+            for (i, (ux, uy)) in points.iter().enumerate() {
+                let x = cx + ux * scale;
+                let y = cy + uy * scale;
+                if i == 0 {
+                    ctx.move_to(x, y);
+                } else {
+                    ctx.line_to(x, y);
+                }
+            }
+            ctx.close_path();
+            let _ = ctx.fill();
+        }
     }
 }
 

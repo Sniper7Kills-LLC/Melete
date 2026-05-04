@@ -33,6 +33,12 @@ pub struct Brush {
     /// + width. Other variants override.
     #[serde(default)]
     pub cursor: CursorShape,
+    /// Optional default ink color in RGBA8. When `Some`, applying
+    /// this brush via the Tool Editor's "Use this brush" also sets
+    /// the active pen color. `None` keeps the user's current toolbar
+    /// color (default — most users picked the toolbar color first).
+    #[serde(default)]
+    pub default_color: Option<[u8; 4]>,
 }
 
 /// Hover-cursor shape for the brush. Drives the canvas overlay that
@@ -208,6 +214,7 @@ impl Brush {
                 blend: BlendMode::Normal,
             }],
             cursor: CursorShape::default(),
+            default_color: None,
         }
     }
 }

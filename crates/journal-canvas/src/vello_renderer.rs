@@ -2380,13 +2380,24 @@ fn emit_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Br
         return;
     }
     let brush = layer_brush(pen.color, pen.opacity, layer.color);
-    let (start_cap, end_cap, join) = caps_for_tip(&layer.tip);
 
     // Tilt-band is its own emission pattern (per-segment overlays).
     if let WidthMode::TiltBand { threshold, band_mult, alpha_scale } = layer.width {
         emit_tilt_band(scene, transform, stroke, threshold, band_mult, alpha_scale);
         return;
     }
+
+    // Non-strokeable tips (Diamond, StarN, FlatNib, Custom polygon)
+    // can't be expressed as a GPU stroke style. When the user picks
+    // them on a Smooth layer they expect a chain of *that shape*
+    // along the path — stamp the tip at a tight step instead of
+    // stroking. Round + Square stay on the stroke fast-path.
+    let strokeable = matches!(layer.tip, TipShape::Round | TipShape::Square);
+    if !strokeable && pts.len() >= 2 {
+        emit_smooth_stamped(scene, transform, stroke, layer);
+        return;
+    }
+    let (start_cap, end_cap, join) = caps_for_tip(&layer.tip);
 
     // Average pressure across the stroke — used by Pressure mode.
     let avg_pressure = if pts.is_empty() {
@@ -2428,6 +2439,43 @@ fn emit_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Br
     style.end_cap = end_cap;
     style.join = join;
     scene.stroke(&style, transform, &brush, None, &path);
+}
+
+/// Stamp a tip-shaped polygon at fixed intervals along a smooth
+/// path. Used when the user picks a non-strokeable `TipShape`
+/// (Diamond, StarN, FlatNib, Custom) on a Smooth-geometry layer —
+/// they expect a chain of that shape along the path, not a wide
+/// curved trace.
+fn emit_smooth_stamped(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    layer: &BrushLayer,
+) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let canvas_w = pen.base_width / zoc;
+    let pts = &stroke.points;
+    let brush = layer_brush(pen.color, pen.opacity, layer.color);
+    // Step ≈ half the canvas width keeps stamps overlapping enough
+    // to read as a continuous trace at typical sizes.
+    let step = (canvas_w * 0.4).max(0.5);
+    let samples = resample_path(pts, step);
+    for &(x, y, press) in &samples {
+        let scale = match layer.width {
+            WidthMode::Constant { width_mult } => canvas_w * width_mult * 0.5,
+            WidthMode::ClampedConstant { width_mult, min_mm, max_mm } => {
+                ((canvas_w * width_mult) * 0.5).clamp(min_mm * 0.5, max_mm * 0.5)
+            }
+            WidthMode::Pressure { floor, amp } => {
+                canvas_w * (floor + amp * press) * 0.5
+            }
+            WidthMode::DirectionAngled { .. } => canvas_w * 0.5,
+            WidthMode::TiltBand { .. } => canvas_w * 0.5,
+        };
+        let path = tip_polygon(&layer.tip, (x, y), scale);
+        scene.fill(Fill::NonZero, transform, &brush, None, &path);
+    }
 }
 
 /// Per-segment tilt-band overlay (Pencil shading layer).
