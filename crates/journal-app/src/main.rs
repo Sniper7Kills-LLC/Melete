@@ -12,6 +12,8 @@ mod template_creator;
 mod template_manager;
 mod thumbnail;
 mod toolbar;
+#[cfg(feature = "vello")]
+mod vello_glarea;
 mod views;
 mod window;
 

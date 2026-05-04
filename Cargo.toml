@@ -4,6 +4,7 @@ members = [
     "crates/journal-canvas",
     "crates/journal-storage",
     "crates/journal-templates",
+    "crates/journal-widgets",
     "crates/journal-app",
 ]
 resolver = "2"

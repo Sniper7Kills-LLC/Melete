@@ -24,7 +24,11 @@ dirs = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }
 poppler-rs = { version = "0.24", features = ["v22_7"], optional = true }
+glow = { version = "0.16", optional = true }
+libloading = { version = "0.8", optional = true }
+journal-widgets = { path = "../journal-widgets", optional = true }
 
 [features]
-default = ["pdf"]
+default = ["pdf", "vello"]
 pdf = ["dep:poppler-rs", "journal-canvas/pdf"]
+vello = ["dep:glow", "dep:libloading", "dep:journal-widgets", "journal-canvas/vello"]

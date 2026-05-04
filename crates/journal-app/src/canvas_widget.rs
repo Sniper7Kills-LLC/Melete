@@ -2,7 +2,8 @@ use gtk4::prelude::*;
 use gtk4::DrawingArea;
 use journal_canvas::{
     draw_lasso_overlay, draw_page_bounds_outline, draw_selection_handles,
-    paint_with_widgets_ctx, scale_background, selection_combined_bbox, WidgetRenderContext,
+    paint_with_widgets_ctx, scale_background, selection_combined_bbox,
+    WidgetRenderContext,
 };
 
 use crate::state::{tool_brush_params, tool_is_drawing, SharedState, Tool};
@@ -21,6 +22,25 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
         area.set_draw_func(move |_area, ctx, w, h| {
             let mut s = state.borrow_mut();
             s.transform.set_size(w as f64, h as f64);
+
+            // Vello (GLArea below) owns all canvas rendering when active —
+            // bg, widgets, strokes, selection handles, lasso, page bounds,
+            // and the brush cursor. The DrawingArea is left transparent so
+            // input still routes through it.
+            #[cfg(feature = "vello")]
+            if crate::vello_glarea::enabled() {
+                if s.current_page_id.is_none() {
+                    draw_placeholder(
+                        ctx,
+                        w as f64,
+                        h as f64,
+                        s.dark_mode,
+                        s.placeholder_image.as_ref(),
+                        &s.placeholder_text,
+                    );
+                }
+                return;
+            }
 
             if s.current_page_id.is_none() {
                 draw_placeholder(
@@ -52,7 +72,21 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
                 overrides: s.current_page_overrides.clone(),
             };
 
-            if let Some(cs) = s.current_stroke.clone() {
+            // When the Vello GLArea overlay is active it renders the page
+            // fill, background pattern, and strokes — Cairo here paints
+            // widgets only, leaving everything else transparent so the
+            // GLArea below shows through. With Vello off, fall back to the
+            // full Cairo paint path.
+            #[cfg(feature = "vello")]
+            let vello_owns_canvas = crate::vello_glarea::enabled();
+            #[cfg(not(feature = "vello"))]
+            let vello_owns_canvas = false;
+
+            if vello_owns_canvas {
+                // Vello (GLArea below) now renders bg + widgets + strokes.
+                // Cairo here paints overlays only (selection handles, lasso,
+                // brush cursor, page bounds) — handled below the if/else.
+            } else if let Some(cs) = s.current_stroke.clone() {
                 let mut frame: Vec<journal_core::Stroke> =
                     Vec::with_capacity(s.strokes.len() + 1);
                 frame.extend_from_slice(&s.strokes);
