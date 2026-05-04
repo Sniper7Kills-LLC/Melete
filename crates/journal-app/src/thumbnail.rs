@@ -35,7 +35,16 @@ pub fn render_thumbnail(
     };
     let transform = ViewportTransform::new(viewport, THUMB_W as f64, THUMB_H as f64);
     let empty_selected = HashSet::new();
-    paint_with_widgets(&ctx, &transform, background, page_rect, widgets, strokes, &empty_selected, dark_mode);
+    paint_with_widgets(
+        &ctx,
+        &transform,
+        background,
+        page_rect,
+        widgets,
+        strokes,
+        &empty_selected,
+        dark_mode,
+    );
 
     Some(surface)
 }
@@ -55,10 +64,19 @@ pub fn get_or_generate_thumbnail(
 
     let (background, page_rect, widgets) = if let Some(t) = template {
         let bg = journal_templates::page_template_to_background_config(t);
-        let rect = Rect { x: 0.0, y: 0.0, width: t.size_mm.0, height: t.size_mm.1 };
+        let rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: t.size_mm.0,
+            height: t.size_mm.1,
+        };
         (bg, rect, t.widgets.clone())
     } else {
-        (crate::state::default_background(), crate::state::default_page_rect(), Vec::new())
+        (
+            crate::state::default_background(),
+            crate::state::default_page_rect(),
+            Vec::new(),
+        )
     };
 
     let backend = state.borrow().backend.clone();

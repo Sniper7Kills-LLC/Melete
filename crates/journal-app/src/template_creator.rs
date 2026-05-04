@@ -50,14 +50,34 @@ enum Handle {
 /// A single undoable/redoable edit in the template editor.
 #[derive(Clone, Debug)]
 enum EditOp {
-    Insert { idx: usize, widget: TemplateWidget },
-    Remove { idx: usize, widget: TemplateWidget },
+    Insert {
+        idx: usize,
+        widget: TemplateWidget,
+    },
+    Remove {
+        idx: usize,
+        widget: TemplateWidget,
+    },
     /// Batched removal of multiple widgets (multi-select delete).
-    RemoveMany { entries: Vec<(usize, TemplateWidget)> },
-    Move { idx: usize, before_rect: WidgetRect, after_rect: WidgetRect },
-    Resize { idx: usize, before_rect: WidgetRect, after_rect: WidgetRect },
+    RemoveMany {
+        entries: Vec<(usize, TemplateWidget)>,
+    },
+    Move {
+        idx: usize,
+        before_rect: WidgetRect,
+        after_rect: WidgetRect,
+    },
+    Resize {
+        idx: usize,
+        before_rect: WidgetRect,
+        after_rect: WidgetRect,
+    },
     /// Property-panel edit: snapshot of a single widget before/after change.
-    Modify { idx: usize, before: TemplateWidget, after: TemplateWidget },
+    Modify {
+        idx: usize,
+        before: TemplateWidget,
+        after: TemplateWidget,
+    },
 }
 
 struct EditorHistory {
@@ -67,7 +87,10 @@ struct EditorHistory {
 
 impl EditorHistory {
     fn new() -> Self {
-        Self { undo: Vec::new(), redo: Vec::new() }
+        Self {
+            undo: Vec::new(),
+            redo: Vec::new(),
+        }
     }
 
     fn push(&mut self, op: EditOp) {
@@ -107,7 +130,12 @@ fn push_or_coalesce_modify(
     before: TemplateWidget,
     after: TemplateWidget,
 ) {
-    if let Some(EditOp::Modify { idx: top_idx, after: top_after, .. }) = history.undo.last_mut() {
+    if let Some(EditOp::Modify {
+        idx: top_idx,
+        after: top_after,
+        ..
+    }) = history.undo.last_mut()
+    {
         if *top_idx == idx {
             // Coalesce: just update `after` in the existing op.
             *top_after = after;
@@ -128,26 +156,40 @@ fn apply_op(op: &EditOp, widgets: &mut Vec<TemplateWidget>) -> Option<usize> {
         }
         EditOp::Remove { idx, .. } => {
             let i = *idx;
-            if i < widgets.len() { widgets.remove(i); }
+            if i < widgets.len() {
+                widgets.remove(i);
+            }
             None
         }
         EditOp::RemoveMany { entries } => {
             // Re-remove in descending order (indices were captured in descending order).
             for (i, _) in entries {
-                if *i < widgets.len() { widgets.remove(*i); }
+                if *i < widgets.len() {
+                    widgets.remove(*i);
+                }
             }
             None
         }
-        EditOp::Move { idx, after_rect, .. } => {
-            if let Some(w) = widgets.get_mut(*idx) { w.rect = after_rect.clone(); }
+        EditOp::Move {
+            idx, after_rect, ..
+        } => {
+            if let Some(w) = widgets.get_mut(*idx) {
+                w.rect = after_rect.clone();
+            }
             Some(*idx)
         }
-        EditOp::Resize { idx, after_rect, .. } => {
-            if let Some(w) = widgets.get_mut(*idx) { w.rect = after_rect.clone(); }
+        EditOp::Resize {
+            idx, after_rect, ..
+        } => {
+            if let Some(w) = widgets.get_mut(*idx) {
+                w.rect = after_rect.clone();
+            }
             Some(*idx)
         }
         EditOp::Modify { idx, after, .. } => {
-            if let Some(w) = widgets.get_mut(*idx) { *w = after.clone(); }
+            if let Some(w) = widgets.get_mut(*idx) {
+                *w = after.clone();
+            }
             Some(*idx)
         }
     }
@@ -158,7 +200,9 @@ fn apply_inverse(op: &EditOp, widgets: &mut Vec<TemplateWidget>) -> Option<usize
     match op {
         EditOp::Insert { idx, .. } => {
             let i = *idx;
-            if i < widgets.len() { widgets.remove(i); }
+            if i < widgets.len() {
+                widgets.remove(i);
+            }
             None
         }
         EditOp::Remove { idx, widget } => {
@@ -176,16 +220,26 @@ fn apply_inverse(op: &EditOp, widgets: &mut Vec<TemplateWidget>) -> Option<usize
             }
             None
         }
-        EditOp::Move { idx, before_rect, .. } => {
-            if let Some(w) = widgets.get_mut(*idx) { w.rect = before_rect.clone(); }
+        EditOp::Move {
+            idx, before_rect, ..
+        } => {
+            if let Some(w) = widgets.get_mut(*idx) {
+                w.rect = before_rect.clone();
+            }
             Some(*idx)
         }
-        EditOp::Resize { idx, before_rect, .. } => {
-            if let Some(w) = widgets.get_mut(*idx) { w.rect = before_rect.clone(); }
+        EditOp::Resize {
+            idx, before_rect, ..
+        } => {
+            if let Some(w) = widgets.get_mut(*idx) {
+                w.rect = before_rect.clone();
+            }
             Some(*idx)
         }
         EditOp::Modify { idx, before, .. } => {
-            if let Some(w) = widgets.get_mut(*idx) { *w = before.clone(); }
+            if let Some(w) = widgets.get_mut(*idx) {
+                *w = before.clone();
+            }
             Some(*idx)
         }
     }
@@ -290,7 +344,6 @@ fn select_widget(
     }
 }
 
-
 /// Build the full-screen template editor view (root widget tree).
 ///
 /// The caller is responsible for placing the returned `GtkBox` into the app
@@ -302,7 +355,7 @@ pub fn build_editor_view(
     edit: Option<PageTemplate>,
     on_done: Rc<dyn Fn()>,
 ) -> GtkBox {
-    let template = edit.unwrap_or_else(PageTemplate::default);
+    let template = edit.unwrap_or_default();
     let cs = Rc::new(RefCell::new(CreatorState::new(template)));
 
     // ── Selection observer — stored outside `cs` to avoid re-entrant borrows.
@@ -334,10 +387,7 @@ pub fn build_editor_view(
     title.add_css_class("title-3");
     let save_btn = Button::with_label("Save");
     save_btn.add_css_class("suggested-action");
-    let saved_indicator = Label::builder()
-        .label("")
-        .halign(gtk4::Align::End)
-        .build();
+    let saved_indicator = Label::builder().label("").halign(gtk4::Align::End).build();
     saved_indicator.add_css_class("dim-label");
     action_row.append(&back_btn);
     action_row.append(&title);
@@ -428,10 +478,9 @@ pub fn build_editor_view(
             }
             indicator.set_text("Saved \u{2713}");
             let on_done = on_done.clone();
-            gtk4::glib::timeout_add_local_once(
-                std::time::Duration::from_millis(450),
-                move || (on_done)(),
-            );
+            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(450), move || {
+                (on_done)()
+            });
         })
     };
 
@@ -582,26 +631,36 @@ fn build_meta_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
         .build();
 
     row.append(&Label::new(Some("Name:")));
-    let name_entry = Entry::builder().placeholder_text("Template name").hexpand(true).build();
+    let name_entry = Entry::builder()
+        .placeholder_text("Template name")
+        .hexpand(true)
+        .build();
     {
         let t = cs.borrow();
         name_entry.set_text(&t.template.name);
     }
     name_entry.connect_changed({
         let cs = cs.clone();
-        move |e| { cs.borrow_mut().template.name = e.text().to_string(); }
+        move |e| {
+            cs.borrow_mut().template.name = e.text().to_string();
+        }
     });
     row.append(&name_entry);
 
     row.append(&Label::new(Some("Description:")));
-    let desc_entry = Entry::builder().placeholder_text("Optional description").hexpand(true).build();
+    let desc_entry = Entry::builder()
+        .placeholder_text("Optional description")
+        .hexpand(true)
+        .build();
     {
         let t = cs.borrow();
         desc_entry.set_text(&t.template.description);
     }
     desc_entry.connect_changed({
         let cs = cs.clone();
-        move |e| { cs.borrow_mut().template.description = e.text().to_string(); }
+        move |e| {
+            cs.borrow_mut().template.description = e.text().to_string();
+        }
     });
     row.append(&desc_entry);
 
@@ -616,7 +675,9 @@ fn build_meta_row(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
     }
     cat_entry.connect_changed({
         let cs = cs.clone();
-        move |e| { cs.borrow_mut().template.category = e.text().to_string(); }
+        move |e| {
+            cs.borrow_mut().template.category = e.text().to_string();
+        }
     });
     row.append(&cat_entry);
 
@@ -640,7 +701,10 @@ fn build_palette(
         .margin_end(8)
         .build();
 
-    let label = Label::builder().label("Widgets").halign(gtk4::Align::Start).build();
+    let label = Label::builder()
+        .label("Widgets")
+        .halign(gtk4::Align::Start)
+        .build();
     label.add_css_class("title-4");
     vbox.append(&label);
 
@@ -677,7 +741,9 @@ fn build_palette(
     let desel_btn = Button::with_label("Select/Move");
     desel_btn.connect_clicked({
         let cs = cs.clone();
-        move |_| { cs.borrow_mut().tool = PlaceTool::None; }
+        move |_| {
+            cs.borrow_mut().tool = PlaceTool::None;
+        }
     });
     vbox.prepend(&desel_btn);
 
@@ -738,10 +804,7 @@ fn build_canvas_area(
     cs: &Rc<RefCell<CreatorState>>,
     sel_obs: &Rc<RefCell<Option<SelectionObserverFn>>>,
 ) -> DrawingArea {
-    let area = DrawingArea::builder()
-        .hexpand(true)
-        .vexpand(true)
-        .build();
+    let area = DrawingArea::builder().hexpand(true).vexpand(true).build();
 
     area.set_draw_func({
         let cs = cs.clone();
@@ -832,7 +895,9 @@ fn build_canvas_area(
                 }
             };
             let obs_fn = obs.borrow().clone();
-            if let Some(f) = obs_fn { f(new_primary); }
+            if let Some(f) = obs_fn {
+                f(new_primary);
+            }
             area.queue_draw();
         }
     });
@@ -894,7 +959,10 @@ fn build_canvas_area(
                         s.drag_handle = handle;
                         s.drag_orig_rect = Some(s.template.widgets[idx].rect.clone());
                         // Capture original rects for all selected widgets (for multi-move).
-                        s.drag_orig_rects = s.selected_indices.iter().copied()
+                        s.drag_orig_rects = s
+                            .selected_indices
+                            .iter()
+                            .copied()
                             .filter(|&i| i < s.template.widgets.len())
                             .map(|i| (i, s.template.widgets[i].rect.clone()))
                             .collect();
@@ -918,7 +986,9 @@ fn build_canvas_area(
             // Fire observer outside the borrow.
             if let Some(new_sel) = sel_change {
                 let obs_fn = obs.borrow().clone();
-                if let Some(f) = obs_fn { f(new_sel); }
+                if let Some(f) = obs_fn {
+                    f(new_sel);
+                }
             }
         }
     });
@@ -954,14 +1024,12 @@ fn build_canvas_area(
                         // Smart guides only on the primary widget.
                         if s.smart_guides_active {
                             if let Some(idx) = primary {
-                                if let Some(orig) = orig_rects.iter().find(|(i, _)| *i == idx).map(|(_, r)| r.clone()) {
-                                    apply_smart_snap(
-                                        &mut s.template.widgets,
-                                        idx,
-                                        orig,
-                                        dcx,
-                                        dcy,
-                                    );
+                                if let Some(orig) = orig_rects
+                                    .iter()
+                                    .find(|(i, _)| *i == idx)
+                                    .map(|(_, r)| r.clone())
+                                {
+                                    apply_smart_snap(&mut s.template.widgets, idx, orig, dcx, dcy);
                                 }
                             }
                         }
@@ -1024,13 +1092,21 @@ fn build_canvas_area(
                     let widget = TemplateWidget {
                         id: Uuid::new_v4(),
                         kind,
-                        rect: WidgetRect { x: rx, y: ry, width: rw, height: rh },
+                        rect: WidgetRect {
+                            x: rx,
+                            y: ry,
+                            width: rw,
+                            height: rh,
+                        },
                         style: WidgetStyle::default(),
                     };
                     let _ = (rx, ry, rw, rh); // values consumed by `widget.rect`
                     let insert_idx = s.template.widgets.len();
                     s.template.widgets.push(widget.clone());
-                    s.history.push(EditOp::Insert { idx: insert_idx, widget });
+                    s.history.push(EditOp::Insert {
+                        idx: insert_idx,
+                        widget,
+                    });
                     let new_sel = s.template.widgets.len() - 1;
                     s.selected_indices.clear();
                     s.selected_indices.insert(new_sel);
@@ -1058,7 +1134,9 @@ fn build_canvas_area(
                             }
                         }
                         Handle::ResizeBottomRight => {
-                            if let (Some(orig), Some(idx)) = (s.drag_orig_rect.clone(), s.primary_idx) {
+                            if let (Some(orig), Some(idx)) =
+                                (s.drag_orig_rect.clone(), s.primary_idx)
+                            {
                                 if idx < s.template.widgets.len() {
                                     let after = s.template.widgets[idx].rect.clone();
                                     if after != orig {
@@ -1084,7 +1162,9 @@ fn build_canvas_area(
             // Fire observer outside the borrow.
             if let Some(new_sel) = sel_change {
                 let obs_fn = obs.borrow().clone();
-                if let Some(f) = obs_fn { f(new_sel); }
+                if let Some(f) = obs_fn {
+                    f(new_sel);
+                }
             }
             area.queue_draw();
         }
@@ -1102,7 +1182,9 @@ fn build_canvas_area(
                 let removed = delete_selected_widgets(&cs);
                 if removed {
                     let obs_fn = obs.borrow().clone();
-                    if let Some(f) = obs_fn { f(None); }
+                    if let Some(f) = obs_fn {
+                        f(None);
+                    }
                     area.queue_draw();
                 }
                 return gtk4::glib::Propagation::Stop;
@@ -1120,7 +1202,7 @@ fn build_canvas_area(
 /// left/right/top/bottom edge aligns within GUIDE_SNAP_MM of another widget's
 /// corresponding edge (or the page left/top edges), snap to that edge.
 fn apply_smart_snap(
-    widgets: &mut Vec<TemplateWidget>,
+    widgets: &mut [TemplateWidget],
     idx: usize,
     orig: WidgetRect,
     dcx: f64,
@@ -1137,7 +1219,9 @@ fn apply_smart_snap(
     let mut y_cands: Vec<f64> = vec![0.0];
 
     for (i, ww) in widgets.iter().enumerate() {
-        if i == idx { continue; }
+        if i == idx {
+            continue;
+        }
         // Snap dragged-widget's left edge to other widget's left/right edges,
         // and dragged-widget's right edge aligned the same way.
         x_cands.push(ww.rect.x);
@@ -1151,17 +1235,27 @@ fn apply_smart_snap(
         y_cands.push(ww.rect.y + (ww.rect.height - h) * 0.5);
     }
 
-    let snapped_x = x_cands.iter().copied()
+    let snapped_x = x_cands
+        .iter()
+        .copied()
         .filter(|&c| (proposed_x - c).abs() < GUIDE_SNAP_MM)
         .min_by(|a, b| {
-            (proposed_x - a).abs().partial_cmp(&(proposed_x - b).abs()).unwrap()
+            (proposed_x - a)
+                .abs()
+                .partial_cmp(&(proposed_x - b).abs())
+                .unwrap()
         })
         .unwrap_or(proposed_x);
 
-    let snapped_y = y_cands.iter().copied()
+    let snapped_y = y_cands
+        .iter()
+        .copied()
         .filter(|&c| (proposed_y - c).abs() < GUIDE_SNAP_MM)
         .min_by(|a, b| {
-            (proposed_y - a).abs().partial_cmp(&(proposed_y - b).abs()).unwrap()
+            (proposed_y - a)
+                .abs()
+                .partial_cmp(&(proposed_y - b).abs())
+                .unwrap()
         })
         .unwrap_or(proposed_y);
 
@@ -1200,16 +1294,15 @@ const TEXT_VARIABLES: &[(&str, &str)] = &[
 /// Rebuild the properties side panel based on the currently-selected widget.
 /// `area` is queue_draw'd whenever a property changes so the canvas reflects
 /// the edit immediately.
-fn refresh_props_panel(
-    vbox: &Rc<GtkBox>,
-    cs: &Rc<RefCell<CreatorState>>,
-    area: &DrawingArea,
-) {
+fn refresh_props_panel(vbox: &Rc<GtkBox>, cs: &Rc<RefCell<CreatorState>>, area: &DrawingArea) {
     while let Some(child) = vbox.first_child() {
         vbox.remove(&child);
     }
 
-    let header = Label::builder().label("Properties").halign(gtk4::Align::Start).build();
+    let header = Label::builder()
+        .label("Properties")
+        .halign(gtk4::Align::Start)
+        .build();
     header.add_css_class("title-4");
     vbox.append(&header);
 
@@ -1231,7 +1324,10 @@ fn refresh_props_panel(
     let Some(idx) = idx else {
         // Multiple widgets selected — no per-widget properties shown.
         let hint = Label::builder()
-            .label(&format!("({} widgets selected — pick one to edit properties)", sel_count))
+            .label(format!(
+                "({} widgets selected — pick one to edit properties)",
+                sel_count
+            ))
             .halign(gtk4::Align::Start)
             .wrap(true)
             .build();
@@ -1240,8 +1336,15 @@ fn refresh_props_panel(
         return;
     };
 
-    let widget_kind_clone = cs.borrow().template.widgets.get(idx).map(|w| w.kind.clone());
-    let Some(kind) = widget_kind_clone else { return; };
+    let widget_kind_clone = cs
+        .borrow()
+        .template
+        .widgets
+        .get(idx)
+        .map(|w| w.kind.clone());
+    let Some(kind) = widget_kind_clone else {
+        return;
+    };
 
     let kind_lbl = Label::builder()
         .label(kind_label(&kind))
@@ -1252,7 +1355,12 @@ fn refresh_props_panel(
 
     // ── Stroke color ─────────────────────────────────────────────────────
     let style = cs.borrow().template.widgets[idx].style.clone();
-    vbox.append(&Label::builder().label("Stroke color").halign(gtk4::Align::Start).build());
+    vbox.append(
+        &Label::builder()
+            .label("Stroke color")
+            .halign(gtk4::Align::Start)
+            .build(),
+    );
     let stroke_dialog = ColorDialog::builder().with_alpha(true).build();
     let stroke_btn = ColorDialogButton::new(Some(stroke_dialog));
     stroke_btn.set_rgba(&color_to_rgba(style.stroke_color));
@@ -1263,9 +1371,12 @@ fn refresh_props_panel(
         let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
         stroke_btn.connect_rgba_notify(move |b| {
             let c = rgba_to_color(b.rgba());
-            let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-            }).clone();
+            let before = before_snap
+                .borrow_mut()
+                .get_or_insert_with(|| {
+                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                })
+                .clone();
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 w.style.stroke_color = c;
             }
@@ -1291,7 +1402,12 @@ fn refresh_props_panel(
 
     let fill_dialog = ColorDialog::builder().with_alpha(true).build();
     let fill_btn = ColorDialogButton::new(Some(fill_dialog));
-    let fill_seed = style.fill_color.unwrap_or(Color { r: 240, g: 240, b: 240, a: 255 });
+    let fill_seed = style.fill_color.unwrap_or(Color {
+        r: 240,
+        g: 240,
+        b: 240,
+        a: 255,
+    });
     fill_btn.set_rgba(&color_to_rgba(fill_seed));
     fill_btn.set_sensitive(style.fill_color.is_some());
     {
@@ -1308,7 +1424,9 @@ fn refresh_props_panel(
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 w.style.fill_color = if on {
                     Some(rgba_to_color(fill_btn2.rgba()))
-                } else { None };
+                } else {
+                    None
+                };
             }
             // CRITICAL: in Rust 2018+, temporaries in `if let` head live
             // until the end of the `if let` BODY — so the cs2.borrow() in
@@ -1329,9 +1447,12 @@ fn refresh_props_panel(
         let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
         fill_btn.connect_rgba_notify(move |b| {
             let c = rgba_to_color(b.rgba());
-            let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-            }).clone();
+            let before = before_snap
+                .borrow_mut()
+                .get_or_insert_with(|| {
+                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                })
+                .clone();
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 if w.style.fill_color.is_some() {
                     w.style.fill_color = Some(c);
@@ -1347,7 +1468,12 @@ fn refresh_props_panel(
     vbox.append(&fill_btn);
 
     // ── Stroke width (mm) ─────────────────────────────────────────────────
-    vbox.append(&Label::builder().label("Stroke width (mm)").halign(gtk4::Align::Start).build());
+    vbox.append(
+        &Label::builder()
+            .label("Stroke width (mm)")
+            .halign(gtk4::Align::Start)
+            .build(),
+    );
     let width_spin = SpinButton::with_range(0.05, 5.0, 0.05);
     width_spin.set_digits(2);
     width_spin.set_value(style.stroke_width_mm);
@@ -1356,13 +1482,17 @@ fn refresh_props_panel(
         let area2 = area.clone();
         let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
         width_spin.connect_value_changed(move |sb| {
-            let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-            }).clone();
+            let before = before_snap
+                .borrow_mut()
+                .get_or_insert_with(|| {
+                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                })
+                .clone();
             if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                 w.style.stroke_width_mm = sb.value();
             }
-            let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
+            let after = snapshot_widget(&cs2.borrow(), idx);
+            if let Some(after) = after {
                 push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
             }
             area2.queue_draw();
@@ -1373,7 +1503,12 @@ fn refresh_props_panel(
     // ── Per-kind controls ────────────────────────────────────────────────
     match kind {
         WidgetKind::TextBlock { text, font_size_mm } => {
-            vbox.append(&Label::builder().label("Text").halign(gtk4::Align::Start).build());
+            vbox.append(
+                &Label::builder()
+                    .label("Text")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
             let entry = Entry::builder().text(&text).hexpand(true).build();
             entry.set_tooltip_text(Some(
                 "Use {date} {weekday} {month_name} {year} {week} {day} {month}",
@@ -1384,15 +1519,19 @@ fn refresh_props_panel(
                 let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
                 entry.connect_changed(move |e| {
                     let s = e.text().to_string();
-                    let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-                    }).clone();
+                    let before = before_snap
+                        .borrow_mut()
+                        .get_or_insert_with(|| {
+                            snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                        })
+                        .clone();
                     if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                         if let WidgetKind::TextBlock { text, .. } = &mut w.kind {
                             *text = s;
                         }
                     }
-                    let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
+                    let after = snapshot_widget(&cs2.borrow(), idx);
+                    if let Some(after) = after {
                         push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
@@ -1405,11 +1544,17 @@ fn refresh_props_panel(
             let pop_box = GtkBox::builder()
                 .orientation(Orientation::Vertical)
                 .spacing(2)
-                .margin_top(6).margin_bottom(6).margin_start(6).margin_end(6)
+                .margin_top(6)
+                .margin_bottom(6)
+                .margin_start(6)
+                .margin_end(6)
                 .build();
 
             let preview = Label::builder()
-                .label("").halign(gtk4::Align::Start).wrap(true).build();
+                .label("")
+                .halign(gtk4::Align::Start)
+                .wrap(true)
+                .build();
             preview.add_css_class("var-preview");
             let refresh_preview = {
                 let preview = preview.clone();
@@ -1428,7 +1573,10 @@ fn refresh_props_panel(
             }
             pop_box.append(&preview);
 
-            let hdr = Label::builder().label("Date variables").halign(gtk4::Align::Start).build();
+            let hdr = Label::builder()
+                .label("Date variables")
+                .halign(gtk4::Align::Start)
+                .build();
             hdr.add_css_class("var-group-header");
             pop_box.append(&hdr);
 
@@ -1459,7 +1607,12 @@ fn refresh_props_panel(
             var_btn.set_popover(Some(&popover));
             vbox.append(&var_btn);
 
-            vbox.append(&Label::builder().label("Font size (mm)").halign(gtk4::Align::Start).build());
+            vbox.append(
+                &Label::builder()
+                    .label("Font size (mm)")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
             let font_spin = SpinButton::with_range(1.0, 80.0, 0.5);
             font_spin.set_digits(1);
             font_spin.set_value(font_size_mm);
@@ -1468,15 +1621,19 @@ fn refresh_props_panel(
                 let area2 = area.clone();
                 let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
                 font_spin.connect_value_changed(move |sb| {
-                    let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-                    }).clone();
+                    let before = before_snap
+                        .borrow_mut()
+                        .get_or_insert_with(|| {
+                            snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                        })
+                        .clone();
                     if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                         if let WidgetKind::TextBlock { font_size_mm, .. } = &mut w.kind {
                             *font_size_mm = sb.value();
                         }
                     }
-                    let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
+                    let after = snapshot_widget(&cs2.borrow(), idx);
+                    if let Some(after) = after {
                         push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
@@ -1485,7 +1642,12 @@ fn refresh_props_panel(
             vbox.append(&font_spin);
         }
         WidgetKind::Line { thickness_mm } => {
-            vbox.append(&Label::builder().label("Thickness (mm)").halign(gtk4::Align::Start).build());
+            vbox.append(
+                &Label::builder()
+                    .label("Thickness (mm)")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
             let spin = SpinButton::with_range(0.05, 10.0, 0.1);
             spin.set_digits(2);
             spin.set_value(thickness_mm);
@@ -1493,15 +1655,19 @@ fn refresh_props_panel(
             let area2 = area.clone();
             let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
             spin.connect_value_changed(move |sb| {
-                let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-                }).clone();
+                let before = before_snap
+                    .borrow_mut()
+                    .get_or_insert_with(|| {
+                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                    })
+                    .clone();
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     if let WidgetKind::Line { thickness_mm } = &mut w.kind {
                         *thickness_mm = sb.value();
                     }
                 }
-                let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
+                let after = snapshot_widget(&cs2.borrow(), idx);
+                if let Some(after) = after {
                     push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
@@ -1511,7 +1677,12 @@ fn refresh_props_panel(
         WidgetKind::GridRegion { spacing_mm }
         | WidgetKind::LinesRegion { spacing_mm }
         | WidgetKind::DotsRegion { spacing_mm } => {
-            vbox.append(&Label::builder().label("Spacing (mm)").halign(gtk4::Align::Start).build());
+            vbox.append(
+                &Label::builder()
+                    .label("Spacing (mm)")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
             let spin = SpinButton::with_range(1.0, 50.0, 0.5);
             spin.set_digits(1);
             spin.set_value(spacing_mm);
@@ -1519,9 +1690,12 @@ fn refresh_props_panel(
             let area2 = area.clone();
             let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
             spin.connect_value_changed(move |sb| {
-                let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-                }).clone();
+                let before = before_snap
+                    .borrow_mut()
+                    .get_or_insert_with(|| {
+                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                    })
+                    .clone();
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     let v = sb.value();
                     match &mut w.kind {
@@ -1531,7 +1705,8 @@ fn refresh_props_panel(
                         _ => {}
                     }
                 }
-                let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
+                let after = snapshot_widget(&cs2.borrow(), idx);
+                if let Some(after) = after {
                     push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
@@ -1539,7 +1714,12 @@ fn refresh_props_panel(
             vbox.append(&spin);
         }
         WidgetKind::Timeline { .. } | WidgetKind::DailyAppointments { .. } => {
-            vbox.append(&Label::builder().label("Start hour").halign(gtk4::Align::Start).build());
+            vbox.append(
+                &Label::builder()
+                    .label("Start hour")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
             let start_spin = SpinButton::with_range(0.0, 23.0, 1.0);
             start_spin.set_digits(0);
             let cur_start = match &cs.borrow().template.widgets[idx].kind {
@@ -1554,9 +1734,12 @@ fn refresh_props_panel(
                 let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
                 start_spin.connect_value_changed(move |sb| {
                     let v = sb.value() as u8;
-                    let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-                    }).clone();
+                    let before = before_snap
+                        .borrow_mut()
+                        .get_or_insert_with(|| {
+                            snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                        })
+                        .clone();
                     if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                         match &mut w.kind {
                             WidgetKind::Timeline { start_hour, .. } => *start_hour = v,
@@ -1564,7 +1747,8 @@ fn refresh_props_panel(
                             _ => {}
                         }
                     }
-                    let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
+                    let after = snapshot_widget(&cs2.borrow(), idx);
+                    if let Some(after) = after {
                         push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
@@ -1572,7 +1756,12 @@ fn refresh_props_panel(
             }
             vbox.append(&start_spin);
 
-            vbox.append(&Label::builder().label("End hour").halign(gtk4::Align::Start).build());
+            vbox.append(
+                &Label::builder()
+                    .label("End hour")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
             let end_spin = SpinButton::with_range(1.0, 24.0, 1.0);
             end_spin.set_digits(0);
             let cur_end = match &cs.borrow().template.widgets[idx].kind {
@@ -1587,9 +1776,12 @@ fn refresh_props_panel(
                 let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
                 end_spin.connect_value_changed(move |sb| {
                     let v = sb.value() as u8;
-                    let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-                    }).clone();
+                    let before = before_snap
+                        .borrow_mut()
+                        .get_or_insert_with(|| {
+                            snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                        })
+                        .clone();
                     if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                         match &mut w.kind {
                             WidgetKind::Timeline { end_hour, .. } => *end_hour = v,
@@ -1597,7 +1789,8 @@ fn refresh_props_panel(
                             _ => {}
                         }
                     }
-                    let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
+                    let after = snapshot_widget(&cs2.borrow(), idx);
+                    if let Some(after) = after {
                         push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                     }
                     area2.queue_draw();
@@ -1606,7 +1799,12 @@ fn refresh_props_panel(
             vbox.append(&end_spin);
         }
         WidgetKind::PriorityList { count } => {
-            vbox.append(&Label::builder().label("Rows").halign(gtk4::Align::Start).build());
+            vbox.append(
+                &Label::builder()
+                    .label("Rows")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
             let spin = SpinButton::with_range(1.0, 60.0, 1.0);
             spin.set_digits(0);
             spin.set_value(count as f64);
@@ -1614,15 +1812,19 @@ fn refresh_props_panel(
             let area2 = area.clone();
             let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
             spin.connect_value_changed(move |sb| {
-                let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-                }).clone();
+                let before = before_snap
+                    .borrow_mut()
+                    .get_or_insert_with(|| {
+                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                    })
+                    .clone();
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     if let WidgetKind::PriorityList { count } = &mut w.kind {
                         *count = sb.value() as u32;
                     }
                 }
-                let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
+                let after = snapshot_widget(&cs2.borrow(), idx);
+                if let Some(after) = after {
                     push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
@@ -1630,8 +1832,16 @@ fn refresh_props_panel(
             vbox.append(&spin);
         }
         WidgetKind::Checklist { items } => {
-            vbox.append(&Label::builder().label("Items (one per line)").halign(gtk4::Align::Start).build());
-            let entry = Entry::builder().text(&items.join(" | ")).hexpand(true).build();
+            vbox.append(
+                &Label::builder()
+                    .label("Items (one per line)")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
+            let entry = Entry::builder()
+                .text(items.join(" | "))
+                .hexpand(true)
+                .build();
             entry.set_tooltip_text(Some("Separator: ' | '"));
             let cs2 = cs.clone();
             let area2 = area.clone();
@@ -1639,15 +1849,19 @@ fn refresh_props_panel(
             entry.connect_changed(move |e| {
                 let parts: Vec<String> =
                     e.text().split('|').map(|s| s.trim().to_string()).collect();
-                let before = before_snap.borrow_mut().get_or_insert_with(|| {
-                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
-                }).clone();
+                let before = before_snap
+                    .borrow_mut()
+                    .get_or_insert_with(|| {
+                        snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                    })
+                    .clone();
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     if let WidgetKind::Checklist { items } = &mut w.kind {
                         *items = parts;
                     }
                 }
-                let after = snapshot_widget(&cs2.borrow(), idx); if let Some(after) = after {
+                let after = snapshot_widget(&cs2.borrow(), idx);
+                if let Some(after) = after {
                     push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
                 }
                 area2.queue_draw();
@@ -1685,7 +1899,9 @@ fn template_scale(screen_size: (f64, f64), template: &PageTemplate) -> f64 {
     let margin = 0.9;
     let (sw, sh) = screen_size;
     let (tw, th) = template.size_mm;
-    if sw <= 0.0 || sh <= 0.0 || tw <= 0.0 || th <= 0.0 { return 1.0; }
+    if sw <= 0.0 || sh <= 0.0 || tw <= 0.0 || th <= 0.0 {
+        return 1.0;
+    }
     (sw / tw).min(sh / th) * margin
 }
 
@@ -1748,7 +1964,10 @@ fn default_size_for(tool: PlaceTool) -> (f64, f64) {
 
 fn default_kind_for(tool: PlaceTool) -> WidgetKind {
     match tool {
-        PlaceTool::TextBlock => WidgetKind::TextBlock { text: "Text".into(), font_size_mm: 5.0 },
+        PlaceTool::TextBlock => WidgetKind::TextBlock {
+            text: "Text".into(),
+            font_size_mm: 5.0,
+        },
         PlaceTool::Rectangle => WidgetKind::Rectangle,
         PlaceTool::Ellipse => WidgetKind::Ellipse,
         PlaceTool::Line => WidgetKind::Line { thickness_mm: 0.5 },
@@ -1756,13 +1975,20 @@ fn default_kind_for(tool: PlaceTool) -> WidgetKind {
         PlaceTool::LinesRegion => WidgetKind::LinesRegion { spacing_mm: 7.0 },
         PlaceTool::DotsRegion => WidgetKind::DotsRegion { spacing_mm: 5.0 },
         PlaceTool::CalendarMonth => WidgetKind::CalendarMonth,
-        PlaceTool::Timeline => WidgetKind::Timeline { start_hour: 8, end_hour: 20, slot_minutes: 30 },
+        PlaceTool::Timeline => WidgetKind::Timeline {
+            start_hour: 8,
+            end_hour: 20,
+            slot_minutes: 30,
+        },
         PlaceTool::Checklist => WidgetKind::Checklist {
             items: vec!["Item 1".into(), "Item 2".into(), "Item 3".into()],
         },
         PlaceTool::BigThree => WidgetKind::BigThree,
         PlaceTool::PriorityList => WidgetKind::PriorityList { count: 12 },
-        PlaceTool::DailyAppointments => WidgetKind::DailyAppointments { start_hour: 7, end_hour: 19 },
+        PlaceTool::DailyAppointments => WidgetKind::DailyAppointments {
+            start_hour: 7,
+            end_hour: 19,
+        },
         PlaceTool::WeeklyCompass => WidgetKind::WeeklyCompass,
         PlaceTool::None => WidgetKind::Rectangle,
     }
@@ -1806,11 +2032,19 @@ fn build_live_preview(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
             let template = &s.template;
             let dark_mode = libadwaita::StyleManager::default().is_dark();
             let (tw, th) = template.size_mm;
-            let page_rect = Rect { x: 0.0, y: 0.0, width: tw, height: th };
+            let page_rect = Rect {
+                x: 0.0,
+                y: 0.0,
+                width: tw,
+                height: th,
+            };
             let margin = 0.92;
             let zoom = ((w as f64 / tw).min(h as f64 / th)) * margin;
             let viewport = journal_core::Viewport {
-                center: journal_core::Point { x: tw * 0.5, y: th * 0.5 },
+                center: journal_core::Point {
+                    x: tw * 0.5,
+                    y: th * 0.5,
+                },
                 zoom,
                 rotation: 0.0,
             };
@@ -1878,7 +2112,7 @@ fn template_hash(cs: &CreatorState) -> u64 {
 /// the user sees their widgets against ink. Coordinates are in
 /// page-mm; samples are pressure 1.0, no tilt.
 fn dummy_strokes(page_rect: Rect) -> Vec<journal_core::Stroke> {
-    use journal_core::{BlendMode, ToolStyle, Color, PenSettings, Stroke, StrokePoint};
+    use journal_core::{BlendMode, Color, PenSettings, Stroke, StrokePoint, ToolStyle};
 
     fn stroke(points_mm: Vec<(f64, f64)>, color: Color, width: f64) -> Stroke {
         let pen = PenSettings {
@@ -1900,8 +2134,12 @@ fn dummy_strokes(page_rect: Rect) -> Vec<journal_core::Stroke> {
                 timestamp_ms: i as u64 * 16,
             })
             .collect();
-        let (mut min_x, mut min_y, mut max_x, mut max_y) =
-            (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        );
         for p in &pts {
             min_x = min_x.min(p.x);
             min_y = min_y.min(p.y);
@@ -1926,8 +2164,18 @@ fn dummy_strokes(page_rect: Rect) -> Vec<journal_core::Stroke> {
 
     let pw = page_rect.width;
     let ph = page_rect.height;
-    let ink = Color { r: 30, g: 36, b: 64, a: 255 };
-    let amber = Color { r: 214, g: 168, b: 58, a: 230 };
+    let ink = Color {
+        r: 30,
+        g: 36,
+        b: 64,
+        a: 255,
+    };
+    let amber = Color {
+        r: 214,
+        g: 168,
+        b: 58,
+        a: 230,
+    };
 
     // Diagonal, scribble, check mark — each scaled to a corner of the
     // page so they don't stomp on the centered widget areas.
@@ -1972,7 +2220,9 @@ fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) 
     ctx.set_source_rgb(0.85, 0.85, 0.88);
     let _ = ctx.paint();
 
-    if w <= 0.0 || h <= 0.0 { return; }
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
 
     let template = &cs.template;
     let scale = template_scale((w, h), template);
@@ -1992,10 +2242,18 @@ fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) 
     ctx.rectangle(0.0, 0.0, tw, th);
     let _ = ctx.stroke();
 
-    let page_rect = Rect { x: 0.0, y: 0.0, width: tw, height: th };
+    let page_rect = Rect {
+        x: 0.0,
+        y: 0.0,
+        width: tw,
+        height: th,
+    };
 
     let viewport = journal_core::Viewport {
-        center: journal_core::Point { x: tw * 0.5, y: th * 0.5 },
+        center: journal_core::Point {
+            x: tw * 0.5,
+            y: th * 0.5,
+        },
         zoom: scale,
         rotation: 0.0,
     };
@@ -2079,7 +2337,9 @@ fn draw_smart_guides(
     let edges_y = [r.y, r.y + r.height * 0.5, r.y + r.height];
 
     for (i, other) in widgets.iter().enumerate() {
-        if i == idx { continue; }
+        if i == idx {
+            continue;
+        }
         let o = &other.rect;
         let ox_edges = [o.x, o.x + o.width * 0.5, o.x + o.width];
         let oy_edges = [o.y, o.y + o.height * 0.5, o.y + o.height];
@@ -2156,8 +2416,8 @@ fn save_template(template: &PageTemplate, state: &SharedState) -> anyhow::Result
     std::fs::create_dir_all(&tdir)?;
     let toml_path = tdir.join(format!("{}.toml", template.id.0));
     let file = template_file_from_page_template(template);
-    let toml_text = serialize_template_toml(&file)
-        .map_err(|e| anyhow::anyhow!("serialize: {}", e))?;
+    let toml_text =
+        serialize_template_toml(&file).map_err(|e| anyhow::anyhow!("serialize: {}", e))?;
     std::fs::write(&toml_path, toml_text)?;
     let s = state.borrow();
     s.templates.borrow_mut().insert(template.clone());

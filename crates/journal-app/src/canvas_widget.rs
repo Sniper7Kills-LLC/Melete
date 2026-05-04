@@ -1,18 +1,14 @@
 use gtk4::prelude::*;
 use gtk4::DrawingArea;
 use journal_canvas::{
-    draw_lasso_overlay, draw_page_bounds_outline, draw_selection_handles,
-    paint_with_widgets_ctx, scale_background, selection_combined_bbox,
-    WidgetRenderContext,
+    draw_lasso_overlay, draw_page_bounds_outline, draw_selection_handles, paint_with_widgets_ctx,
+    scale_background, selection_combined_bbox, WidgetRenderContext,
 };
 
 use crate::state::{tool_brush_params, tool_is_drawing, SharedState, Tool};
 
 pub fn build_canvas(state: SharedState) -> DrawingArea {
-    let area = DrawingArea::builder()
-        .hexpand(true)
-        .vexpand(true)
-        .build();
+    let area = DrawingArea::builder().hexpand(true).vexpand(true).build();
     // Hide the system pointer cursor over the canvas so the custom
     // brush-circle cursor we draw in `set_draw_func` is the only indicator.
     area.set_cursor_from_name(Some("none"));
@@ -87,13 +83,32 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
                 // Cairo here paints overlays only (selection handles, lasso,
                 // brush cursor, page bounds) — handled below the if/else.
             } else if let Some(cs) = s.current_stroke.clone() {
-                let mut frame: Vec<journal_core::Stroke> =
-                    Vec::with_capacity(s.strokes.len() + 1);
+                let mut frame: Vec<journal_core::Stroke> = Vec::with_capacity(s.strokes.len() + 1);
                 frame.extend_from_slice(&s.strokes);
                 frame.push(cs);
-                paint_with_widgets_ctx(ctx, &s.transform, &background, page_rect, &widgets, &frame, &selected_ids, dark_mode, &render_ctx);
+                paint_with_widgets_ctx(
+                    ctx,
+                    &s.transform,
+                    &background,
+                    page_rect,
+                    &widgets,
+                    &frame,
+                    &selected_ids,
+                    dark_mode,
+                    &render_ctx,
+                );
             } else {
-                paint_with_widgets_ctx(ctx, &s.transform, &background, page_rect, &widgets, &s.strokes, &selected_ids, dark_mode, &render_ctx);
+                paint_with_widgets_ctx(
+                    ctx,
+                    &s.transform,
+                    &background,
+                    page_rect,
+                    &widgets,
+                    &s.strokes,
+                    &selected_ids,
+                    dark_mode,
+                    &render_ctx,
+                );
             }
 
             if show_bounds {

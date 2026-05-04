@@ -229,7 +229,7 @@ pub fn show_whats_new_if_upgraded(parent: &ApplicationWindow) {
     let win = adw::Window::builder()
         .transient_for(parent)
         .modal(true)
-        .title(&format!("What's new in {}", APP_VERSION))
+        .title(format!("What's new in {}", APP_VERSION))
         .default_width(560)
         .default_height(440)
         .build();
@@ -244,7 +244,7 @@ pub fn show_whats_new_if_upgraded(parent: &ApplicationWindow) {
         .build();
 
     let header = Label::builder()
-        .label(&format!("<b>What's new in {}</b>", APP_VERSION))
+        .label(format!("<b>What's new in {}</b>", APP_VERSION))
         .use_markup(true)
         .halign(gtk4::Align::Start)
         .build();
@@ -260,7 +260,7 @@ pub fn show_whats_new_if_upgraded(parent: &ApplicationWindow) {
         .build();
     for line in bullets {
         let row = Label::builder()
-            .label(&format!("•  {}", line))
+            .label(format!("•  {}", line))
             .wrap(true)
             .xalign(0.0)
             .build();

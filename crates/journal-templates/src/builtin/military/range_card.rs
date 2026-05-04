@@ -22,7 +22,15 @@ pub fn builtin_military_range_card() -> PageTemplate {
     let (page_w, page_h) = US_LETTER;
     let mut widgets: Vec<TemplateWidget> = Vec::new();
 
-    widgets.push(text(mw(t, 1), margin, margin, page_w - margin * 2.0, 9.0, "RANGE CARD", 7.5));
+    widgets.push(text(
+        mw(t, 1),
+        margin,
+        margin,
+        page_w - margin * 2.0,
+        9.0,
+        "RANGE CARD",
+        7.5,
+    ));
 
     let info_y = margin + 11.0;
     let info_h = 12.0;
@@ -30,7 +38,15 @@ pub fn builtin_military_range_card() -> PageTemplate {
     let info_labels = ["Unit:", "Position #:", "Date:", "DTG:"];
     for (i, label) in info_labels.iter().enumerate() {
         let x = margin + cell_w * i as f64;
-        widgets.push(text(mw(t, (10 + i) as u16), x + 1.0, info_y + 0.5, cell_w - 2.0, 4.0, label, 3.0));
+        widgets.push(text(
+            mw(t, (10 + i) as u16),
+            x + 1.0,
+            info_y + 0.5,
+            cell_w - 2.0,
+            4.0,
+            label,
+            3.0,
+        ));
         widgets.push(hline(
             mw(t, (20 + i) as u16),
             x + 1.0,
@@ -39,7 +55,13 @@ pub fn builtin_military_range_card() -> PageTemplate {
             0.2,
         ));
     }
-    widgets.push(rect(mw(t, 30), margin, info_y, page_w - margin * 2.0, info_h));
+    widgets.push(rect(
+        mw(t, 30),
+        margin,
+        info_y,
+        page_w - margin * 2.0,
+        info_h,
+    ));
     for i in 1..info_labels.len() {
         widgets.push(vline(
             mw(t, (40 + i) as u16),
@@ -62,17 +84,38 @@ pub fn builtin_military_range_card() -> PageTemplate {
     widgets.push(TemplateWidget {
         id: mw(t, 51),
         kind: WidgetKind::Rectangle,
-        rect: WidgetRect { x: wp_x - 1.5, y: wp_y - 1.5, width: 3.0, height: 3.0 },
+        rect: WidgetRect {
+            x: wp_x - 1.5,
+            y: wp_y - 1.5,
+            width: 3.0,
+            height: 3.0,
+        },
         style: wp_style,
     });
-    widgets.push(text(mw(t, 52), wp_x - 18.0, wp_y - 4.5, 16.0, 4.0, "WP", 3.0));
+    widgets.push(text(
+        mw(t, 52),
+        wp_x - 18.0,
+        wp_y - 4.5,
+        16.0,
+        4.0,
+        "WP",
+        3.0,
+    ));
 
     let n_x = margin + sketch_w - 16.0;
     let n_top = sketch_y + 6.0;
     widgets.push(vline(mw(t, 60), n_x, n_top, 14.0, 0.4));
     widgets.push(text(mw(t, 61), n_x - 2.0, n_top - 5.0, 8.0, 4.0, "N", 4.0));
 
-    widgets.push(text(mw(t, 62), margin + 4.0, sketch_y + sketch_h - 12.0, 14.0, 4.0, "LL", 3.0));
+    widgets.push(text(
+        mw(t, 62),
+        margin + 4.0,
+        sketch_y + sketch_h - 12.0,
+        14.0,
+        4.0,
+        "LL",
+        3.0,
+    ));
     widgets.push(text(
         mw(t, 63),
         margin + sketch_w - 14.0,
@@ -119,8 +162,8 @@ pub fn builtin_military_range_card() -> PageTemplate {
         ));
     }
     widgets.push(rect(mw(t, 100), margin, trp_y, sketch_w, trp_h));
-    for i in 1..col_x.len() - 1 {
-        widgets.push(vline(mw(t, (110 + i) as u16), col_x[i], trp_y, trp_h, 0.2));
+    for (i, x) in col_x.iter().enumerate().take(col_x.len() - 1).skip(1) {
+        widgets.push(vline(mw(t, (110 + i) as u16), *x, trp_y, trp_h, 0.2));
     }
     for r in 1..trp_rows {
         let y = trp_y + row_h * r as f64;

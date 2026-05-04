@@ -302,7 +302,12 @@ impl Default for OverlayState {
             pointer_screen: None,
             pointer_drawing: false,
             cursor_radius: 5.0,
-            cursor_color: JColor { r: 0, g: 0, b: 0, a: 255 },
+            cursor_color: JColor {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 255,
+            },
             cursor_opacity: 1.0,
             show_page_bounds: false,
             dark_mode: false,
@@ -363,14 +368,12 @@ impl VelloRenderer {
             force_fallback_adapter: false,
         }))
         .map_err(|e| VelloError::Init(format!("no adapter: {e}")))?;
-        let (device, queue) = pollster::block_on(adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                label: Some("vello-device"),
-                required_features: wgpu::Features::empty(),
-                required_limits: wgpu::Limits::default(),
-                ..Default::default()
-            },
-        ))
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("vello-device"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            ..Default::default()
+        }))
         .map_err(|e| VelloError::Init(format!("device: {e}")))?;
         let renderer = Renderer::new(&device, RendererOptions::default())
             .map_err(|e| VelloError::Init(format!("renderer: {e:?}")))?;
@@ -391,7 +394,7 @@ impl VelloRenderer {
             return Some(img.clone());
         }
         let dyn_img = match image::ImageReader::open(path) {
-            Ok(r) => match r.with_guessed_format().and_then(|r| Ok(r.decode())) {
+            Ok(r) => match r.with_guessed_format().map(|r| r.decode()) {
                 Ok(Ok(d)) => d,
                 Ok(Err(e)) => {
                     tracing::warn!("decode {:?}: {}", path, e);
@@ -639,14 +642,13 @@ fn render_pdf_page_to_rgba8(path: &Path, page_idx: u32) -> Option<PdfRgba8> {
             let g = row[x * 4 + 1] as u32;
             let r = row[x * 4 + 2] as u32;
             let a = row[x * 4 + 3] as u32;
-            let (r_un, g_un, b_un) = if a == 0 {
-                (0, 0, 0)
-            } else {
-                (
+            let (r_un, g_un, b_un) = match a {
+                0 => (0u8, 0u8, 0u8),
+                _ => (
                     ((r * 255 + a / 2) / a).min(255) as u8,
                     ((g * 255 + a / 2) / a).min(255) as u8,
                     ((b * 255 + a / 2) / a).min(255) as u8,
-                )
+                ),
             };
             rgba.push(r_un);
             rgba.push(g_un);
@@ -669,7 +671,8 @@ fn readback_to_rgba(
     w: u32,
     h: u32,
 ) -> Result<Vec<u8>, VelloError> {
-    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture: &target.texture,
@@ -779,7 +782,14 @@ fn build_scene<F>(
     }
 
     // 2) Background pattern.
-    draw_background_pattern(scene, transform, world_to_screen, background, page_rect, bg_image);
+    draw_background_pattern(
+        scene,
+        transform,
+        world_to_screen,
+        background,
+        page_rect,
+        bg_image,
+    );
 
     // 3) Widgets — caller-supplied draw callback. journal-widgets fills
     //    this in with parley-laid-out template content; tests / viewer
@@ -929,9 +939,8 @@ fn draw_selection_handles_overlay(
     transform: &ViewportTransform,
     selection_bbox: Rect,
 ) {
-    let to_screen = |cx: f64, cy: f64| -> (f64, f64) {
-        transform.canvas_to_screen(Point { x: cx, y: cy })
-    };
+    let to_screen =
+        |cx: f64, cy: f64| -> (f64, f64) { transform.canvas_to_screen(Point { x: cx, y: cy }) };
     let bb = selection_bbox;
     let mx = bb.x + bb.width * 0.5;
     let my = bb.y + bb.height * 0.5;
@@ -996,11 +1005,23 @@ fn draw_brush_cursor_overlay(scene: &mut Scene, px: f64, py: f64, ov: &OverlaySt
         )
     };
     let ring_style = KStroke::new(1.25);
-    scene.stroke(&ring_style, Affine::IDENTITY, &Brush::Solid(ring_color), None, &outline);
+    scene.stroke(
+        &ring_style,
+        Affine::IDENTITY,
+        &Brush::Solid(ring_color),
+        None,
+        &outline,
+    );
     let halo_style = KStroke::new(0.5);
     // Halo is the same outline scaled up slightly. For non-circular
     // shapes we draw the same path again — simpler and visually fine.
-    scene.stroke(&halo_style, Affine::IDENTITY, &Brush::Solid(halo_color), None, &outline);
+    scene.stroke(
+        &halo_style,
+        Affine::IDENTITY,
+        &Brush::Solid(halo_color),
+        None,
+        &outline,
+    );
 }
 
 /// Build the cursor outline path based on `OverlayState.cursor_shape`.
@@ -1008,9 +1029,7 @@ fn draw_brush_cursor_overlay(scene: &mut Scene, px: f64, py: f64, ov: &OverlaySt
 fn build_cursor_outline(px: f64, py: f64, radius: f64, ov: &OverlayState) -> BezPath {
     use journal_core::CursorShape as CS;
     match ov.cursor_shape.as_ref() {
-        None | Some(CS::Auto) | Some(CS::Circle) => {
-            Circle::new((px, py), radius).to_path(0.05)
-        }
+        None | Some(CS::Auto) | Some(CS::Circle) => Circle::new((px, py), radius).to_path(0.05),
         Some(CS::Oval { aspect }) => {
             let asp = aspect.max(0.05);
             let mut p = BezPath::new();
@@ -1075,13 +1094,9 @@ fn draw_background_pattern(
         BackgroundConfig::Grid(settings) => {
             draw_grid_lines(scene, transform, world_to_screen, settings)
         }
-        BackgroundConfig::Lines { spacing, tiling } => draw_horizontal_lines(
-            scene,
-            transform,
-            world_to_screen,
-            *spacing,
-            *tiling,
-        ),
+        BackgroundConfig::Lines { spacing, tiling } => {
+            draw_horizontal_lines(scene, transform, world_to_screen, *spacing, *tiling)
+        }
         BackgroundConfig::Dots { spacing, tiling } => {
             draw_dots(scene, transform, world_to_screen, *spacing, *tiling)
         }
@@ -1203,16 +1218,12 @@ fn draw_horizontal_lines(
     }
     let zoom = transform.zoom().max(1e-6);
     let line_w = 1.0 / zoom;
-    let bounds = if tiling {
-        transform.visible_canvas_rect()
-    } else {
-        // For non-tiling lines, clip to the visible-canvas region anyway —
-        // the Cairo path used to clip to page_rect; we'd need a clip layer
-        // here for parity. For the spike, draw across the full visible rect
-        // and rely on the page-fill rect (already painted) for the visual
-        // boundary on cream/dark page colour.
-        transform.visible_canvas_rect()
-    };
+    // `tiling` is plumbed through from BackgroundConfig::Lines but the
+    // non-tiling clip-to-page path isn't implemented; both branches
+    // used the visible-canvas rect. Kept on the signature so callers
+    // can switch once the page-rect clip lands.
+    let _ = tiling;
+    let bounds = transform.visible_canvas_rect();
     let y_start = (bounds.y / spacing).floor() * spacing;
     let y_end = bounds.y + bounds.height;
     let x_start = bounds.x;
@@ -1242,11 +1253,12 @@ fn draw_dots(
     }
     let zoom = transform.zoom().max(1e-6);
     let radius_canvas = (1.5 / zoom).clamp(0.05, 3.0);
-    let bounds = if tiling {
-        transform.visible_canvas_rect()
-    } else {
-        transform.visible_canvas_rect()
-    };
+    // `tiling` is plumbed through from BackgroundConfig::Dots but the
+    // non-tiling clip-to-page path isn't implemented yet — both
+    // branches resolved to the visible-canvas bounds. Collapsed for
+    // clippy; revisit if non-tiled dot grids land.
+    let _ = tiling;
+    let bounds = transform.visible_canvas_rect();
     let brush = Brush::Solid(PATTERN_COLOR);
 
     // Build all dots into a single BezPath, fill once. Far cheaper than
@@ -1345,7 +1357,11 @@ fn draw_hexagonal_lines(
     let mut path = BezPath::new();
     for row in row0..=row1 {
         let y_centre = row as f64 * row_h;
-        let x_offset = if row.rem_euclid(2) == 1 { col_w * 0.5 } else { 0.0 };
+        let x_offset = if row.rem_euclid(2) == 1 {
+            col_w * 0.5
+        } else {
+            0.0
+        };
         for col in col0..=col1 {
             let x_centre = col as f64 * col_w + x_offset;
             for i in 0..6 {
@@ -1385,12 +1401,7 @@ fn full_coverage_path() -> BezPath {
     p
 }
 
-fn draw_selection_underlay(
-    scene: &mut Scene,
-    transform: Affine,
-    stroke: &Stroke,
-    zoom: f64,
-) {
+fn draw_selection_underlay(scene: &mut Scene, transform: Affine, stroke: &Stroke, zoom: f64) {
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let base_w = stroke.pen.base_width / zoc;
     let extra = 4.0 / zoom; // 4 screen-px halo regardless of zoom
@@ -1413,9 +1424,8 @@ fn draw_selection_underlay(
     for p in pts.iter().skip(1) {
         path.line_to((p.x, p.y));
     }
-    let avg_pressure = (pts.iter().map(|p| p.pressure as f64).sum::<f64>()
-        / pts.len() as f64)
-        .max(0.05);
+    let avg_pressure =
+        (pts.iter().map(|p| p.pressure as f64).sum::<f64>() / pts.len() as f64).max(0.05);
     let mut style = KStroke::new(base_w * avg_pressure + extra);
     style.start_cap = Cap::Round;
     style.end_cap = Cap::Round;
@@ -1423,12 +1433,7 @@ fn draw_selection_underlay(
     scene.stroke(&style, transform, &highlight, None, &path);
 }
 
-fn draw_stroke(
-    scene: &mut Scene,
-    transform: Affine,
-    stroke: &Stroke,
-    params: &ToolStyleParams,
-) {
+fn draw_stroke(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &ToolStyleParams) {
     // A stroke's own `brush_recipe` (set at creation time from the
     // active Tool Editor brush) wins. Custom brushes survive a
     // tool/style change because the recipe is captured into the
@@ -1483,10 +1488,7 @@ fn build_smooth_path(pts: &[journal_core::StrokePoint]) -> BezPath {
 /// Resample a polyline so that consecutive samples are at most `step`
 /// apart. Pressure is linearly interpolated. Used by the variable-width
 /// outline shapes (PenFlat / Calligraphy).
-fn resample_path(
-    pts: &[journal_core::StrokePoint],
-    step: f64,
-) -> Vec<(f64, f64, f64)> {
+fn resample_path(pts: &[journal_core::StrokePoint], step: f64) -> Vec<(f64, f64, f64)> {
     let mut out = Vec::with_capacity(pts.len() * 2);
     for i in 0..pts.len() {
         let p = &pts[i];
@@ -1584,9 +1586,7 @@ fn pseudo_noise(x: f64, y: f64) -> f64 {
 // build them in the Tool Editor see a hint to file a bug. Phase 5
 // fills in the remainder.
 
-use journal_core::{
-    Brush as RBrush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode,
-};
+use journal_core::{Brush as RBrush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
 
 /// Public entry point. Iterates the brush's layers in order and emits
 /// each one onto the scene.
@@ -1604,10 +1604,23 @@ pub fn draw_brush_into_scene(
 fn emit_layer(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &BrushLayer) {
     match &layer.geometry {
         Geometry::Smooth { .. } => emit_smooth(scene, transform, stroke, layer),
-        Geometry::Outline { resample_step_mm, smooth_outline } => {
-            emit_outline(scene, transform, stroke, layer, *resample_step_mm, *smooth_outline)
-        }
-        Geometry::Scatter { density, spread_mm, falloff, directional_bias_deg } => emit_scatter(
+        Geometry::Outline {
+            resample_step_mm,
+            smooth_outline,
+        } => emit_outline(
+            scene,
+            transform,
+            stroke,
+            layer,
+            *resample_step_mm,
+            *smooth_outline,
+        ),
+        Geometry::Scatter {
+            density,
+            spread_mm,
+            falloff,
+            directional_bias_deg,
+        } => emit_scatter(
             scene,
             transform,
             stroke,
@@ -1644,9 +1657,8 @@ fn emit_fan_offset(
     if pts.len() < 2 {
         return;
     }
-    let avg_pressure = (pts.iter().map(|p| p.pressure as f64).sum::<f64>()
-        / pts.len() as f64)
-        .max(0.2);
+    let avg_pressure =
+        (pts.iter().map(|p| p.pressure as f64).sum::<f64>() / pts.len() as f64).max(0.2);
     let total_width = canvas_w * avg_pressure * spread_mult;
     let count = count.max(2);
     let tine_w = (canvas_w * 0.18).max(0.4);
@@ -1695,7 +1707,12 @@ fn layer_brush(pen_color: JColor, pen_opacity: f32, mod_color: ColorMod) -> Brus
     let alpha_u8 = ((pen_color.a as f64 / 255.0) * combined * 255.0).clamp(0.0, 255.0) as u8;
 
     let (r, g, b) = if mod_color.hue_shift_deg.abs() > 0.05 {
-        rotate_hue(pen_color.r, pen_color.g, pen_color.b, mod_color.hue_shift_deg)
+        rotate_hue(
+            pen_color.r,
+            pen_color.g,
+            pen_color.b,
+            mod_color.hue_shift_deg,
+        )
     } else {
         (pen_color.r, pen_color.g, pen_color.b)
     };
@@ -1716,7 +1733,11 @@ fn rotate_hue(r: u8, g: u8, b: u8, deg: f64) -> (u8, u8, u8) {
     if d.abs() < 1e-6 {
         return (r, g, b);
     }
-    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let s = if l > 0.5 {
+        d / (2.0 - max - min)
+    } else {
+        d / (max + min)
+    };
     let mut h = if max == r_f {
         ((g_f - b_f) / d) + if g_f < b_f { 6.0 } else { 0.0 }
     } else if max == g_f {
@@ -1727,16 +1748,22 @@ fn rotate_hue(r: u8, g: u8, b: u8, deg: f64) -> (u8, u8, u8) {
     h *= 60.0;
     h = (h + deg).rem_euclid(360.0);
     let (r2, g2, b2) = hsl_to_rgb(h / 360.0, s, l);
-    ((r2 * 255.0).clamp(0.0, 255.0) as u8,
-     (g2 * 255.0).clamp(0.0, 255.0) as u8,
-     (b2 * 255.0).clamp(0.0, 255.0) as u8)
+    (
+        (r2 * 255.0).clamp(0.0, 255.0) as u8,
+        (g2 * 255.0).clamp(0.0, 255.0) as u8,
+        (b2 * 255.0).clamp(0.0, 255.0) as u8,
+    )
 }
 
 fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
     if s.abs() < 1e-6 {
         return (l, l, l);
     }
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     (
         hue_to_rgb(p, q, h + 1.0 / 3.0),
@@ -1746,11 +1773,21 @@ fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
 }
 
 fn hue_to_rgb(p: f64, q: f64, mut t: f64) -> f64 {
-    if t < 0.0 { t += 1.0; }
-    if t > 1.0 { t -= 1.0; }
-    if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
-    if t < 1.0 / 2.0 { return q; }
-    if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+    if t < 0.0 {
+        t += 1.0;
+    }
+    if t > 1.0 {
+        t -= 1.0;
+    }
+    if t < 1.0 / 6.0 {
+        return p + (q - p) * 6.0 * t;
+    }
+    if t < 1.0 / 2.0 {
+        return q;
+    }
+    if t < 2.0 / 3.0 {
+        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+    }
     p
 }
 
@@ -1767,7 +1804,12 @@ fn emit_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Br
     let brush = layer_brush(pen.color, pen.opacity, layer.color);
 
     // Tilt-band is its own emission pattern (per-segment overlays).
-    if let WidthMode::TiltBand { threshold, band_mult, alpha_scale } = layer.width {
+    if let WidthMode::TiltBand {
+        threshold,
+        band_mult,
+        alpha_scale,
+    } = layer.width
+    {
         emit_tilt_band(scene, transform, stroke, threshold, band_mult, alpha_scale);
         return;
     }
@@ -1793,9 +1835,11 @@ fn emit_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Br
 
     let width = match layer.width {
         WidthMode::Constant { width_mult } => canvas_w * width_mult,
-        WidthMode::ClampedConstant { width_mult, min_mm, max_mm } => {
-            (canvas_w * width_mult).clamp(min_mm, max_mm)
-        }
+        WidthMode::ClampedConstant {
+            width_mult,
+            min_mm,
+            max_mm,
+        } => (canvas_w * width_mult).clamp(min_mm, max_mm),
         WidthMode::Pressure { floor, amp } => canvas_w * (floor + amp * avg_pressure),
         WidthMode::DirectionAngled { .. } => {
             // DirectionAngled only makes sense with Outline geometry;
@@ -1831,12 +1875,7 @@ fn emit_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Br
 /// (Diamond, StarN, FlatNib, Custom) on a Smooth-geometry layer —
 /// they expect a chain of that shape along the path, not a wide
 /// curved trace.
-fn emit_smooth_stamped(
-    scene: &mut Scene,
-    transform: Affine,
-    stroke: &Stroke,
-    layer: &BrushLayer,
-) {
+fn emit_smooth_stamped(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &BrushLayer) {
     let pen = stroke.pen;
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let canvas_w = pen.base_width / zoc;
@@ -1849,12 +1888,12 @@ fn emit_smooth_stamped(
     for &(x, y, press) in &samples {
         let scale = match layer.width {
             WidthMode::Constant { width_mult } => canvas_w * width_mult * 0.5,
-            WidthMode::ClampedConstant { width_mult, min_mm, max_mm } => {
-                ((canvas_w * width_mult) * 0.5).clamp(min_mm * 0.5, max_mm * 0.5)
-            }
-            WidthMode::Pressure { floor, amp } => {
-                canvas_w * (floor + amp * press) * 0.5
-            }
+            WidthMode::ClampedConstant {
+                width_mult,
+                min_mm,
+                max_mm,
+            } => ((canvas_w * width_mult) * 0.5).clamp(min_mm * 0.5, max_mm * 0.5),
+            WidthMode::Pressure { floor, amp } => canvas_w * (floor + amp * press) * 0.5,
             WidthMode::DirectionAngled { .. } => canvas_w * 0.5,
             WidthMode::TiltBand { .. } => canvas_w * 0.5,
         } * layer.tip_scale.max(0.0);
@@ -1957,13 +1996,13 @@ fn emit_outline(
                 let rel = (dir - nib_angle).sin().abs();
                 max_width * (min_ratio + (1.0 - min_ratio) * rel) * press_clamped * 0.5
             }
-            WidthMode::Pressure { floor, amp } => {
-                max_width * (floor + amp * press_clamped) * 0.5
-            }
+            WidthMode::Pressure { floor, amp } => max_width * (floor + amp * press_clamped) * 0.5,
             WidthMode::Constant { width_mult } => max_width * width_mult * 0.5,
-            WidthMode::ClampedConstant { width_mult, min_mm, max_mm } => {
-                ((max_width * width_mult) * 0.5).clamp(min_mm * 0.5, max_mm * 0.5)
-            }
+            WidthMode::ClampedConstant {
+                width_mult,
+                min_mm,
+                max_mm,
+            } => ((max_width * width_mult) * 0.5).clamp(min_mm * 0.5, max_mm * 0.5),
             WidthMode::TiltBand { .. } => max_width * 0.5,
         };
         let nxn = -ty / tlen;
@@ -2063,9 +2102,8 @@ fn emit_dab_stamp(
     }
     let brush = layer_brush(pen.color, pen.opacity, layer.color);
 
-    let avg_pressure = (pts.iter().map(|p| p.pressure as f64).sum::<f64>()
-        / pts.len() as f64)
-        .max(0.05);
+    let avg_pressure =
+        (pts.iter().map(|p| p.pressure as f64).sum::<f64>() / pts.len() as f64).max(0.05);
     let step = (canvas_w * step_mult).max(0.5);
     let samples = if pts.len() == 1 {
         vec![(pts[0].x, pts[0].y, pts[0].pressure as f64)]
@@ -2075,9 +2113,11 @@ fn emit_dab_stamp(
     for &(x, y, press) in &samples {
         let scale = match layer.width {
             WidthMode::Constant { width_mult } => canvas_w * width_mult * 0.5,
-            WidthMode::ClampedConstant { width_mult, min_mm, max_mm } => {
-                ((canvas_w * width_mult) * 0.5).clamp(min_mm * 0.5, max_mm * 0.5)
-            }
+            WidthMode::ClampedConstant {
+                width_mult,
+                min_mm,
+                max_mm,
+            } => ((canvas_w * width_mult) * 0.5).clamp(min_mm * 0.5, max_mm * 0.5),
             WidthMode::Pressure { floor, amp } => canvas_w * (floor + amp * press) * 0.5,
             WidthMode::DirectionAngled { .. } => canvas_w * 0.5,
             WidthMode::TiltBand { .. } => canvas_w * 0.5,
@@ -2151,12 +2191,19 @@ fn tip_polygon(tip: &TipShape, center: (f64, f64), scale: f64) -> BezPath {
             p.close_path();
             p
         }
-        TipShape::StarN { points, inner_ratio } => {
+        TipShape::StarN {
+            points,
+            inner_ratio,
+        } => {
             let n = (*points as usize).max(3);
             let mut p = BezPath::new();
             for i in 0..(n * 2) {
                 let theta = (i as f64) * std::f64::consts::PI / (n as f64);
-                let r = if i % 2 == 0 { scale } else { scale * inner_ratio };
+                let r = if i % 2 == 0 {
+                    scale
+                } else {
+                    scale * inner_ratio
+                };
                 let x = cx + r * theta.cos();
                 let y = cy + r * theta.sin() - scale * 0.0;
                 if i == 0 {

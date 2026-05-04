@@ -13,18 +13,33 @@ pub struct TemplateId(pub Uuid);
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum BackgroundType {
     Blank,
-    Dots { spacing: f64 },
-    Lines { spacing: f64 },
-    Grid { spacing: f64 },
+    Dots {
+        spacing: f64,
+    },
+    Lines {
+        spacing: f64,
+    },
+    Grid {
+        spacing: f64,
+    },
     /// Three sets of parallel lines at 30°, 90°, 150° forming a triangle
     /// lattice. Tiles infinitely; great for technical drawing, board games,
     /// and 3D sketches.
-    Isometric { spacing: f64 },
+    Isometric {
+        spacing: f64,
+    },
     /// Pointy-top hexagonal grid. Tiles infinitely; useful for tabletop
     /// games and hex-based note layouts.
-    Hexagonal { spacing: f64 },
-    Image { path: String },
-    Pdf { path: String, page: u32 },
+    Hexagonal {
+        spacing: f64,
+    },
+    Image {
+        path: String,
+    },
+    Pdf {
+        path: String,
+        page: u32,
+    },
 }
 
 /// How the template background tiles.
@@ -55,7 +70,12 @@ pub struct WidgetStyle {
 impl Default for WidgetStyle {
     fn default() -> Self {
         Self {
-            stroke_color: Color { r: 60, g: 60, b: 80, a: 200 },
+            stroke_color: Color {
+                r: 60,
+                g: 60,
+                b: 80,
+                a: 200,
+            },
             fill_color: None,
             stroke_width_mm: 0.3,
         }
@@ -66,22 +86,44 @@ impl Default for WidgetStyle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WidgetKind {
-    TextBlock { text: String, font_size_mm: f64 },
+    TextBlock {
+        text: String,
+        font_size_mm: f64,
+    },
     Rectangle,
     Ellipse,
-    Line { thickness_mm: f64 },
-    GridRegion { spacing_mm: f64 },
-    LinesRegion { spacing_mm: f64 },
-    DotsRegion { spacing_mm: f64 },
+    Line {
+        thickness_mm: f64,
+    },
+    GridRegion {
+        spacing_mm: f64,
+    },
+    LinesRegion {
+        spacing_mm: f64,
+    },
+    DotsRegion {
+        spacing_mm: f64,
+    },
     CalendarMonth,
-    Timeline { start_hour: u8, end_hour: u8, slot_minutes: u32 },
-    Checklist { items: Vec<String> },
+    Timeline {
+        start_hour: u8,
+        end_hour: u8,
+        slot_minutes: u32,
+    },
+    Checklist {
+        items: Vec<String>,
+    },
     /// Three numbered priority boxes stacked vertically (Full Focus daily layout).
     BigThree,
     /// Columnar priority list with A/B/C priority letter, sequence number, and write-on line.
-    PriorityList { count: u32 },
+    PriorityList {
+        count: u32,
+    },
     /// Two-column hourly schedule with hour labels on the left and blank lines + half-hour ticks on the right.
-    DailyAppointments { start_hour: u8, end_hour: u8 },
+    DailyAppointments {
+        start_hour: u8,
+        end_hour: u8,
+    },
     /// Grid of labeled role/goal boxes for weekly planning (Franklin Covey Weekly Compass).
     WeeklyCompass,
 }
@@ -134,15 +176,11 @@ impl Default for PageTemplate {
 /// How a planner notebook groups its days under each year section.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind")]
+#[derive(Default)]
 pub enum PlannerGrouping {
+    #[default]
     Month,
     Week,
-}
-
-impl Default for PlannerGrouping {
-    fn default() -> Self {
-        PlannerGrouping::Month
-    }
 }
 
 /// Title format strings for the section wrappers a planner generates.
@@ -245,7 +283,10 @@ mod tests {
 
     #[test]
     fn entry_flags_serde_round_trip() {
-        let flags = EntryFlags { bridge_previous: true, bridge_next: false };
+        let flags = EntryFlags {
+            bridge_previous: true,
+            bridge_next: false,
+        };
         let serialized = toml::to_string(&flags).expect("serialize EntryFlags");
         let deserialized: EntryFlags = toml::from_str(&serialized).expect("deserialize EntryFlags");
         assert_eq!(flags, deserialized);

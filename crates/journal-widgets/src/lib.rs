@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 //! Vello-based template widget renderer.
 //!
 //! This crate is the Vello replacement for `journal_canvas::widget_renderer`
@@ -16,9 +17,13 @@ use journal_core::{
     render_title, Color, Rect, TemplateWidget, TitleContext, WidgetKind, WidgetOverride,
     WidgetRect, WidgetStyle,
 };
-use parley::{Alignment, AlignmentOptions, FontContext, LayoutContext, PositionedLayoutItem, StyleProperty};
+use parley::{
+    Alignment, AlignmentOptions, FontContext, LayoutContext, PositionedLayoutItem, StyleProperty,
+};
 use uuid::Uuid;
-use vello::kurbo::{Affine, BezPath, Cap, Circle, Ellipse, Join, Rect as KRect, Shape, Stroke as KStroke};
+use vello::kurbo::{
+    Affine, BezPath, Cap, Circle, Ellipse, Join, Rect as KRect, Shape, Stroke as KStroke,
+};
 use vello::peniko::{Brush, Color as PColor, Fill};
 use vello::Scene;
 
@@ -32,7 +37,8 @@ pub struct WidgetRenderContext {
 }
 
 fn resolve_date(ctx: &WidgetRenderContext) -> chrono::NaiveDate {
-    ctx.date.unwrap_or_else(|| chrono::Local::now().date_naive())
+    ctx.date
+        .unwrap_or_else(|| chrono::Local::now().date_naive())
 }
 
 pub struct WidgetRenderer {
@@ -111,9 +117,19 @@ impl WidgetRenderer {
         let wordmark = "JOURNAL";
         let wordmark_size: f32 = (screen_h * 0.10).clamp(34.0, 96.0) as f32;
         let wordmark_color = if dark_mode {
-            Color { r: 234, g: 234, b: 240, a: 230 }
+            Color {
+                r: 234,
+                g: 234,
+                b: 240,
+                a: 230,
+            }
         } else {
-            Color { r: 36, g: 38, b: 64, a: 240 }
+            Color {
+                r: 36,
+                g: 38,
+                b: 64,
+                a: 240,
+            }
         };
         let wm_band_w = screen_w.min(720.0);
         let wm_x = (screen_w - wm_band_w) * 0.5;
@@ -154,9 +170,19 @@ impl WidgetRenderer {
         // Subtitle prompt text — lifted alpha vs prior placeholder so it
         // clears WCAG AA against the dark page colour.
         let subtitle_color = if dark_mode {
-            Color { r: 199, g: 199, b: 209, a: 184 }
+            Color {
+                r: 199,
+                g: 199,
+                b: 209,
+                a: 184,
+            }
         } else {
-            Color { r: 76, g: 78, b: 102, a: 200 }
+            Color {
+                r: 76,
+                g: 78,
+                b: 102,
+                a: 200,
+            }
         };
         let subtitle_size: f32 = (screen_h * 0.026).clamp(13.0, 20.0) as f32;
         let subtitle_max_w = screen_w * 0.7;
@@ -198,7 +224,13 @@ impl WidgetRenderer {
             // Per-widget clip layer keeps widget content from spilling
             // outside its declared rect — same semantics as the Cairo
             // renderer's `ctx.rectangle(...).clip()`.
-            scene.push_layer(Fill::NonZero, vello::peniko::Mix::Normal, 1.0_f32, world_to_screen, &clip);
+            scene.push_layer(
+                Fill::NonZero,
+                vello::peniko::Mix::Normal,
+                1.0_f32,
+                world_to_screen,
+                &clip,
+            );
             self.draw_widget(scene, world_to_screen, widget, render_ctx);
             scene.pop_layer();
         }
@@ -294,11 +326,17 @@ impl WidgetRenderer {
                 };
                 self.draw_calendar_month(scene, transform, r, style, date);
             }
-            WidgetKind::Timeline { start_hour, end_hour, slot_minutes } => {
+            WidgetKind::Timeline {
+                start_hour,
+                end_hour,
+                slot_minutes,
+            } => {
                 let (s, e, m) = match override_ {
-                    Some(WidgetOverride::Timeline { start_hour, end_hour, slot_minutes }) => {
-                        (*start_hour, *end_hour, *slot_minutes)
-                    }
+                    Some(WidgetOverride::Timeline {
+                        start_hour,
+                        end_hour,
+                        slot_minutes,
+                    }) => (*start_hour, *end_hour, *slot_minutes),
                     _ => (*start_hour, *end_hour, *slot_minutes),
                 };
                 self.draw_timeline_stub(scene, transform, r, style, s, e, m);
@@ -320,11 +358,15 @@ impl WidgetRenderer {
                 };
                 self.draw_priority_list(scene, transform, r, style, n);
             }
-            WidgetKind::DailyAppointments { start_hour, end_hour } => {
+            WidgetKind::DailyAppointments {
+                start_hour,
+                end_hour,
+            } => {
                 let (s, e) = match override_ {
-                    Some(WidgetOverride::DailyAppointments { start_hour, end_hour }) => {
-                        (*start_hour, *end_hour)
-                    }
+                    Some(WidgetOverride::DailyAppointments {
+                        start_hour,
+                        end_hour,
+                    }) => (*start_hour, *end_hour),
                     _ => (*start_hour, *end_hour),
                 };
                 self.draw_daily_appointments(scene, transform, r, style, s, e);
@@ -482,7 +524,7 @@ impl WidgetRenderer {
 
         for i in 0..(slots as u32) {
             let m = start_min + i * slot_minutes;
-            if m % 60 != 0 {
+            if !m.is_multiple_of(60) {
                 continue;
             }
             let label = format!("{:02}:00", m / 60);
@@ -687,12 +729,7 @@ impl WidgetRenderer {
         scene.stroke(&stroke_style_thin, transform, &brush, None, &grid);
 
         let labels = ["Roles", "Goals", "Plans", "Reflect"];
-        let positions = [
-            (r.x, r.y),
-            (cx, r.y),
-            (r.x, cy),
-            (cx, cy),
-        ];
+        let positions = [(r.x, r.y), (cx, r.y), (r.x, cy), (cx, cy)];
         let cell_w = r.width * 0.5;
         for (label, (qx, qy)) in labels.iter().zip(positions.iter()) {
             draw_text_runs(
@@ -757,9 +794,18 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 
 fn month_name(m: u32) -> &'static str {
     match m {
-        1 => "January", 2 => "February", 3 => "March", 4 => "April",
-        5 => "May", 6 => "June", 7 => "July", 8 => "August",
-        9 => "September", 10 => "October", 11 => "November", 12 => "December",
+        1 => "January",
+        2 => "February",
+        3 => "March",
+        4 => "April",
+        5 => "May",
+        6 => "June",
+        7 => "July",
+        8 => "August",
+        9 => "September",
+        10 => "October",
+        11 => "November",
+        12 => "December",
         _ => "",
     }
 }
@@ -878,8 +924,18 @@ fn draw_tracked_text(
     tracking_em: f32,
 ) {
     draw_text_runs_inner(
-        scene, font_ctx, layout_ctx, transform, text, font_size, x, y, max_width, color,
-        Alignment::Center, font_size * tracking_em,
+        scene,
+        font_ctx,
+        layout_ctx,
+        transform,
+        text,
+        font_size,
+        x,
+        y,
+        max_width,
+        color,
+        Alignment::Center,
+        font_size * tracking_em,
     );
 }
 
@@ -930,7 +986,7 @@ fn draw_text_runs_inner(
                     let gx = run_x;
                     run_x += g.advance as f64;
                     vello::Glyph {
-                        id: g.id as u32,
+                        id: g.id,
                         x: gx as f32,
                         y: (baseline - g.y as f64) as f32,
                     }

@@ -125,11 +125,12 @@ pub fn delete_section(conn: &Connection, id: SectionId) -> Result<()> {
 /// scope and rejected by the caller (UI layer).
 pub fn reorder_section(conn: &mut Connection, id: SectionId, new_position: u32) -> Result<()> {
     let tx = conn.transaction()?;
-    let (notebook_blob, parent_blob, old_position): (Vec<u8>, Option<Vec<u8>>, i64) = tx.query_row(
-        "SELECT notebook_id, parent_section_id, position FROM sections WHERE id = ?1",
-        params![uuid_to_blob(id.0)],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-    )?;
+    let (notebook_blob, parent_blob, old_position): (Vec<u8>, Option<Vec<u8>>, i64) = tx
+        .query_row(
+            "SELECT notebook_id, parent_section_id, position FROM sections WHERE id = ?1",
+            params![uuid_to_blob(id.0)],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
     let new_pos = new_position as i64;
     if new_pos == old_position {
         tx.commit()?;

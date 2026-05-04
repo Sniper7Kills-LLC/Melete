@@ -55,7 +55,10 @@ fn prompt_notebook_kind(
         btn.add_css_class("notebook-card");
         btn.add_css_class("flat");
         btn.set_hexpand(true);
-        let v = GtkBox::builder().orientation(Orientation::Vertical).spacing(6).build();
+        let v = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(6)
+            .build();
         let icon_w = Image::from_icon_name(icon);
         icon_w.set_pixel_size(40);
         icon_w.set_halign(Align::Start);
@@ -63,7 +66,11 @@ fn prompt_notebook_kind(
         let t = Label::builder().label(title).halign(Align::Start).build();
         t.add_css_class("card-title");
         v.append(&t);
-        let s = Label::builder().label(subtitle).halign(Align::Start).wrap(true).build();
+        let s = Label::builder()
+            .label(subtitle)
+            .halign(Align::Start)
+            .wrap(true)
+            .build();
         s.add_css_class("card-subtitle");
         v.append(&s);
         btn.set_child(Some(&v));
@@ -171,11 +178,7 @@ pub fn build_home(
         let parent = parent.clone();
         let state = state.clone();
         settings_btn.connect_clicked(move |_| {
-            crate::settings_dialogs::open_app_settings(
-                &parent,
-                state.clone(),
-                Box::new(|| {}),
-            );
+            crate::settings_dialogs::open_app_settings(&parent, state.clone(), Box::new(|| {}));
         });
     }
 
@@ -211,59 +214,58 @@ pub fn build_home(
             let on_open_inner = on_open.clone();
 
             // Step 1: ask the user which kind of notebook they want.
-            prompt_notebook_kind(&parent, Box::new(move |kind| {
-                let parent2 = parent_inner.clone();
-                let state2 = state_inner.clone();
-                let db2 = db_inner.clone();
-                let list_box2 = list_box_inner.clone();
-                let on_open2 = on_open_inner.clone();
-                match kind {
-                    NotebookKindChoice::Standard => {
-                        dialogs::prompt_new_notebook(
-                            &parent2,
-                            Box::new(move |name| {
-                                let nb = Notebook {
-                                    id: NotebookId(Uuid::new_v4()),
-                                    name,
-                                    kind: NotebookKind::Standard,
-                                    assigned_templates: Vec::new(),
-                                };
-                                if let Err(e) =
-                                    db2.borrow_mut().insert_notebook(&nb)
-                                {
-                                    tracing::error!("failed to insert notebook: {}", e);
-                                    return;
-                                }
-                                refresh_list(&list_box2, db2.clone(), on_open2.clone());
-                            }),
-                        );
+            prompt_notebook_kind(
+                &parent,
+                Box::new(move |kind| {
+                    let parent2 = parent_inner.clone();
+                    let state2 = state_inner.clone();
+                    let db2 = db_inner.clone();
+                    let list_box2 = list_box_inner.clone();
+                    let on_open2 = on_open_inner.clone();
+                    match kind {
+                        NotebookKindChoice::Standard => {
+                            dialogs::prompt_new_notebook(
+                                &parent2,
+                                Box::new(move |name| {
+                                    let nb = Notebook {
+                                        id: NotebookId(Uuid::new_v4()),
+                                        name,
+                                        kind: NotebookKind::Standard,
+                                        assigned_templates: Vec::new(),
+                                    };
+                                    if let Err(e) = db2.borrow_mut().insert_notebook(&nb) {
+                                        tracing::error!("failed to insert notebook: {}", e);
+                                        return;
+                                    }
+                                    refresh_list(&list_box2, db2.clone(), on_open2.clone());
+                                }),
+                            );
+                        }
+                        NotebookKindChoice::Planner => {
+                            dialogs::prompt_new_planner(
+                                &parent2,
+                                state2,
+                                Box::new(move |choice| {
+                                    let nb = Notebook {
+                                        id: NotebookId(Uuid::new_v4()),
+                                        name: choice.name,
+                                        kind: NotebookKind::Planner {
+                                            template_id: choice.template_id,
+                                            creation_date: choice.creation_date,
+                                        },
+                                        assigned_templates: Vec::new(),
+                                    };
+                                    if let Err(e) = db2.borrow_mut().insert_notebook(&nb) {
+                                        tracing::error!("failed to insert planner: {}", e);
+                                        return;
+                                    }
+                                    refresh_list(&list_box2, db2.clone(), on_open2.clone());
+                                }),
+                            );
+                        }
                     }
-                    NotebookKindChoice::Planner => {
-                        dialogs::prompt_new_planner(
-                            &parent2,
-                            state2,
-                            Box::new(move |choice| {
-                                let nb = Notebook {
-                                    id: NotebookId(Uuid::new_v4()),
-                                    name: choice.name,
-                                    kind: NotebookKind::Planner {
-                                        template_id: choice.template_id,
-                                        creation_date: choice.creation_date,
-                                    },
-                                    assigned_templates: Vec::new(),
-                                };
-                                if let Err(e) =
-                                    db2.borrow_mut().insert_notebook(&nb)
-                                {
-                                    tracing::error!("failed to insert planner: {}", e);
-                                    return;
-                                }
-                                refresh_list(&list_box2, db2.clone(), on_open2.clone());
-                            }),
-                        );
-                    }
-                }
-            }));
+                }),
+            );
         });
     }
 
@@ -297,12 +299,20 @@ fn notebook_card(nb: &Notebook, on_open: Rc<dyn Fn(NotebookId)>) -> Button {
     icon.set_icon_size(gtk4::IconSize::Large);
     icon.add_css_class("dim-label");
     header_row.append(&icon);
-    let kind_lbl = Label::builder().label(kind_text).halign(Align::Start).hexpand(true).build();
+    let kind_lbl = Label::builder()
+        .label(kind_text)
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
     kind_lbl.add_css_class("card-kind");
     header_row.append(&kind_lbl);
     body.append(&header_row);
 
-    let title = Label::builder().label(&nb.name).halign(Align::Start).wrap(true).build();
+    let title = Label::builder()
+        .label(&nb.name)
+        .halign(Align::Start)
+        .wrap(true)
+        .build();
     title.add_css_class("card-title");
     body.append(&title);
 
@@ -310,7 +320,10 @@ fn notebook_card(nb: &Notebook, on_open: Rc<dyn Fn(NotebookId)>) -> Button {
         NotebookKind::Planner { creation_date, .. } => format!("Created {}", creation_date),
         NotebookKind::Standard => "Standard notebook".to_string(),
     };
-    let subtitle = Label::builder().label(&subtitle_text).halign(Align::Start).build();
+    let subtitle = Label::builder()
+        .label(&subtitle_text)
+        .halign(Align::Start)
+        .build();
     subtitle.add_css_class("card-subtitle");
     body.append(&subtitle);
 
@@ -320,10 +333,7 @@ fn notebook_card(nb: &Notebook, on_open: Rc<dyn Fn(NotebookId)>) -> Button {
     btn
 }
 
-fn build_card_grid(
-    notebooks: &[&Notebook],
-    on_open: Rc<dyn Fn(NotebookId)>,
-) -> FlowBox {
+fn build_card_grid(notebooks: &[&Notebook], on_open: Rc<dyn Fn(NotebookId)>) -> FlowBox {
     let flow = FlowBox::builder()
         .max_children_per_line(8)
         .min_children_per_line(1)

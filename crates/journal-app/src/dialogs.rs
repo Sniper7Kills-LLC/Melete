@@ -39,13 +39,12 @@ pub(crate) fn persist_notebook_template(t: &journal_core::NotebookTemplate) {
 }
 
 fn modal(parent: &ApplicationWindow, title: &str) -> Window {
-    let win = Window::builder()
+    Window::builder()
         .transient_for(parent)
         .modal(true)
         .title(title)
         .default_width(360)
-        .build();
-    win
+        .build()
 }
 
 fn build_button_row<F: Fn() + 'static>(win: &Window, on_ok: F) -> GtkBox {
@@ -149,7 +148,9 @@ pub fn prompt_new_page(
     state: SharedState,
     notebook_id: NotebookId,
     section_id: SectionId,
-    on_ok: Box<dyn Fn(Option<TemplateId>, std::collections::HashMap<Uuid, journal_core::WidgetOverride>)>,
+    on_ok: Box<
+        dyn Fn(Option<TemplateId>, std::collections::HashMap<Uuid, journal_core::WidgetOverride>),
+    >,
 ) {
     let templates = sorted_grouped_templates(available_templates_for_section(
         &state,
@@ -170,7 +171,7 @@ pub fn prompt_new_page(
     body.append(&Label::new(Some("Template")));
 
     let names: Vec<String> = std::iter::once("Blank (no template)".to_string())
-        .chain(templates.iter().map(|t| display_label_for(t)))
+        .chain(templates.iter().map(display_label_for))
         .collect();
     let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
     let model = StringList::new(&name_refs);
@@ -180,7 +181,9 @@ pub fn prompt_new_page(
     let templates_rc: Rc<RefCell<Vec<PageTemplate>>> = Rc::new(RefCell::new(templates));
     let dropdown_for_ok = dropdown.clone();
     let templates_for_ok = templates_rc.clone();
-    let on_ok_rc: Rc<dyn Fn(Option<TemplateId>, std::collections::HashMap<Uuid, journal_core::WidgetOverride>)> = Rc::from(on_ok);
+    let on_ok_rc: Rc<
+        dyn Fn(Option<TemplateId>, std::collections::HashMap<Uuid, journal_core::WidgetOverride>),
+    > = Rc::from(on_ok);
     let parent_rc = parent.clone();
     let row = build_button_row(&win, move || {
         let idx = dropdown_for_ok.selected() as usize;
@@ -209,9 +212,13 @@ pub fn prompt_new_page(
         }
         let on_ok_inner = on_ok_rc.clone();
         let template_id = template.id;
-        prompt_widget_overrides(&parent_rc, configurable, Box::new(move |overrides| {
-            (on_ok_inner)(Some(template_id), overrides);
-        }));
+        prompt_widget_overrides(
+            &parent_rc,
+            configurable,
+            Box::new(move |overrides| {
+                (on_ok_inner)(Some(template_id), overrides);
+            }),
+        );
     });
     body.append(&row);
 
@@ -259,7 +266,10 @@ fn prompt_widget_overrides(
         .build();
 
     let scroll = ScrolledWindow::builder().vexpand(true).build();
-    let list = GtkBox::builder().orientation(Orientation::Vertical).spacing(12).build();
+    let list = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(12)
+        .build();
     scroll.set_child(Some(&list));
     body.append(&scroll);
 
@@ -268,7 +278,10 @@ fn prompt_widget_overrides(
     let mut readers: Vec<(Uuid, Rc<dyn Fn() -> Option<WO>>)> = Vec::new();
 
     for w in &widgets {
-        let row = GtkBox::builder().orientation(Orientation::Vertical).spacing(4).build();
+        let row = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(4)
+            .build();
         let header = Label::builder()
             .label(widget_kind_label(&w.kind))
             .halign(gtk4::Align::Start)
@@ -296,12 +309,19 @@ fn prompt_widget_overrides(
                     }),
                 ));
             }
-            K::Timeline { start_hour, end_hour, slot_minutes } => {
+            K::Timeline {
+                start_hour,
+                end_hour,
+                slot_minutes,
+            } => {
                 let s_adj = Adjustment::new(*start_hour as f64, 0.0, 23.0, 1.0, 1.0, 0.0);
                 let e_adj = Adjustment::new(*end_hour as f64, 1.0, 24.0, 1.0, 1.0, 0.0);
                 let s_spin = SpinButton::new(Some(&s_adj), 1.0, 0);
                 let e_spin = SpinButton::new(Some(&e_adj), 1.0, 0);
-                let inline = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
+                let inline = GtkBox::builder()
+                    .orientation(Orientation::Horizontal)
+                    .spacing(8)
+                    .build();
                 inline.append(&Label::new(Some("Start")));
                 inline.append(&s_spin);
                 inline.append(&Label::new(Some("End")));
@@ -321,12 +341,18 @@ fn prompt_widget_overrides(
                     }),
                 ));
             }
-            K::DailyAppointments { start_hour, end_hour } => {
+            K::DailyAppointments {
+                start_hour,
+                end_hour,
+            } => {
                 let s_adj = Adjustment::new(*start_hour as f64, 0.0, 23.0, 1.0, 1.0, 0.0);
                 let e_adj = Adjustment::new(*end_hour as f64, 1.0, 24.0, 1.0, 1.0, 0.0);
                 let s_spin = SpinButton::new(Some(&s_adj), 1.0, 0);
                 let e_spin = SpinButton::new(Some(&e_adj), 1.0, 0);
-                let inline = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
+                let inline = GtkBox::builder()
+                    .orientation(Orientation::Horizontal)
+                    .spacing(8)
+                    .build();
                 inline.append(&Label::new(Some("Start")));
                 inline.append(&s_spin);
                 inline.append(&Label::new(Some("End")));
@@ -347,18 +373,25 @@ fn prompt_widget_overrides(
             K::PriorityList { count } => {
                 let adj = Adjustment::new(*count as f64, 1.0, 60.0, 1.0, 5.0, 0.0);
                 let spin = SpinButton::new(Some(&adj), 1.0, 0);
-                let inline = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
+                let inline = GtkBox::builder()
+                    .orientation(Orientation::Horizontal)
+                    .spacing(8)
+                    .build();
                 inline.append(&Label::new(Some("Rows")));
                 inline.append(&spin);
                 row.append(&inline);
                 let spin2 = spin.clone();
                 readers.push((
                     w.id,
-                    Rc::new(move || Some(WO::PriorityList { count: spin2.value() as u32 })),
+                    Rc::new(move || {
+                        Some(WO::PriorityList {
+                            count: spin2.value() as u32,
+                        })
+                    }),
                 ));
             }
             K::Checklist { items } => {
-                let entry = Entry::builder().text(&items.join(" | ")).build();
+                let entry = Entry::builder().text(items.join(" | ")).build();
                 entry.set_tooltip_text(Some("Items separated by ' | '"));
                 row.append(&entry);
                 let entry2 = entry.clone();
@@ -450,12 +483,15 @@ fn available_templates_for_section(
     let s = state.borrow();
     let (section, notebook) = {
         let mut b = s.backend.borrow_mut();
-        (b.get_section(section_id).ok(), b.get_notebook(notebook_id).ok())
+        (
+            b.get_section(section_id).ok(),
+            b.get_notebook(notebook_id).ok(),
+        )
     };
     let reg = s.templates.borrow();
     let all: Vec<PageTemplate> = {
         let mut v: Vec<PageTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();
-        v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        v.sort_by_key(|a| a.name.to_lowercase());
         v
     };
 
@@ -493,7 +529,7 @@ pub fn prompt_new_planner(
         let s = state.borrow();
         let reg = s.notebook_templates.borrow();
         let mut v: Vec<NotebookTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();
-        v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        v.sort_by_key(|a| a.name.to_lowercase());
         v
     };
     if templates.is_empty() {
@@ -523,11 +559,16 @@ pub fn prompt_new_planner(
 
     body.append(&Label::new(Some("Group by")));
     let grouping_model = StringList::new(&["Month", "Week"]);
-    let grouping_dropdown = DropDown::builder().model(&grouping_model).selected(0).build();
+    let grouping_dropdown = DropDown::builder()
+        .model(&grouping_model)
+        .selected(0)
+        .build();
     body.append(&grouping_dropdown);
 
     body.append(&Label::new(Some("Page title format")));
-    let title_entry = Entry::builder().text(&templates[0].page_title_format).build();
+    let title_entry = Entry::builder()
+        .text(&templates[0].page_title_format)
+        .build();
     body.append(&title_entry);
     {
         let templates = templates.clone();
@@ -579,12 +620,9 @@ pub fn prompt_new_planner(
 
             // Calendar yields gtk's GDateTime; pull components and build a NaiveDate.
             let dt = calendar.date();
-            let creation_date = NaiveDate::from_ymd_opt(
-                dt.year(),
-                dt.month() as u32,
-                dt.day_of_month() as u32,
-            )
-            .unwrap_or_else(|| chrono::Utc::now().date_naive());
+            let creation_date =
+                NaiveDate::from_ymd_opt(dt.year(), dt.month() as u32, dt.day_of_month() as u32)
+                    .unwrap_or_else(|| chrono::Utc::now().date_naive());
 
             // Clone the chosen NotebookTemplate, override grouping + title
             // format, then insert under a fresh UUID so the registry retains
@@ -627,7 +665,7 @@ pub fn prompt_notebook_template_editor(
         let s = state.borrow();
         let reg = s.templates.borrow();
         let mut v: Vec<PageTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();
-        v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        v.sort_by_key(|a| a.name.to_lowercase());
         v
     };
     if page_templates.is_empty() {
@@ -636,7 +674,11 @@ pub fn prompt_notebook_template_editor(
     }
 
     let is_edit = edit.is_some();
-    let title_str = if is_edit { "Edit Notebook Template" } else { "New Notebook Template" };
+    let title_str = if is_edit {
+        "Edit Notebook Template"
+    } else {
+        "New Notebook Template"
+    };
 
     let win = Window::builder()
         .transient_for(parent)
@@ -646,7 +688,10 @@ pub fn prompt_notebook_template_editor(
         .default_height(680)
         .build();
 
-    let scroll = ScrolledWindow::builder().hexpand(true).vexpand(true).build();
+    let scroll = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .build();
     let body = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(8)
@@ -736,75 +781,96 @@ pub fn prompt_notebook_template_editor(
 
     // Builds a collapsible list of page-template-picker rows, pre-populated
     // with the ids in `initial_ids` when editing an existing template.
-    let make_template_list = |label: &str, initial_ids: &[TemplateId]| -> (Expander, TemplateList) {
-        let list: TemplateList = Rc::new(RefCell::new(Vec::new()));
-        let outer = GtkBox::builder().orientation(Orientation::Vertical).spacing(4).build();
-        let rows_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(4).build();
-        let expander = Expander::builder().label(label).expanded(false).build();
+    let make_template_list =
+        |label: &str, initial_ids: &[TemplateId]| -> (Expander, TemplateList) {
+            let list: TemplateList = Rc::new(RefCell::new(Vec::new()));
+            let outer = GtkBox::builder()
+                .orientation(Orientation::Vertical)
+                .spacing(4)
+                .build();
+            let rows_box = GtkBox::builder()
+                .orientation(Orientation::Vertical)
+                .spacing(4)
+                .build();
+            let expander = Expander::builder().label(label).expanded(false).build();
 
-        let add_btn = Button::with_label("+ Add");
-        add_btn.set_halign(gtk4::Align::Start);
-        outer.append(&rows_box);
-        outer.append(&add_btn);
+            let add_btn = Button::with_label("+ Add");
+            add_btn.set_halign(gtk4::Align::Start);
+            outer.append(&rows_box);
+            outer.append(&add_btn);
 
-        // Helper closure to create and insert one row (reused for pre-populate).
-        let add_row = {
-            let pt_strings_c = pt_strings.clone();
-            let rows_box_inner = rows_box.clone();
-            let list_inner = list.clone();
-            Rc::new(move |selected_idx: usize| {
-                let refs: Vec<&str> = pt_strings_c.iter().map(|s| s.as_str()).collect();
-                let model = StringList::new(&refs);
-                let dd = DropDown::builder()
-                    .model(&model)
-                    .selected(selected_idx as u32)
-                    .build();
-                let row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
-                row.append(&dd);
-                let del = Button::from_icon_name("edit-delete-symbolic");
-                row.append(&del);
+            // Helper closure to create and insert one row (reused for pre-populate).
+            let add_row = {
+                let pt_strings_c = pt_strings.clone();
+                let rows_box_inner = rows_box.clone();
+                let list_inner = list.clone();
+                Rc::new(move |selected_idx: usize| {
+                    let refs: Vec<&str> = pt_strings_c.iter().map(|s| s.as_str()).collect();
+                    let model = StringList::new(&refs);
+                    let dd = DropDown::builder()
+                        .model(&model)
+                        .selected(selected_idx as u32)
+                        .build();
+                    let row = GtkBox::builder()
+                        .orientation(Orientation::Horizontal)
+                        .spacing(6)
+                        .build();
+                    row.append(&dd);
+                    let del = Button::from_icon_name("edit-delete-symbolic");
+                    row.append(&del);
 
-                let row_w = row.clone();
-                let rows_box_w = rows_box_inner.clone();
-                let list_w = list_inner.clone();
-                del.connect_clicked(move |_| {
-                    rows_box_w.remove(&row_w);
-                    list_w.borrow_mut().retain(|(_, r)| !r.eq(&row_w));
-                });
+                    let row_w = row.clone();
+                    let rows_box_w = rows_box_inner.clone();
+                    let list_w = list_inner.clone();
+                    del.connect_clicked(move |_| {
+                        rows_box_w.remove(&row_w);
+                        list_w.borrow_mut().retain(|(_, r)| !r.eq(&row_w));
+                    });
 
-                rows_box_inner.append(&row);
-                list_inner.borrow_mut().push((dd, row));
-            })
+                    rows_box_inner.append(&row);
+                    list_inner.borrow_mut().push((dd, row));
+                })
+            };
+
+            // Pre-populate from existing template data.
+            for tid in initial_ids {
+                let sel = page_templates
+                    .iter()
+                    .position(|t| t.id == *tid)
+                    .unwrap_or(0);
+                add_row(sel);
+            }
+
+            let add_row_for_btn = add_row.clone();
+            add_btn.connect_clicked(move |_| add_row_for_btn(0));
+
+            expander.set_child(Some(&outer));
+            (expander, list)
         };
-
-        // Pre-populate from existing template data.
-        for tid in initial_ids {
-            let sel = page_templates.iter().position(|t| t.id == *tid).unwrap_or(0);
-            add_row(sel);
-        }
-
-        let add_row_for_btn = add_row.clone();
-        add_btn.connect_clicked(move |_| add_row_for_btn(0));
-
-        expander.set_child(Some(&outer));
-        (expander, list)
-    };
 
     let (year_start_exp, year_start_list) = make_template_list(
         "Year start templates",
-        edit.as_ref().map(|e| e.year_start.as_slice()).unwrap_or(&[]),
+        edit.as_ref()
+            .map(|e| e.year_start.as_slice())
+            .unwrap_or(&[]),
     );
     let (before_quarter_exp, before_quarter_list) = make_template_list(
         "Before each quarter",
-        edit.as_ref().map(|e| e.before_quarter.as_slice()).unwrap_or(&[]),
+        edit.as_ref()
+            .map(|e| e.before_quarter.as_slice())
+            .unwrap_or(&[]),
     );
     let (before_month_exp, before_month_list) = make_template_list(
         "Before each month",
-        edit.as_ref().map(|e| e.before_month.as_slice()).unwrap_or(&[]),
+        edit.as_ref()
+            .map(|e| e.before_month.as_slice())
+            .unwrap_or(&[]),
     );
     let (before_week_exp, before_week_list) = make_template_list(
         "Before each week",
-        edit.as_ref().map(|e| e.before_week.as_slice()).unwrap_or(&[]),
+        edit.as_ref()
+            .map(|e| e.before_week.as_slice())
+            .unwrap_or(&[]),
     );
     body.append(&year_start_exp);
     body.append(&before_quarter_exp);
@@ -812,13 +878,21 @@ pub fn prompt_notebook_template_editor(
     body.append(&before_week_exp);
 
     body.append(&Label::new(Some("Daily slots")));
-    let slots_box = GtkBox::builder().orientation(Orientation::Vertical).spacing(6).build();
+    let slots_box = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(6)
+        .build();
     body.append(&slots_box);
 
     let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     let weekday_list = [
-        Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu,
-        Weekday::Fri, Weekday::Sat, Weekday::Sun,
+        Weekday::Mon,
+        Weekday::Tue,
+        Weekday::Wed,
+        Weekday::Thu,
+        Weekday::Fri,
+        Weekday::Sat,
+        Weekday::Sun,
     ];
 
     type SlotRowCtl = (Vec<ToggleButton>, DropDown, GtkBox);
@@ -829,7 +903,10 @@ pub fn prompt_notebook_template_editor(
         let slots_box = slots_box.clone();
         let slots = slots.clone();
         Rc::new(move |active_days: &[bool], selected_pt: usize| {
-            let row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
+            let row = GtkBox::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(6)
+                .build();
             let mut day_btns = Vec::with_capacity(7);
             for (i, n) in day_names.iter().enumerate() {
                 let b = ToggleButton::builder()
@@ -841,7 +918,10 @@ pub fn prompt_notebook_template_editor(
             }
             let refs: Vec<&str> = pt_strings_owned.iter().map(|s| s.as_str()).collect();
             let model = StringList::new(&refs);
-            let dd = DropDown::builder().model(&model).selected(selected_pt as u32).build();
+            let dd = DropDown::builder()
+                .model(&model)
+                .selected(selected_pt as u32)
+                .build();
             row.append(&dd);
             let remove_btn = Button::from_icon_name("edit-delete-symbolic");
             row.append(&remove_btn);
@@ -862,8 +942,13 @@ pub fn prompt_notebook_template_editor(
     // Pre-populate from existing template data, or add a default all-days slot.
     if let Some(ref existing) = edit {
         for slot in &existing.daily_slots {
-            let active: Vec<bool> = weekday_list.iter().map(|wd| slot.days.contains(wd)).collect();
-            let sel_pt = slot.templates.first()
+            let active: Vec<bool> = weekday_list
+                .iter()
+                .map(|wd| slot.days.contains(wd))
+                .collect();
+            let sel_pt = slot
+                .templates
+                .first()
                 .and_then(|tid| page_templates.iter().position(|t| t.id == *tid))
                 .unwrap_or(0);
             make_slot(&active, sel_pt);
@@ -913,20 +998,30 @@ pub fn prompt_notebook_template_editor(
                 let days: Vec<Weekday> = day_btns
                     .iter()
                     .enumerate()
-                    .filter_map(|(i, b)| if b.is_active() { Some(weekday_list[i]) } else { None })
+                    .filter_map(|(i, b)| {
+                        if b.is_active() {
+                            Some(weekday_list[i])
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
                 if days.is_empty() {
                     continue;
                 }
                 let idx = dd.selected() as usize;
                 if let Some(pt) = page_templates.get(idx) {
-                    daily_slots.push(DailySlot { days, templates: vec![pt.id] });
+                    daily_slots.push(DailySlot {
+                        days,
+                        templates: vec![pt.id],
+                    });
                 }
             }
             let collect_ids = |list: &TemplateList| -> Vec<TemplateId> {
-                list.borrow().iter().filter_map(|(dd, _)| {
-                    page_templates.get(dd.selected() as usize).map(|t| t.id)
-                }).collect()
+                list.borrow()
+                    .iter()
+                    .filter_map(|(dd, _)| page_templates.get(dd.selected() as usize).map(|t| t.id))
+                    .collect()
             };
             let id = existing_id.unwrap_or_else(|| TemplateId(Uuid::new_v4()));
             let nt = NotebookTemplate {
@@ -948,7 +1043,10 @@ pub fn prompt_notebook_template_editor(
                     month: month_entry.text().to_string(),
                     week: week_entry.text().to_string(),
                 },
-                entry_options: edit.as_ref().map(|e| e.entry_options.clone()).unwrap_or_default(),
+                entry_options: edit
+                    .as_ref()
+                    .map(|e| e.entry_options.clone())
+                    .unwrap_or_default(),
             };
             persist_notebook_template(&nt);
             state.borrow().notebook_templates.borrow_mut().insert(nt);

@@ -60,7 +60,7 @@ pub fn list_notebooks(conn: &Connection) -> Result<Vec<Notebook>> {
     let rows = stmt.query_map([], row_to_notebook)?;
     let mut out = Vec::new();
     for r in rows {
-        out.push(r?? );
+        out.push(r??);
     }
     Ok(out)
 }
@@ -121,10 +121,12 @@ fn row_to_notebook(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Notebook>
         let kind = match kind_str.as_str() {
             KIND_STANDARD => NotebookKind::Standard,
             KIND_PLANNER => {
-                let template_blob = planner_template_blob
-                    .ok_or_else(|| StorageError::InvalidData("planner missing template_id".into()))?;
-                let date_str = planner_date_str
-                    .ok_or_else(|| StorageError::InvalidData("planner missing creation_date".into()))?;
+                let template_blob = planner_template_blob.ok_or_else(|| {
+                    StorageError::InvalidData("planner missing template_id".into())
+                })?;
+                let date_str = planner_date_str.ok_or_else(|| {
+                    StorageError::InvalidData("planner missing creation_date".into())
+                })?;
                 let creation_date: NaiveDate = date_str
                     .parse()
                     .map_err(|e: chrono::ParseError| StorageError::InvalidData(e.to_string()))?;

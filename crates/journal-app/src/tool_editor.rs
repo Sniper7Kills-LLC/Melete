@@ -22,10 +22,10 @@ use gtk4::{
     StringList,
 };
 use journal_canvas::background_renderer::BackgroundConfig;
-use journal_canvas::vello_renderer::{ToolStyleParams, OverlayState, VelloRenderer};
+use journal_canvas::vello_renderer::{OverlayState, ToolStyleParams, VelloRenderer};
 use journal_canvas::ViewportTransform;
 use journal_core::{
-    BlendMode, Brush, BrushLayer, ColorMod, Color as JColor, Geometry, PenSettings, Point, Rect,
+    BlendMode, Brush, BrushLayer, Color as JColor, ColorMod, Geometry, PenSettings, Point, Rect,
     Stroke, StrokePoint, TipShape, Viewport, WidthMode,
 };
 use uuid::Uuid;
@@ -52,11 +52,9 @@ pub fn build_editor_view(
     // Lazy-initialised Vello renderer for the live preview canvas.
     // First open of the editor pays the wgpu init cost (~1s); subsequent
     // repaints reuse it.
-    let preview_renderer: Rc<RefCell<Option<VelloRenderer>>> =
-        Rc::new(RefCell::new(None));
-    let preview_brush: Rc<RefCell<Brush>> = Rc::new(RefCell::new(
-        editor_state.borrow().brush.clone(),
-    ));
+    let preview_renderer: Rc<RefCell<Option<VelloRenderer>>> = Rc::new(RefCell::new(None));
+    let preview_brush: Rc<RefCell<Brush>> =
+        Rc::new(RefCell::new(editor_state.borrow().brush.clone()));
     // User-drawn strokes inside the preview canvas. Each is rendered
     // with the *current* brush so changing layer settings live-updates
     // every existing stroke — the whole point of the preview.
@@ -301,12 +299,7 @@ pub fn build_editor_view(
                         if editor_state.borrow().rebuilding {
                             return;
                         }
-                        if let Some(l) = editor_state
-                            .borrow_mut()
-                            .brush
-                            .layers
-                            .get_mut(i_clone)
-                        {
+                        if let Some(l) = editor_state.borrow_mut().brush.layers.get_mut(i_clone) {
                             l.enabled = b.is_active();
                         }
                         if let Some(f) = rebuild_self.borrow().as_ref().cloned() {
@@ -329,11 +322,7 @@ pub fn build_editor_view(
             }
 
             // Right panel — brush-level header (cursor shape) + per-layer settings.
-            build_brush_header(
-                &right_body,
-                editor_state.clone(),
-                rebuild_self.clone(),
-            );
+            build_brush_header(&right_body, editor_state.clone(), rebuild_self.clone());
             right_body.append(&Separator::new(Orientation::Horizontal));
 
             let layers_now = editor_state.borrow().brush.layers.clone();
@@ -449,7 +438,10 @@ pub fn build_editor_view(
             let mut new_brush = editor_state.borrow().brush.clone();
             new_brush.id = Uuid::new_v4();
             new_brush.name = format!("{} (copy)", new_brush.name);
-            state_outer.borrow_mut().brush_library.push(new_brush.clone());
+            state_outer
+                .borrow_mut()
+                .brush_library
+                .push(new_brush.clone());
             let snap = state_outer.borrow().brush_library.clone();
             if let Err(e) = brush_library::save(&snap) {
                 tracing::warn!("brush library save: {e}");
@@ -565,7 +557,7 @@ pub fn build_editor_view(
             }
             let idx = s.selected_layer.min(s.brush.layers.len() - 1);
             s.brush.layers.remove(idx);
-            s.selected_layer = idx.saturating_sub(1).max(0).min(s.brush.layers.len() - 1);
+            s.selected_layer = idx.saturating_sub(1).min(s.brush.layers.len() - 1);
             drop(s);
             if let Some(f) = rebuild.borrow().as_ref().cloned() {
                 f();
@@ -648,7 +640,10 @@ pub fn build_editor_view(
                 let mut new_brush = editor_state.borrow().brush.clone();
                 new_brush.id = Uuid::new_v4();
                 new_brush.name = name.trim().to_string();
-                state_outer.borrow_mut().brush_library.push(new_brush.clone());
+                state_outer
+                    .borrow_mut()
+                    .brush_library
+                    .push(new_brush.clone());
                 let lib_snapshot = state_outer.borrow().brush_library.clone();
                 if let Err(e) = brush_library::save(&lib_snapshot) {
                     tracing::warn!("brush library save failed: {}", e);
@@ -692,9 +687,7 @@ pub fn build_editor_view(
             let is_builtin = crate::brush_library::built_ins()
                 .iter()
                 .any(|b| b.id == brush.id);
-            if !is_builtin
-                && !s.brush_library.iter().any(|b| b.id == brush.id)
-            {
+            if !is_builtin && !s.brush_library.iter().any(|b| b.id == brush.id) {
                 s.brush_library.push(brush.clone());
                 let snap = s.brush_library.clone();
                 if let Err(e) = crate::brush_library::save(&snap) {
@@ -736,8 +729,13 @@ fn default_seed_brush() -> Brush {
 fn default_layer() -> BrushLayer {
     BrushLayer {
         enabled: true,
-        geometry: Geometry::Smooth { resample_step_mm: 1.0 },
-        width: WidthMode::Pressure { floor: 0.6, amp: 0.4 },
+        geometry: Geometry::Smooth {
+            resample_step_mm: 1.0,
+        },
+        width: WidthMode::Pressure {
+            floor: 0.6,
+            amp: 0.4,
+        },
         tip: TipShape::Round,
         tip_scale: 1.0,
         color: ColorMod::default(),
@@ -839,7 +837,10 @@ fn blend_idx(b: BlendMode) -> u32 {
 
 fn default_geometry_for(idx: u32) -> Geometry {
     match idx {
-        1 => Geometry::Outline { resample_step_mm: 0.5, smooth_outline: true },
+        1 => Geometry::Outline {
+            resample_step_mm: 0.5,
+            smooth_outline: true,
+        },
         2 => Geometry::Scatter {
             density: 36,
             spread_mm: 0.0,
@@ -847,8 +848,13 @@ fn default_geometry_for(idx: u32) -> Geometry {
             directional_bias_deg: None,
         },
         3 => Geometry::DabStamp { step_mult: 1.0 },
-        4 => Geometry::FanOffset { count: 3, spread_mult: 1.4 },
-        _ => Geometry::Smooth { resample_step_mm: 1.0 },
+        4 => Geometry::FanOffset {
+            count: 3,
+            spread_mult: 1.4,
+        },
+        _ => Geometry::Smooth {
+            resample_step_mm: 1.0,
+        },
     }
 }
 fn default_width_for(idx: u32) -> WidthMode {
@@ -858,8 +864,14 @@ fn default_width_for(idx: u32) -> WidthMode {
             min_mm: 0.4,
             max_mm: 0.9,
         },
-        2 => WidthMode::Pressure { floor: 0.6, amp: 0.4 },
-        3 => WidthMode::DirectionAngled { nib_deg: 45.0, min_ratio: 0.18 },
+        2 => WidthMode::Pressure {
+            floor: 0.6,
+            amp: 0.4,
+        },
+        3 => WidthMode::DirectionAngled {
+            nib_deg: 45.0,
+            min_ratio: 0.18,
+        },
         4 => WidthMode::TiltBand {
             threshold: 0.12,
             band_mult: 8.0,
@@ -871,9 +883,15 @@ fn default_width_for(idx: u32) -> WidthMode {
 fn default_tip_for(idx: u32) -> TipShape {
     match idx {
         1 => TipShape::Square,
-        2 => TipShape::FlatNib { angle_deg: 45.0, aspect: 0.3 },
+        2 => TipShape::FlatNib {
+            angle_deg: 45.0,
+            aspect: 0.3,
+        },
         3 => TipShape::Diamond,
-        4 => TipShape::StarN { points: 5, inner_ratio: 0.5 },
+        4 => TipShape::StarN {
+            points: 5,
+            inner_ratio: 0.5,
+        },
         5 => TipShape::Custom {
             points: default_custom_polygon(),
         },
@@ -887,7 +905,8 @@ fn default_custom_polygon() -> Vec<(f64, f64)> {
     let n = 8;
     (0..n)
         .map(|i| {
-            let theta = (i as f64) * std::f64::consts::TAU / (n as f64) - std::f64::consts::FRAC_PI_2;
+            let theta =
+                (i as f64) * std::f64::consts::TAU / (n as f64) - std::f64::consts::FRAC_PI_2;
             (theta.cos(), theta.sin())
         })
         .collect()
@@ -1148,7 +1167,13 @@ fn dim(s: &str) -> Label {
 
 // ── Brush-level header (name + cursor shape) ────────────────────
 
-const CURSOR_NAMES: &[&str] = &["Auto (matches tip)", "Circle", "Oval", "Exact tip", "Custom polygon"];
+const CURSOR_NAMES: &[&str] = &[
+    "Auto (matches tip)",
+    "Circle",
+    "Oval",
+    "Exact tip",
+    "Custom polygon",
+];
 
 fn cursor_idx(c: &journal_core::CursorShape) -> u32 {
     use journal_core::CursorShape as CS;
@@ -1336,8 +1361,7 @@ fn fill_cursor_subparams(
             let editor_state = editor_state.clone();
             let rebuild = rebuild.clone();
             s.connect_value_changed(move |s| {
-                editor_state.borrow_mut().brush.cursor =
-                    CS::Oval { aspect: s.value() };
+                editor_state.borrow_mut().brush.cursor = CS::Oval { aspect: s.value() };
                 if let Some(f) = rebuild.borrow().as_ref().cloned() {
                     f();
                 }
@@ -1455,7 +1479,9 @@ fn polygon_editor_cursor(
         // `polygon_editor` for the rationale — calling rebuild
         // mid-drag tears down the widget the drag is attached to).
         g.connect_drag_update(move |g, dx, dy| {
-            let Some((sx, sy)) = g.start_point() else { return };
+            let Some((sx, sy)) = g.start_point() else {
+                return;
+            };
             let cx = sx + dx;
             let cy = sy + dy;
             let (ux, uy) = to_unit(cx, cy);
@@ -1585,7 +1611,13 @@ fn build_layer_settings(
         .spacing(4)
         .margin_start(20)
         .build();
-    fill_geometry_subparams(&geo_box, layer.geometry.clone(), editor_state.clone(), layer_idx, rebuild.clone());
+    fill_geometry_subparams(
+        &geo_box,
+        layer.geometry.clone(),
+        editor_state.clone(),
+        layer_idx,
+        rebuild.clone(),
+    );
     parent.append(&geo_box);
 
     {
@@ -1620,7 +1652,13 @@ fn build_layer_settings(
         .spacing(4)
         .margin_start(20)
         .build();
-    fill_width_subparams(&width_box, layer.width, editor_state.clone(), layer_idx, rebuild.clone());
+    fill_width_subparams(
+        &width_box,
+        layer.width,
+        editor_state.clone(),
+        layer_idx,
+        rebuild.clone(),
+    );
     parent.append(&width_box);
 
     {
@@ -1690,7 +1728,10 @@ fn build_layer_settings(
     let presets = journal_core::brush::nib_presets();
     let preset_names: Vec<&str> = presets.iter().map(|(n, _)| *n).collect();
     let preset_strs = StringList::new(&preset_names);
-    let preset_dd = DropDown::builder().model(&preset_strs).hexpand(true).build();
+    let preset_dd = DropDown::builder()
+        .model(&preset_strs)
+        .hexpand(true)
+        .build();
     preset_dd.set_selected(0);
     preset_dd.set_tooltip_text(Some(
         "Quick-pick a curated tip shape. Selecting a preset \
@@ -1783,10 +1824,7 @@ fn build_layer_settings(
 
     // Blend.
     let blend_strs = StringList::new(BLEND_NAMES);
-    let blend_dd = DropDown::builder()
-        .model(&blend_strs)
-        .hexpand(true)
-        .build();
+    let blend_dd = DropDown::builder().model(&blend_strs).hexpand(true).build();
     blend_dd.set_selected(blend_idx(layer.blend));
     blend_dd.set_tooltip_text(Some(
         "How this layer's paint mixes with what's already on the page. \
@@ -1858,12 +1896,7 @@ fn build_nib_preview(tip: TipShape) -> GtkBox {
 /// the editor can draw nib previews without booting a Vello render
 /// pipeline for every preview swatch. Stays in sync with
 /// `tip_polygon` semantics.
-fn draw_tip_to_cairo(
-    ctx: &gtk4::cairo::Context,
-    tip: &TipShape,
-    center: (f64, f64),
-    scale: f64,
-) {
+fn draw_tip_to_cairo(ctx: &gtk4::cairo::Context, tip: &TipShape, center: (f64, f64), scale: f64) {
     let (cx, cy) = center;
     match tip {
         TipShape::Round => {
@@ -1906,7 +1939,10 @@ fn draw_tip_to_cairo(
             ctx.close_path();
             let _ = ctx.fill();
         }
-        TipShape::StarN { points, inner_ratio } => {
+        TipShape::StarN {
+            points,
+            inner_ratio,
+        } => {
             let n = (*points as usize).max(3);
             for i in 0..(n * 2) {
                 let theta = (i as f64) * std::f64::consts::PI / (n as f64);
@@ -1972,10 +2008,15 @@ fn fill_geometry_subparams(
                  with non-circular tips).",
             ));
             commit_geom(s, editor_state, layer_idx, rebuild, |val| {
-                Geometry::Smooth { resample_step_mm: val }
+                Geometry::Smooth {
+                    resample_step_mm: val,
+                }
             });
         }
-        Geometry::Outline { resample_step_mm, smooth_outline } => {
+        Geometry::Outline {
+            resample_step_mm,
+            smooth_outline,
+        } => {
             let s = SpinButton::with_range(0.1, 5.0, 0.1);
             s.set_digits(2);
             s.set_value(resample_step_mm);
@@ -1985,13 +2026,11 @@ fn fill_geometry_subparams(
                  outline; higher = chunkier polygon edges.",
             ));
             parent.append(&row("Resample step ×", s.upcast_ref()));
-            parent.append(&dim(
-                "Resample step ×: spacing between the polygon's left/\
+            parent.append(&dim("Resample step ×: spacing between the polygon's left/\
                  right offset vertices, scaled by the base width. \
                  0.5 = legacy calligraphy default. Drop to 0.25 for \
                  silky variable-width outlines; raise to 1.0+ for \
-                 chunky faceted edges.",
-            ));
+                 chunky faceted edges."));
             let chk = CheckButton::with_label("Smooth outline");
             chk.set_active(smooth_outline);
             chk.set_tooltip_text(Some(
@@ -2007,12 +2046,7 @@ fn fill_geometry_subparams(
             let chk2 = chk.clone();
             let s2 = s.clone();
             let commit = Rc::new(move || {
-                if let Some(l) = editor_state2
-                    .borrow_mut()
-                    .brush
-                    .layers
-                    .get_mut(layer_idx)
-                {
+                if let Some(l) = editor_state2.borrow_mut().brush.layers.get_mut(layer_idx) {
                     l.geometry = Geometry::Outline {
                         resample_step_mm: s2.value(),
                         smooth_outline: chk2.is_active(),
@@ -2028,7 +2062,12 @@ fn fill_geometry_subparams(
             }
             chk.connect_toggled(move |_| commit());
         }
-        Geometry::Scatter { density, spread_mm, falloff, directional_bias_deg } => {
+        Geometry::Scatter {
+            density,
+            spread_mm,
+            falloff,
+            directional_bias_deg,
+        } => {
             // Density — number of stamps per input point.
             let d = SpinButton::with_range(1.0, 256.0, 1.0);
             d.set_digits(0);
@@ -2118,20 +2157,20 @@ fn fill_geometry_subparams(
 
             let editor_state2 = editor_state.clone();
             let rebuild2 = rebuild.clone();
-            let (d2, sp2, fo2, cone_chk2, cone_deg2) =
-                (d.clone(), sp.clone(), fo.clone(), cone_chk.clone(), cone_deg.clone());
+            let (d2, sp2, fo2, cone_chk2, cone_deg2) = (
+                d.clone(),
+                sp.clone(),
+                fo.clone(),
+                cone_chk.clone(),
+                cone_deg.clone(),
+            );
             let commit = Rc::new(move || {
                 let dir = if cone_chk2.is_active() {
                     Some(cone_deg2.value())
                 } else {
                     None
                 };
-                if let Some(l) = editor_state2
-                    .borrow_mut()
-                    .brush
-                    .layers
-                    .get_mut(layer_idx)
-                {
+                if let Some(l) = editor_state2.borrow_mut().brush.layers.get_mut(layer_idx) {
                     l.geometry = Geometry::Scatter {
                         density: d2.value() as u32,
                         spread_mm: sp2.value(),
@@ -2171,12 +2210,10 @@ fn fill_geometry_subparams(
                  gaps between stamps.",
             ));
             parent.append(&row("Step ×", s.upcast_ref()));
-            parent.append(&dim(
-                "Step ×: stamp spacing along the path, scaled by the \
+            parent.append(&dim("Step ×: stamp spacing along the path, scaled by the \
                  brush base width. 0.4–0.6 reads as a continuous trace. \
                  1.0 = stamps barely touching. 2.0+ = visibly discrete \
-                 stamps (chain of stars / arrows / leaves).",
-            ));
+                 stamps (chain of stars / arrows / leaves)."));
             commit_geom(s, editor_state, layer_idx, rebuild, |val| {
                 Geometry::DabStamp { step_mult: val }
             });
@@ -2213,12 +2250,7 @@ fn fill_geometry_subparams(
             let editor_state2 = editor_state.clone();
             let rebuild2 = rebuild.clone();
             let commit = Rc::new(move || {
-                if let Some(l) = editor_state2
-                    .borrow_mut()
-                    .brush
-                    .layers
-                    .get_mut(layer_idx)
-                {
+                if let Some(l) = editor_state2.borrow_mut().brush.layers.get_mut(layer_idx) {
                     l.geometry = Geometry::FanOffset {
                         count: c2.value() as u32,
                         spread_mult: sp2.value(),
@@ -2281,14 +2313,20 @@ fn fill_width_subparams(
             let rb = rebuild.clone();
             s.connect_value_changed(move |s| {
                 if let Some(l) = es.borrow_mut().brush.layers.get_mut(layer_idx) {
-                    l.width = WidthMode::Constant { width_mult: s.value() };
+                    l.width = WidthMode::Constant {
+                        width_mult: s.value(),
+                    };
                 }
                 if let Some(f) = rb.borrow().as_ref().cloned() {
                     f();
                 }
             });
         }
-        WidthMode::ClampedConstant { width_mult, min_mm, max_mm } => {
+        WidthMode::ClampedConstant {
+            width_mult,
+            min_mm,
+            max_mm,
+        } => {
             let m = SpinButton::with_range(0.05, 12.0, 0.05);
             m.set_digits(2);
             m.set_value(width_mult);
@@ -2310,11 +2348,9 @@ fn fill_width_subparams(
                  than this even at extreme zoom-in.",
             ));
             parent.append(&row("Max (mm)", mx.upcast_ref()));
-            parent.append(&dim(
-                "Clamped constant: width = base × multiplier, then \
+            parent.append(&dim("Clamped constant: width = base × multiplier, then \
                  clipped between Min and Max in mm. Pencil cores live \
-                 here so the line stays sharp regardless of zoom.",
-            ));
+                 here so the line stays sharp regardless of zoom."));
             let (m2, mn2, mx2) = (m.clone(), mn.clone(), mx.clone());
             let es = editor_state.clone();
             let rb = rebuild.clone();
@@ -2359,15 +2395,13 @@ fn fill_width_subparams(
                  (when floor=1).",
             ));
             parent.append(&row("Amp", am.upcast_ref()));
-            parent.append(&dim(
-                "Pressure formula: width = base × (Floor + Amp × \
+            parent.append(&dim("Pressure formula: width = base × (Floor + Amp × \
                  pressure). Tune both:\n\
                  • Floor 0.6 + Amp 0.4 = fountain pen feel (always \
                  visible, light pressure tweak).\n\
                  • Floor 0 + Amp 1 = fully pressure-driven (invisible \
                  at zero touch, full width at max press).\n\
-                 • Floor 1 + Amp 0 = same as Constant ×1.",
-            ));
+                 • Floor 1 + Amp 0 = same as Constant ×1."));
             let (fl2, am2) = (fl.clone(), am.clone());
             let es = editor_state.clone();
             let rb = rebuild.clone();
@@ -2407,8 +2441,7 @@ fn fill_width_subparams(
                  (sharp italic). 1 = no direction effect (constant).",
             ));
             parent.append(&row("Min ratio", mr.upcast_ref()));
-            parent.append(&dim(
-                "Direction-angled: real italic-nib formula. The line \
+            parent.append(&dim("Direction-angled: real italic-nib formula. The line \
                  is widest when stroked along the nib axis, thinnest \
                  perpendicular to it.\n\n\
                  • Nib angle 45° + min 0.18 = classic broad-edge \
@@ -2416,8 +2449,7 @@ fn fill_width_subparams(
                  • Nib angle 0° + min 0.5 = subtle horizontal-bias \
                  marker.\n\n\
                  Only meaningful with Outline geometry; on Smooth \
-                 it falls back to a constant-width stroke.",
-            ));
+                 it falls back to a constant-width stroke."));
             let (na2, mr2) = (na.clone(), mr.clone());
             let es = editor_state.clone();
             let rb = rebuild.clone();
@@ -2438,7 +2470,11 @@ fn fill_width_subparams(
             }
             mr.connect_value_changed(move |_| commit());
         }
-        WidthMode::TiltBand { threshold, band_mult, alpha_scale } => {
+        WidthMode::TiltBand {
+            threshold,
+            band_mult,
+            alpha_scale,
+        } => {
             let th = SpinButton::with_range(0.0, 1.0, 0.01);
             th.set_digits(2);
             th.set_value(threshold);
@@ -2466,8 +2502,7 @@ fn fill_width_subparams(
                  graphite-rich shading.",
             ));
             parent.append(&row("Alpha scale", al.upcast_ref()));
-            parent.append(&dim(
-                "Tilt band emits *additional* per-segment paint only \
+            parent.append(&dim("Tilt band emits *additional* per-segment paint only \
                  where stylus tilt exceeds Threshold. Designed to \
                  layer on top of a constant-width core (the standard \
                  Pencil composition).\n\n\
@@ -2476,8 +2511,7 @@ fn fill_width_subparams(
                  • Band ×: relative width of the shading.\n\
                  • Alpha scale: opacity of the shading.\n\n\
                  By itself this layer paints nothing at low tilt — \
-                 pair with another layer that draws the core line.",
-            ));
+                 pair with another layer that draws the core line."));
             let (th2, bm2, al2) = (th.clone(), bm.clone(), al.clone());
             let es = editor_state.clone();
             let rb = rebuild.clone();
@@ -2674,11 +2708,7 @@ fn build_preview_area(
                 s2.pen.base_width = pen_base_width;
                 s2
             };
-            let mut strokes: Vec<Stroke> = preview_strokes
-                .borrow()
-                .iter()
-                .map(inject)
-                .collect();
+            let mut strokes: Vec<Stroke> = preview_strokes.borrow().iter().map(inject).collect();
             if let Some(ip) = preview_in_progress.borrow().as_ref() {
                 strokes.push(inject(ip));
             }
@@ -2920,12 +2950,7 @@ fn fill_tip_subparams(
             let editor_state2 = editor_state.clone();
             let rebuild2 = rebuild.clone();
             let commit = Rc::new(move || {
-                if let Some(l) = editor_state2
-                    .borrow_mut()
-                    .brush
-                    .layers
-                    .get_mut(layer_idx)
-                {
+                if let Some(l) = editor_state2.borrow_mut().brush.layers.get_mut(layer_idx) {
                     l.tip = TipShape::FlatNib {
                         angle_deg: a2.value(),
                         aspect: asp2.value(),
@@ -2941,7 +2966,10 @@ fn fill_tip_subparams(
             }
             asp.connect_value_changed(move |_| commit());
         }
-        TipShape::StarN { points, inner_ratio } => {
+        TipShape::StarN {
+            points,
+            inner_ratio,
+        } => {
             let n = SpinButton::with_range(3.0, 24.0, 1.0);
             n.set_digits(0);
             n.set_value(points as f64);
@@ -2954,12 +2982,7 @@ fn fill_tip_subparams(
             let editor_state2 = editor_state.clone();
             let rebuild2 = rebuild.clone();
             let commit = Rc::new(move || {
-                if let Some(l) = editor_state2
-                    .borrow_mut()
-                    .brush
-                    .layers
-                    .get_mut(layer_idx)
-                {
+                if let Some(l) = editor_state2.borrow_mut().brush.layers.get_mut(layer_idx) {
                     l.tip = TipShape::StarN {
                         points: (n2.value() as u32).clamp(3, 255) as u8,
                         inner_ratio: ir2.value(),
@@ -3096,7 +3119,9 @@ fn polygon_editor(
         // drag is attached to, ending the drag prematurely. Preview
         // catches up at drag_end.
         g.connect_drag_update(move |g, dx, dy| {
-            let Some((sx, sy)) = g.start_point() else { return };
+            let Some((sx, sy)) = g.start_point() else {
+                return;
+            };
             let cx = sx + dx;
             let cy = sy + dy;
             let (ux, uy) = to_unit(cx, cy);
@@ -3149,8 +3174,8 @@ fn polygon_editor(
     let regen_ring = |n: usize| -> Vec<(f64, f64)> {
         (0..n)
             .map(|i| {
-                let theta = (i as f64) * std::f64::consts::TAU / (n as f64)
-                    - std::f64::consts::FRAC_PI_2;
+                let theta =
+                    (i as f64) * std::f64::consts::TAU / (n as f64) - std::f64::consts::FRAC_PI_2;
                 (theta.cos(), theta.sin())
             })
             .collect()
@@ -3243,7 +3268,9 @@ fn blit_rgba_to_cairo(ctx: &gtk4::cairo::Context, rgba: &[u8], w: u32, h: u32) {
         bgra[i + 2] = rgba[i]; // R
         bgra[i + 3] = rgba[i + 3]; // A
     }
-    let stride = cairo::Format::ARgb32.stride_for_width(w).unwrap_or((w * 4) as i32);
+    let stride = cairo::Format::ARgb32
+        .stride_for_width(w)
+        .unwrap_or((w * 4) as i32);
     let surface = match cairo::ImageSurface::create_for_data(
         bgra,
         cairo::Format::ARgb32,

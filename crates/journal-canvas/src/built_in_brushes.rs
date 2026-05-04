@@ -20,7 +20,7 @@ use uuid::{uuid, Uuid};
 
 #[cfg(feature = "vello")]
 use crate::vello_renderer::{
-    ToolStyleParams, CalligraphyShape, PaintbrushShape, PenShape, PencilShape, SprayShape,
+    CalligraphyShape, PaintbrushShape, PenShape, PencilShape, SprayShape, ToolStyleParams,
 };
 #[cfg(feature = "vello")]
 use journal_core::ToolStyle;
@@ -40,7 +40,9 @@ pub fn pen(floor: f64, amp: f64) -> Brush {
     Brush::one_layer(
         ID_PEN,
         "Pen",
-        Geometry::Smooth { resample_step_mm: 1.0 },
+        Geometry::Smooth {
+            resample_step_mm: 1.0,
+        },
         WidthMode::Pressure { floor, amp },
         TipShape::Round,
     )
@@ -74,7 +76,9 @@ pub fn pencil(
             // `(pen.base_width / zoc).clamp(min, max)` formula.
             BrushLayer {
                 enabled: true,
-                geometry: Geometry::Smooth { resample_step_mm: 1.0 },
+                geometry: Geometry::Smooth {
+                    resample_step_mm: 1.0,
+                },
                 width: WidthMode::ClampedConstant {
                     width_mult: 1.0,
                     min_mm: core_clamp_min,
@@ -89,7 +93,9 @@ pub fn pencil(
             // bands only where stylus tilt exceeds threshold.
             BrushLayer {
                 enabled: true,
-                geometry: Geometry::Smooth { resample_step_mm: 1.0 },
+                geometry: Geometry::Smooth {
+                    resample_step_mm: 1.0,
+                },
                 width: WidthMode::TiltBand {
                     threshold: tilt_threshold,
                     band_mult: tilt_band_mult,
@@ -126,7 +132,9 @@ pub fn paintbrush(
         layers: vec![
             BrushLayer {
                 enabled: true,
-                geometry: Geometry::Smooth { resample_step_mm: 1.0 },
+                geometry: Geometry::Smooth {
+                    resample_step_mm: 1.0,
+                },
                 // Outer halo: width mult * core, alpha = outer_alpha.
                 // Pressure floor pinned high so the halo is always
                 // visible regardless of light pressure.
@@ -144,7 +152,9 @@ pub fn paintbrush(
             },
             BrushLayer {
                 enabled: true,
-                geometry: Geometry::Smooth { resample_step_mm: 1.0 },
+                geometry: Geometry::Smooth {
+                    resample_step_mm: 1.0,
+                },
                 width: WidthMode::Pressure {
                     floor: 0.0,
                     amp: mid_w,
@@ -159,7 +169,9 @@ pub fn paintbrush(
             },
             BrushLayer {
                 enabled: true,
-                geometry: Geometry::Smooth { resample_step_mm: 1.0 },
+                geometry: Geometry::Smooth {
+                    resample_step_mm: 1.0,
+                },
                 width: WidthMode::Pressure {
                     floor: 0.0,
                     amp: core_width_mult,
@@ -253,14 +265,15 @@ pub fn legacy_brush_for(style: ToolStyle, params: &ToolStyleParams) -> Option<Br
 
 #[cfg(feature = "vello")]
 fn pen_for_shape(params: &ToolStyleParams, highlighter_id: bool) -> Brush {
-    let id = if highlighter_id { ID_HIGHLIGHTER } else { ID_PEN };
+    let id = if highlighter_id {
+        ID_HIGHLIGHTER
+    } else {
+        ID_PEN
+    };
     let name = if highlighter_id { "Highlighter" } else { "Pen" };
     match params.pen.shape {
         PenShape::Round => {
-            let mut b = pen(
-                params.pen.width_floor,
-                params.pen.width_pressure_amplitude,
-            );
+            let mut b = pen(params.pen.width_floor, params.pen.width_pressure_amplitude);
             b.id = id;
             b.name = name.into();
             b
@@ -281,7 +294,9 @@ fn pen_for_shape(params: &ToolStyleParams, highlighter_id: bool) -> Brush {
         PenShape::Marker => Brush::one_layer(
             id,
             name,
-            Geometry::Smooth { resample_step_mm: 1.0 },
+            Geometry::Smooth {
+                resample_step_mm: 1.0,
+            },
             WidthMode::Constant {
                 width_mult: params.pen.marker_width_mult,
             },
@@ -316,7 +331,9 @@ fn pencil_for_shape(params: &ToolStyleParams) -> Brush {
         PencilShape::Mechanical => Brush::one_layer(
             ID_PENCIL,
             "Pencil — mechanical",
-            Geometry::Smooth { resample_step_mm: 1.0 },
+            Geometry::Smooth {
+                resample_step_mm: 1.0,
+            },
             WidthMode::ClampedConstant {
                 width_mult: 0.5,
                 min_mm: 0.2,
@@ -341,8 +358,13 @@ fn paintbrush_for_shape(params: &ToolStyleParams) -> Brush {
         PaintbrushShape::Flat => Brush::one_layer(
             ID_PAINTBRUSH,
             "Paintbrush — flat",
-            Geometry::Smooth { resample_step_mm: 1.0 },
-            WidthMode::Pressure { floor: 0.2, amp: 0.8 },
+            Geometry::Smooth {
+                resample_step_mm: 1.0,
+            },
+            WidthMode::Pressure {
+                floor: 0.2,
+                amp: 0.8,
+            },
             TipShape::Square,
         ),
         PaintbrushShape::Fan => Brush::one_layer(
@@ -352,7 +374,10 @@ fn paintbrush_for_shape(params: &ToolStyleParams) -> Brush {
                 count: params.paintbrush.fan_count,
                 spread_mult: params.paintbrush.fan_spread_mult,
             },
-            WidthMode::Pressure { floor: 0.2, amp: 0.8 },
+            WidthMode::Pressure {
+                floor: 0.2,
+                amp: 0.8,
+            },
             TipShape::Round,
         ),
     }
@@ -396,7 +421,9 @@ fn calligraphy_for_shape(params: &ToolStyleParams) -> Brush {
         CalligraphyShape::Round => Brush::one_layer(
             ID_CALLIGRAPHY,
             "Calligraphy — round",
-            Geometry::Smooth { resample_step_mm: 1.0 },
+            Geometry::Smooth {
+                resample_step_mm: 1.0,
+            },
             WidthMode::Constant { width_mult: 1.0 },
             TipShape::Round,
         ),
@@ -407,7 +434,10 @@ fn calligraphy_for_shape(params: &ToolStyleParams) -> Brush {
                 resample_step_mm: params.calligraphy.resample_step_mult,
                 smooth_outline: params.calligraphy.smooth_outline,
             },
-            WidthMode::Pressure { floor: 0.4, amp: 0.6 },
+            WidthMode::Pressure {
+                floor: 0.4,
+                amp: 0.6,
+            },
             TipShape::Round,
         ),
     }
@@ -462,18 +492,36 @@ mod tests {
             (ToolStyle::Pen, |p| p.pen.shape = PenShape::Round),
             (ToolStyle::Pen, |p| p.pen.shape = PenShape::Flat),
             (ToolStyle::Pen, |p| p.pen.shape = PenShape::Marker),
-            (ToolStyle::Pencil, |p| p.pencil.shape = PencilShape::Cylindrical),
-            (ToolStyle::Pencil, |p| p.pencil.shape = PencilShape::Carpenter),
-            (ToolStyle::Pencil, |p| p.pencil.shape = PencilShape::Mechanical),
-            (ToolStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Round),
-            (ToolStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Flat),
-            (ToolStyle::Paintbrush, |p| p.paintbrush.shape = PaintbrushShape::Fan),
+            (ToolStyle::Pencil, |p| {
+                p.pencil.shape = PencilShape::Cylindrical
+            }),
+            (ToolStyle::Pencil, |p| {
+                p.pencil.shape = PencilShape::Carpenter
+            }),
+            (ToolStyle::Pencil, |p| {
+                p.pencil.shape = PencilShape::Mechanical
+            }),
+            (ToolStyle::Paintbrush, |p| {
+                p.paintbrush.shape = PaintbrushShape::Round
+            }),
+            (ToolStyle::Paintbrush, |p| {
+                p.paintbrush.shape = PaintbrushShape::Flat
+            }),
+            (ToolStyle::Paintbrush, |p| {
+                p.paintbrush.shape = PaintbrushShape::Fan
+            }),
             (ToolStyle::SprayCan, |p| p.spray.shape = SprayShape::Circle),
             (ToolStyle::SprayCan, |p| p.spray.shape = SprayShape::Square),
             (ToolStyle::SprayCan, |p| p.spray.shape = SprayShape::Cone),
-            (ToolStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::FlatCut),
-            (ToolStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::Round),
-            (ToolStyle::Calligraphy, |p| p.calligraphy.shape = CalligraphyShape::BrushNib),
+            (ToolStyle::Calligraphy, |p| {
+                p.calligraphy.shape = CalligraphyShape::FlatCut
+            }),
+            (ToolStyle::Calligraphy, |p| {
+                p.calligraphy.shape = CalligraphyShape::Round
+            }),
+            (ToolStyle::Calligraphy, |p| {
+                p.calligraphy.shape = CalligraphyShape::BrushNib
+            }),
         ];
         for (style, mutate) in combos {
             let mut p = ToolStyleParams::default();
@@ -511,4 +559,3 @@ mod tests {
         }
     }
 }
-

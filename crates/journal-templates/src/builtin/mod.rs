@@ -30,11 +30,12 @@ pub use grids::{
     BUILTIN_ISOMETRIC_ID,
 };
 pub use military::{
-    builtin_military_gotwa, builtin_military_medevac, builtin_military_opord, builtin_military_pace,
-    builtin_military_pcc_pci, builtin_military_range_card, builtin_military_salute,
-    builtin_military_uxo, BUILTIN_MILITARY_GOTWA_ID, BUILTIN_MILITARY_MEDEVAC_ID,
-    BUILTIN_MILITARY_OPORD_ID, BUILTIN_MILITARY_PACE_ID, BUILTIN_MILITARY_PCC_PCI_ID,
-    BUILTIN_MILITARY_RANGE_CARD_ID, BUILTIN_MILITARY_SALUTE_ID, BUILTIN_MILITARY_UXO_ID,
+    builtin_military_gotwa, builtin_military_medevac, builtin_military_opord,
+    builtin_military_pace, builtin_military_pcc_pci, builtin_military_range_card,
+    builtin_military_salute, builtin_military_uxo, BUILTIN_MILITARY_GOTWA_ID,
+    BUILTIN_MILITARY_MEDEVAC_ID, BUILTIN_MILITARY_OPORD_ID, BUILTIN_MILITARY_PACE_ID,
+    BUILTIN_MILITARY_PCC_PCI_ID, BUILTIN_MILITARY_RANGE_CARD_ID, BUILTIN_MILITARY_SALUTE_ID,
+    BUILTIN_MILITARY_UXO_ID,
 };
 pub use note_taking::{
     builtin_cornell_notes, builtin_music_staff, BUILTIN_CORNELL_NOTES_ID, BUILTIN_MUSIC_STAFF_ID,
@@ -90,7 +91,12 @@ pub(crate) fn text(
             text: body.into(),
             font_size_mm: font_mm,
         },
-        rect: WidgetRect { x, y, width: w, height: h },
+        rect: WidgetRect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
         style: WidgetStyle::default(),
     }
 }
@@ -99,7 +105,12 @@ pub(crate) fn rect(id: Uuid, x: f64, y: f64, w: f64, h: f64) -> TemplateWidget {
     TemplateWidget {
         id,
         kind: WidgetKind::Rectangle,
-        rect: WidgetRect { x, y, width: w, height: h },
+        rect: WidgetRect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
         style: WidgetStyle::default(),
     }
 }
@@ -107,8 +118,15 @@ pub(crate) fn rect(id: Uuid, x: f64, y: f64, w: f64, h: f64) -> TemplateWidget {
 pub(crate) fn hline(id: Uuid, x: f64, y: f64, w: f64, thickness: f64) -> TemplateWidget {
     TemplateWidget {
         id,
-        kind: WidgetKind::Line { thickness_mm: thickness },
-        rect: WidgetRect { x, y, width: w, height: 0.0 },
+        kind: WidgetKind::Line {
+            thickness_mm: thickness,
+        },
+        rect: WidgetRect {
+            x,
+            y,
+            width: w,
+            height: 0.0,
+        },
         style: WidgetStyle::default(),
     }
 }
@@ -116,8 +134,15 @@ pub(crate) fn hline(id: Uuid, x: f64, y: f64, w: f64, thickness: f64) -> Templat
 pub(crate) fn vline(id: Uuid, x: f64, y: f64, h: f64, thickness: f64) -> TemplateWidget {
     TemplateWidget {
         id,
-        kind: WidgetKind::Line { thickness_mm: thickness },
-        rect: WidgetRect { x, y, width: 0.0, height: h },
+        kind: WidgetKind::Line {
+            thickness_mm: thickness,
+        },
+        rect: WidgetRect {
+            x,
+            y,
+            width: 0.0,
+            height: h,
+        },
         style: WidgetStyle::default(),
     }
 }
@@ -132,8 +157,15 @@ pub(crate) fn lines_region(
 ) -> TemplateWidget {
     TemplateWidget {
         id,
-        kind: WidgetKind::LinesRegion { spacing_mm: spacing },
-        rect: WidgetRect { x, y, width: w, height: h },
+        kind: WidgetKind::LinesRegion {
+            spacing_mm: spacing,
+        },
+        rect: WidgetRect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
         style: WidgetStyle::default(),
     }
 }
@@ -151,7 +183,12 @@ pub(crate) fn checklist(
         kind: WidgetKind::Checklist {
             items: items.iter().map(|s| (*s).to_string()).collect(),
         },
-        rect: WidgetRect { x, y, width: w, height: h },
+        rect: WidgetRect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
         style: WidgetStyle::default(),
     }
 }

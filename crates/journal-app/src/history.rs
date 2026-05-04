@@ -5,11 +5,24 @@ use uuid::Uuid;
 pub enum Op {
     AddStroke(Stroke),
     RemoveStroke(Stroke),
-    MoveStrokes { ids: Vec<Uuid>, dx: f64, dy: f64 },
+    MoveStrokes {
+        ids: Vec<Uuid>,
+        dx: f64,
+        dy: f64,
+    },
     /// Replaces one stroke with zero or more child strokes (partial erase / lasso split).
-    ReplaceStroke { old: Stroke, new: Vec<Stroke> },
+    ReplaceStroke {
+        old: Stroke,
+        new: Vec<Stroke>,
+    },
     /// Scale transform applied to a set of strokes around an anchor in canvas space.
-    TransformStrokes { ids: Vec<Uuid>, anchor_x: f64, anchor_y: f64, sx: f64, sy: f64 },
+    TransformStrokes {
+        ids: Vec<Uuid>,
+        anchor_x: f64,
+        anchor_y: f64,
+        sx: f64,
+        sy: f64,
+    },
 }
 
 pub struct History {
@@ -19,7 +32,10 @@ pub struct History {
 
 impl History {
     pub fn new() -> Self {
-        Self { undo: Vec::new(), redo: Vec::new() }
+        Self {
+            undo: Vec::new(),
+            redo: Vec::new(),
+        }
     }
 
     pub fn push_add(&mut self, stroke: Stroke) {
@@ -45,11 +61,24 @@ impl History {
         self.redo.clear();
     }
 
-    pub fn push_transform(&mut self, ids: Vec<Uuid>, anchor_x: f64, anchor_y: f64, sx: f64, sy: f64) {
+    pub fn push_transform(
+        &mut self,
+        ids: Vec<Uuid>,
+        anchor_x: f64,
+        anchor_y: f64,
+        sx: f64,
+        sy: f64,
+    ) {
         if ids.is_empty() {
             return;
         }
-        self.undo.push(Op::TransformStrokes { ids, anchor_x, anchor_y, sx, sy });
+        self.undo.push(Op::TransformStrokes {
+            ids,
+            anchor_x,
+            anchor_y,
+            sx,
+            sy,
+        });
         self.redo.clear();
     }
 

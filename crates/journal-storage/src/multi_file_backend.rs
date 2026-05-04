@@ -59,9 +59,8 @@ impl MultiFileSqliteBackend {
     /// single-file `journal.db` exists in `root` and `index.db` does not yet,
     /// the legacy file is split into per-notebook files before returning.
     pub fn open(root: &Path) -> Result<Self> {
-        std::fs::create_dir_all(root.join(JOURNALS_DIR)).map_err(|e| {
-            StorageError::InvalidData(format!("create journals dir: {}", e))
-        })?;
+        std::fs::create_dir_all(root.join(JOURNALS_DIR))
+            .map_err(|e| StorageError::InvalidData(format!("create journals dir: {}", e)))?;
 
         let index_path = root.join(INDEX_FILE);
         let need_migrate = !index_path.exists() && root.join(LEGACY_NAME).exists();
@@ -87,7 +86,9 @@ impl MultiFileSqliteBackend {
     }
 
     fn journal_path(&self, id: NotebookId) -> PathBuf {
-        self.root.join(JOURNALS_DIR).join(format!("{}.journal", id.0))
+        self.root
+            .join(JOURNALS_DIR)
+            .join(format!("{}.journal", id.0))
     }
 
     /// Get (lazily opening) the connection for a notebook. Errors if the
@@ -129,7 +130,9 @@ impl MultiFileSqliteBackend {
 
     /// All registered notebook ids.
     fn list_index(&self) -> Result<Vec<NotebookId>> {
-        let mut stmt = self.index.prepare("SELECT id FROM notebook_index ORDER BY created_at ASC")?;
+        let mut stmt = self
+            .index
+            .prepare("SELECT id FROM notebook_index ORDER BY created_at ASC")?;
         let rows = stmt.query_map([], |r| {
             let blob: Vec<u8> = r.get(0)?;
             Ok(blob)
@@ -146,7 +149,12 @@ impl MultiFileSqliteBackend {
         let created_at = chrono::Utc::now().to_rfc3339();
         self.index.execute(
             "INSERT INTO notebook_index (id, name, file_path, created_at) VALUES (?1, ?2, ?3, ?4)",
-            params![uuid_to_blob(id.0), name, path.to_string_lossy().to_string(), created_at],
+            params![
+                uuid_to_blob(id.0),
+                name,
+                path.to_string_lossy().to_string(),
+                created_at
+            ],
         )?;
         Ok(())
     }
@@ -185,7 +193,9 @@ impl MultiFileSqliteBackend {
             })?;
             if let Some(s) = found {
                 let owner = NotebookId(s.notebook_id.0);
-                self.section_to_notebook.borrow_mut().insert(section_id, owner);
+                self.section_to_notebook
+                    .borrow_mut()
+                    .insert(section_id, owner);
                 return Ok(owner);
             }
         }
@@ -209,7 +219,9 @@ impl MultiFileSqliteBackend {
             })?;
             if let Some(p) = found {
                 self.page_to_notebook.borrow_mut().insert(page_id, nid);
-                self.section_to_notebook.borrow_mut().insert(p.section_id, nid);
+                self.section_to_notebook
+                    .borrow_mut()
+                    .insert(p.section_id, nid);
                 return Ok(nid);
             }
         }
@@ -242,7 +254,10 @@ impl MultiFileSqliteBackend {
     }
 
     fn migrate_from_legacy(&self, legacy_path: &Path) -> Result<()> {
-        tracing::info!("Migrating legacy {} into per-notebook files", legacy_path.display());
+        tracing::info!(
+            "Migrating legacy {} into per-notebook files",
+            legacy_path.display()
+        );
         let legacy = Connection::open(legacy_path)?;
         configure(&legacy)?;
         init_schema(&legacy)?;
@@ -299,7 +314,12 @@ impl MultiFileSqliteBackend {
             new_db.execute_batch("DETACH DATABASE src")?;
 
             self.index_insert(nb.id, &nb.name, &new_path)?;
-            tracing::info!("Migrated notebook {} ({}) → {}", nb.id.0, nb.name, new_path.display());
+            tracing::info!(
+                "Migrated notebook {} ({}) → {}",
+                nb.id.0,
+                nb.name,
+                new_path.display()
+            );
         }
         drop(legacy);
 
@@ -365,7 +385,9 @@ impl NotebookStore for MultiFileSqliteBackend {
     }
 
     fn update_notebook(&mut self, notebook: &Notebook) -> Result<()> {
-        self.with_conn(notebook.id, |c| notebook_store::update_notebook(c, notebook))?;
+        self.with_conn(notebook.id, |c| {
+            notebook_store::update_notebook(c, notebook)
+        })?;
         self.index_update_name(notebook.id, &notebook.name)?;
         Ok(())
     }
@@ -381,7 +403,9 @@ impl NotebookStore for MultiFileSqliteBackend {
         }
         self.index_delete(id)?;
         // Invalidate caches scoped to this notebook.
-        self.section_to_notebook.borrow_mut().retain(|_, v| *v != id);
+        self.section_to_notebook
+            .borrow_mut()
+            .retain(|_, v| *v != id);
         self.page_to_notebook.borrow_mut().retain(|_, v| *v != id);
         self.stroke_to_notebook.borrow_mut().retain(|_, v| *v != id);
         Ok(())
@@ -390,7 +414,9 @@ impl NotebookStore for MultiFileSqliteBackend {
 
 impl SectionStore for MultiFileSqliteBackend {
     fn insert_section(&mut self, section: &Section) -> Result<()> {
-        self.with_conn(section.notebook_id, |c| section_store::insert_section(c, section))?;
+        self.with_conn(section.notebook_id, |c| {
+            section_store::insert_section(c, section)
+        })?;
         self.section_to_notebook
             .borrow_mut()
             .insert(section.id, section.notebook_id);
@@ -403,7 +429,9 @@ impl SectionStore for MultiFileSqliteBackend {
     }
 
     fn list_sections(&mut self, notebook_id: NotebookId) -> Result<Vec<Section>> {
-        let v = self.with_conn(notebook_id, |c| section_store::list_sections(c, notebook_id))?;
+        let v = self.with_conn(notebook_id, |c| {
+            section_store::list_sections(c, notebook_id)
+        })?;
         let mut cache = self.section_to_notebook.borrow_mut();
         for s in &v {
             cache.insert(s.id, notebook_id);
@@ -412,7 +440,9 @@ impl SectionStore for MultiFileSqliteBackend {
     }
 
     fn list_root_sections(&mut self, notebook_id: NotebookId) -> Result<Vec<Section>> {
-        let v = self.with_conn(notebook_id, |c| section_store::list_root_sections(c, notebook_id))?;
+        let v = self.with_conn(notebook_id, |c| {
+            section_store::list_root_sections(c, notebook_id)
+        })?;
         let mut cache = self.section_to_notebook.borrow_mut();
         for s in &v {
             cache.insert(s.id, notebook_id);
@@ -431,7 +461,9 @@ impl SectionStore for MultiFileSqliteBackend {
     }
 
     fn update_section(&mut self, section: &Section) -> Result<()> {
-        self.with_conn(section.notebook_id, |c| section_store::update_section(c, section))
+        self.with_conn(section.notebook_id, |c| {
+            section_store::update_section(c, section)
+        })
     }
 
     fn delete_section(&mut self, id: SectionId) -> Result<()> {
@@ -455,7 +487,9 @@ impl SectionStore for MultiFileSqliteBackend {
         let s = self.with_conn_mut(notebook_id, |c| {
             section_store::ensure_section(c, notebook_id, parent_section_id, name)
         })?;
-        self.section_to_notebook.borrow_mut().insert(s.id, notebook_id);
+        self.section_to_notebook
+            .borrow_mut()
+            .insert(s.id, notebook_id);
         Ok(s)
     }
 }
@@ -479,7 +513,9 @@ impl PageStore for MultiFileSqliteBackend {
         addr: &PlannerPageAddress,
     ) -> Result<Option<Page>> {
         let nid = self.notebook_for_section(section_id)?;
-        let p = self.with_conn(nid, |c| page_store::find_page_by_address(c, section_id, addr))?;
+        let p = self.with_conn(nid, |c| {
+            page_store::find_page_by_address(c, section_id, addr)
+        })?;
         if let Some(ref p) = p {
             self.page_to_notebook.borrow_mut().insert(p.id, nid);
         }
@@ -518,8 +554,7 @@ impl PageStore for MultiFileSqliteBackend {
         let dst = self.notebook_for_section(target_section)?;
         if src != dst {
             return Err(StorageError::InvalidData(
-                "moving pages across notebooks is not supported in file-per-notebook mode"
-                    .into(),
+                "moving pages across notebooks is not supported in file-per-notebook mode".into(),
             ));
         }
         self.with_conn_mut(src, |c| {
@@ -560,7 +595,9 @@ impl StrokeStore for MultiFileSqliteBackend {
         page_id: PageId,
     ) -> Result<()> {
         let nid = self.notebook_for_page(page_id)?;
-        self.with_conn(nid, |c| stroke_store::replace_stroke(c, old_id, new_strokes, page_id))?;
+        self.with_conn(nid, |c| {
+            stroke_store::replace_stroke(c, old_id, new_strokes, page_id)
+        })?;
         let mut cache = self.stroke_to_notebook.borrow_mut();
         cache.remove(&old_id);
         for s in new_strokes {
@@ -603,7 +640,9 @@ impl StrokeStore for MultiFileSqliteBackend {
 
     fn query_strokes_in_rect(&mut self, page_id: PageId, rect: Rect) -> Result<Vec<Stroke>> {
         let nid = self.notebook_for_page(page_id)?;
-        self.with_conn(nid, |c| stroke_store::query_strokes_in_rect(c, page_id, rect))
+        self.with_conn(nid, |c| {
+            stroke_store::query_strokes_in_rect(c, page_id, rect)
+        })
     }
 }
 
@@ -665,7 +704,10 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, nb.id);
         // File exists on disk.
-        let path = dir.path().join(JOURNALS_DIR).join(format!("{}.journal", nb.id.0));
+        let path = dir
+            .path()
+            .join(JOURNALS_DIR)
+            .join(format!("{}.journal", nb.id.0));
         assert!(path.exists());
     }
 
@@ -694,7 +736,10 @@ mod tests {
         be.insert_notebook(&nb).unwrap();
         be.delete_notebook(nb.id).unwrap();
         assert!(be.list_notebooks().unwrap().is_empty());
-        let path = dir.path().join(JOURNALS_DIR).join(format!("{}.journal", nb.id.0));
+        let path = dir
+            .path()
+            .join(JOURNALS_DIR)
+            .join(format!("{}.journal", nb.id.0));
         assert!(!path.exists());
     }
 }

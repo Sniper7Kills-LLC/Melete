@@ -6,8 +6,8 @@ use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, CheckButton, ColorDialog, ColorDialogButton,
     DrawingArea, Entry, Label, Orientation, ScrolledWindow, Separator, SpinButton, Window,
 };
-use libadwaita as adw;
 use journal_core::{NotebookId, PageTemplate, SectionId, TemplateId};
+use libadwaita as adw;
 // {Notebook,Section}Store methods reached via dyn JournalBackend.
 
 use crate::config::PenPreset;
@@ -27,7 +27,7 @@ fn sorted_templates(state: &SharedState) -> Vec<PageTemplate> {
     let s = state.borrow();
     let reg = s.templates.borrow();
     let mut v: Vec<PageTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();
-    v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    v.sort_by_key(|a| a.name.to_lowercase());
     v
 }
 
@@ -62,17 +62,29 @@ pub fn open_notebook_settings(
     hint.add_css_class("dim-label");
     body.append(&hint);
 
-    let nb = match state.borrow().backend.borrow_mut().get_notebook(notebook_id) {
+    let nb = match state
+        .borrow()
+        .backend
+        .borrow_mut()
+        .get_notebook(notebook_id)
+    {
         Ok(n) => n,
         Err(e) => {
             tracing::error!("failed to load notebook for settings: {}", e);
             return;
         }
     };
-    let assigned: std::collections::HashSet<TemplateId> = nb.assigned_templates.iter().copied().collect();
+    let assigned: std::collections::HashSet<TemplateId> =
+        nb.assigned_templates.iter().copied().collect();
 
-    let scroller = ScrolledWindow::builder().hexpand(true).vexpand(true).build();
-    let list = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
+    let scroller = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    let list = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(2)
+        .build();
     scroller.set_child(Some(&list));
     body.append(&scroller);
 
@@ -176,8 +188,14 @@ pub fn open_section_settings(
     hint.add_css_class("dim-label");
     body.append(&hint);
 
-    let scroller = ScrolledWindow::builder().hexpand(true).vexpand(true).build();
-    let list = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
+    let scroller = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+    let list = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(2)
+        .build();
     scroller.set_child(Some(&list));
     body.append(&scroller);
 
@@ -263,11 +281,7 @@ pub fn open_section_settings(
     win.present();
 }
 
-pub fn open_app_settings(
-    parent: &ApplicationWindow,
-    state: SharedState,
-    on_saved: Box<dyn Fn()>,
-) {
+pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_saved: Box<dyn Fn()>) {
     use adw::prelude::*;
     use gtk4::{FileDialog, FileFilter};
     use std::path::PathBuf;
@@ -386,9 +400,7 @@ pub fn open_app_settings(
     }
 
     // ── Drawing ─────────────────────────────────────────────────────
-    let drawing_group = adw::PreferencesGroup::builder()
-        .title("Drawing")
-        .build();
+    let drawing_group = adw::PreferencesGroup::builder().title("Drawing").build();
     let presets_row = adw::ActionRow::builder()
         .title("Pen presets")
         .subtitle("Saved width / opacity / color combos for the toolbar")
@@ -408,9 +420,7 @@ pub fn open_app_settings(
     }
 
     // ── Developer ────────────────────────────────────────────────────
-    let dev_group = adw::PreferencesGroup::builder()
-        .title("Developer")
-        .build();
+    let dev_group = adw::PreferencesGroup::builder().title("Developer").build();
     let dev_row = adw::SwitchRow::builder()
         .title("Developer mode")
         .subtitle(
@@ -443,7 +453,9 @@ pub fn open_app_settings(
         let persist = persist.clone();
         let snapshot_inputs = snapshot_inputs.clone();
         pick_btn.connect_clicked(move |_| {
-            let dialog = FileDialog::builder().title("Pick placeholder image").build();
+            let dialog = FileDialog::builder()
+                .title("Pick placeholder image")
+                .build();
             let filter = FileFilter::new();
             filter.add_mime_type("image/*");
             filter.set_name(Some("Images"));
@@ -530,10 +542,7 @@ fn make_color_swatch(color_rgba: [u8; 4]) -> DrawingArea {
 /// Shows a table of presets (swatch + name + width) with up/down reorder,
 /// delete, inline edit, and an "Add preset" button that captures the current
 /// pen color + width.
-pub fn open_pen_presets_settings(
-    parent: &ApplicationWindow,
-    state: SharedState,
-) {
+pub fn open_pen_presets_settings(parent: &ApplicationWindow, state: SharedState) {
     let win = modal(parent, "Pen presets");
 
     let body = GtkBox::builder()
@@ -916,11 +925,20 @@ const BLEND_MODES: &[(&str, journal_core::BlendMode)] = &[
 #[allow(dead_code)]
 const BRUSH_STYLES: &[(&str, journal_core::ToolStyle)] = &[
     ("Pen (smooth)", journal_core::ToolStyle::Pen),
-    ("Pencil (sharp + tilt-shading)", journal_core::ToolStyle::Pencil),
+    (
+        "Pencil (sharp + tilt-shading)",
+        journal_core::ToolStyle::Pencil,
+    ),
     ("Highlighter", journal_core::ToolStyle::Highlighter),
-    ("Paintbrush (3-pass halo)", journal_core::ToolStyle::Paintbrush),
+    (
+        "Paintbrush (3-pass halo)",
+        journal_core::ToolStyle::Paintbrush,
+    ),
     ("Spray Can", journal_core::ToolStyle::SprayCan),
-    ("Calligraphy (variable-width polygon)", journal_core::ToolStyle::Calligraphy),
+    (
+        "Calligraphy (variable-width polygon)",
+        journal_core::ToolStyle::Calligraphy,
+    ),
 ];
 
 fn blend_index(b: journal_core::BlendMode) -> u32 {
@@ -939,7 +957,10 @@ pub fn open_tool_settings(parent: &ApplicationWindow, state: SharedState) {
     dialog.set_default_height(560);
     dialog.set_default_width(620);
 
-    let scroll = ScrolledWindow::builder().hexpand(true).vexpand(true).build();
+    let scroll = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .build();
     let body = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(10)
@@ -977,7 +998,7 @@ pub fn open_tool_settings(parent: &ApplicationWindow, state: SharedState) {
             .spacing(6)
             .build();
         let title = Label::builder()
-            .label(&format!("<b>{}</b>", crate::tool_settings::tool_label(tool)))
+            .label(format!("<b>{}</b>", crate::tool_settings::tool_label(tool)))
             .use_markup(true)
             .xalign(0.0)
             .build();
@@ -990,7 +1011,10 @@ pub fn open_tool_settings(parent: &ApplicationWindow, state: SharedState) {
 
         // Default base width (mm) — applied when the tool is selected
         grid.attach(
-            &Label::builder().label("Default size (mm)").xalign(1.0).build(),
+            &Label::builder()
+                .label("Default size (mm)")
+                .xalign(1.0)
+                .build(),
             0,
             0,
             1,
@@ -1038,9 +1062,7 @@ pub fn open_tool_settings(parent: &ApplicationWindow, state: SharedState) {
             1,
             1,
         );
-        let blend_strs = StringList::new(
-            &BLEND_MODES.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
-        );
+        let blend_strs = StringList::new(&BLEND_MODES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
         let blend_dd = DropDown::builder().model(&blend_strs).hexpand(true).build();
         blend_dd.set_selected(blend_index(initial.blend_mode));
         grid.attach(&blend_dd, 1, 3, 1, 1);
@@ -1154,7 +1176,7 @@ pub fn open_tool_settings(parent: &ApplicationWindow, state: SharedState) {
 
 fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
     use journal_canvas::vello_renderer::{
-        ToolStyleParams, CalligraphyParams, PaintbrushParams, PenParams, PencilParams, SprayParams,
+        CalligraphyParams, PaintbrushParams, PenParams, PencilParams, SprayParams, ToolStyleParams,
     };
 
     fn row_label(label: &str) -> Label {
@@ -1176,15 +1198,21 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
     let read_calligraphy = || -> CalligraphyParams { state.borrow().brush_params.calligraphy };
 
     fn make_section(title: &str) -> (GtkBox, gtk4::Grid) {
-        let row = GtkBox::builder().orientation(Orientation::Vertical).spacing(6).build();
+        let row = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(6)
+            .build();
         row.append(
             &Label::builder()
-                .label(&format!("<b>{}</b>", title))
+                .label(format!("<b>{}</b>", title))
                 .use_markup(true)
                 .xalign(0.0)
                 .build(),
         );
-        let grid = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
+        let grid = gtk4::Grid::builder()
+            .row_spacing(4)
+            .column_spacing(10)
+            .build();
         row.append(&grid);
         (row, grid)
     }
@@ -1259,8 +1287,13 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
 
         let reset = Button::with_label("Reset");
         {
-            let (cmin, cmax, thr, tband, talpha) =
-                (cmin.clone(), cmax.clone(), thr.clone(), tband.clone(), talpha.clone());
+            let (cmin, cmax, thr, tband, talpha) = (
+                cmin.clone(),
+                cmax.clone(),
+                thr.clone(),
+                tband.clone(),
+                talpha.clone(),
+            );
             reset.connect_clicked(move |_| {
                 let d = PencilParams::default();
                 cmin.set_value(d.core_clamp_min);
@@ -1275,8 +1308,13 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
 
         let apply: Rc<dyn Fn()> = {
             let state = state.clone();
-            let (cmin, cmax, thr, tband, talpha) =
-                (cmin.clone(), cmax.clone(), thr.clone(), tband.clone(), talpha.clone());
+            let (cmin, cmax, thr, tband, talpha) = (
+                cmin.clone(),
+                cmax.clone(),
+                thr.clone(),
+                tband.clone(),
+                talpha.clone(),
+            );
             Rc::new(move || {
                 let prev = state.borrow().brush_params.pencil;
                 state.borrow_mut().brush_params.pencil = PencilParams {
@@ -1321,8 +1359,14 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
 
         let reset = Button::with_label("Reset");
         {
-            let (hw, oh, mh, oa, ma, ca) =
-                (hw.clone(), oh.clone(), mh.clone(), oa.clone(), ma.clone(), ca.clone());
+            let (hw, oh, mh, oa, ma, ca) = (
+                hw.clone(),
+                oh.clone(),
+                mh.clone(),
+                oa.clone(),
+                ma.clone(),
+                ca.clone(),
+            );
             reset.connect_clicked(move |_| {
                 let d = PaintbrushParams::default();
                 hw.set_value(d.halo_width_mult);
@@ -1338,8 +1382,14 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
 
         let apply: Rc<dyn Fn()> = {
             let state = state.clone();
-            let (hw, oh, mh, oa, ma, ca) =
-                (hw.clone(), oh.clone(), mh.clone(), oa.clone(), ma.clone(), ca.clone());
+            let (hw, oh, mh, oa, ma, ca) = (
+                hw.clone(),
+                oh.clone(),
+                mh.clone(),
+                oa.clone(),
+                ma.clone(),
+                ca.clone(),
+            );
             Rc::new(move || {
                 let prev = state.borrow().brush_params.paintbrush;
                 state.borrow_mut().brush_params.paintbrush = PaintbrushParams {
@@ -1426,7 +1476,8 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
 
         let reset = Button::with_label("Reset");
         {
-            let (nib, mr, rs, smooth_chk) = (nib.clone(), mr.clone(), rs.clone(), smooth_chk.clone());
+            let (nib, mr, rs, smooth_chk) =
+                (nib.clone(), mr.clone(), rs.clone(), smooth_chk.clone());
             reset.connect_clicked(move |_| {
                 let d = CalligraphyParams::default();
                 nib.set_value(d.nib_angle_deg);
@@ -1440,7 +1491,8 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
 
         let apply: Rc<dyn Fn()> = {
             let state = state.clone();
-            let (nib, mr, rs, smooth_chk) = (nib.clone(), mr.clone(), rs.clone(), smooth_chk.clone());
+            let (nib, mr, rs, smooth_chk) =
+                (nib.clone(), mr.clone(), rs.clone(), smooth_chk.clone());
             Rc::new(move || {
                 let prev = state.borrow().brush_params.calligraphy;
                 state.borrow_mut().brush_params.calligraphy = CalligraphyParams {

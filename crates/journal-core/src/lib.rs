@@ -1,27 +1,26 @@
-pub mod stroke;
-pub mod viewport;
-pub mod pen;
 pub mod brush;
-pub mod page;
-pub mod notebook;
-pub mod template;
 pub mod calendar;
+pub mod notebook;
+pub mod page;
+pub mod pen;
+pub mod stroke;
+pub mod template;
 pub mod title_format;
+pub mod viewport;
 
-pub use stroke::{Stroke, StrokePoint};
-pub use viewport::Viewport;
-pub use pen::{PenSettings, Color, BlendMode, ToolStyle};
 pub use brush::{Brush, BrushLayer, ColorMod, CursorShape, Geometry, TipShape, WidthMode};
-pub use page::{Page, PageId, WidgetOverride};
-pub use notebook::{Notebook, NotebookId, NotebookKind, Section, SectionId};
-pub use template::{
-    PageTemplate, TemplateId, BackgroundType, TilingMode,
-    NotebookTemplate, DailySlot, PlannerGrouping, SectionTitleFormats,
-    TemplateWidget, WidgetKind, WidgetRect, WidgetStyle,
-    EntryFlags,
-};
 pub use calendar::{CalendarPageAddress, PlannerPageAddress};
+pub use notebook::{Notebook, NotebookId, NotebookKind, Section, SectionId};
+pub use page::{Page, PageId, WidgetOverride};
+pub use pen::{BlendMode, Color, PenSettings, ToolStyle};
+pub use stroke::{Stroke, StrokePoint};
+pub use template::{
+    BackgroundType, DailySlot, EntryFlags, NotebookTemplate, PageTemplate, PlannerGrouping,
+    SectionTitleFormats, TemplateId, TemplateWidget, TilingMode, WidgetKind, WidgetRect,
+    WidgetStyle,
+};
 pub use title_format::{render as render_title, TitleContext};
+pub use viewport::Viewport;
 
 /// A simple 2D point.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]

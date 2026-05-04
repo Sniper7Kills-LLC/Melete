@@ -40,7 +40,14 @@ pub fn builtin_military_pace() -> PageTemplate {
     let body_h = page_h - body_top - margin;
     let cols = ["Primary", "Alternate", "Contingency", "Emergency"];
     let col_w = (page_w - margin * 2.0) / 4.0;
-    let rows = ["Net", "Frequency", "Call sign", "Authentication", "Encryption / KEK", "Notes"];
+    let rows = [
+        "Net",
+        "Frequency",
+        "Call sign",
+        "Authentication",
+        "Encryption / KEK",
+        "Notes",
+    ];
     let header_h = 9.0_f64;
     let row_h = (body_h - header_h) / rows.len() as f64;
 
@@ -56,8 +63,20 @@ pub fn builtin_military_pace() -> PageTemplate {
             4.5,
         ));
     }
-    widgets.push(rect(mw(t, 30), margin, body_top, page_w - margin * 2.0, body_h));
-    widgets.push(hline(mw(t, 31), margin, body_top + header_h, page_w - margin * 2.0, 0.3));
+    widgets.push(rect(
+        mw(t, 30),
+        margin,
+        body_top,
+        page_w - margin * 2.0,
+        body_h,
+    ));
+    widgets.push(hline(
+        mw(t, 31),
+        margin,
+        body_top + header_h,
+        page_w - margin * 2.0,
+        0.3,
+    ));
     for i in 1..cols.len() {
         widgets.push(vline(
             mw(t, (40 + i) as u16),
@@ -69,7 +88,13 @@ pub fn builtin_military_pace() -> PageTemplate {
     }
     for (r, rlabel) in rows.iter().enumerate() {
         let y = body_top + header_h + row_h * r as f64;
-        widgets.push(hline(mw(t, (60 + r) as u16), margin, y, page_w - margin * 2.0, 0.2));
+        widgets.push(hline(
+            mw(t, (60 + r) as u16),
+            margin,
+            y,
+            page_w - margin * 2.0,
+            0.2,
+        ));
         widgets.push(text(
             mw(t, (70 + r) as u16),
             margin + 2.0,

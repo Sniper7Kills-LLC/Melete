@@ -198,7 +198,9 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
     let created_at_str: String = row.get(5)?;
     let modified_at_str: String = row.get(6)?;
     let name: String = row.get(7)?;
-    let overrides_json: String = row.get::<_, Option<String>>(8)?.unwrap_or_else(|| "{}".into());
+    let overrides_json: String = row
+        .get::<_, Option<String>>(8)?
+        .unwrap_or_else(|| "{}".into());
     Ok((|| {
         let template_id = match template_blob {
             Some(b) => Some(TemplateId(blob_to_uuid(&b)?)),

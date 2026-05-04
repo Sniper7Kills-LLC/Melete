@@ -7,9 +7,7 @@ use std::rc::Rc;
 
 use chrono::{Datelike, Duration, NaiveDate, Utc};
 use gtk4::prelude::*;
-use gtk4::{
-    Box as GtkBox, Button, Calendar, DrawingArea, Label, MenuButton, Orientation, Popover,
-};
+use gtk4::{Box as GtkBox, Button, Calendar, DrawingArea, Label, MenuButton, Orientation, Popover};
 use uuid::Uuid;
 
 use journal_core::{
@@ -55,7 +53,7 @@ fn canonical_slot_date(slot: &DailySlot, date: NaiveDate) -> NaiveDate {
     }
     let mon0 = date.weekday().num_days_from_monday() as i64;
     let week_start = date - chrono::Duration::days(mon0); // Monday of `date`'s week
-    // Earliest weekday (by Monday-relative index) wins.
+                                                          // Earliest weekday (by Monday-relative index) wins.
     let mut best: Option<NaiveDate> = None;
     for wd in &slot.days {
         let off = wd.num_days_from_monday() as i64;
@@ -69,20 +67,20 @@ fn canonical_slot_date(slot: &DailySlot, date: NaiveDate) -> NaiveDate {
     best.unwrap_or(date)
 }
 
-fn matching_slot<'a>(template: &'a NotebookTemplate, date: NaiveDate) -> Option<&'a DailySlot> {
+fn matching_slot(template: &NotebookTemplate, date: NaiveDate) -> Option<&DailySlot> {
     let wd = date.weekday();
-    template
-        .daily_slots
-        .iter()
-        .find(|s| s.days.iter().any(|d| *d == wd))
+    template.daily_slots.iter().find(|s| s.days.contains(&wd))
 }
 
-fn template_for_address<'a>(
-    template: &'a NotebookTemplate,
+fn template_for_address(
+    template: &NotebookTemplate,
     address: &PlannerPageAddress,
 ) -> Option<TemplateId> {
     match address {
-        PlannerPageAddress::Day { date, template_index } => {
+        PlannerPageAddress::Day {
+            date,
+            template_index,
+        } => {
             let slot = matching_slot(template, *date)?;
             slot.templates.get(*template_index as usize).copied()
         }
@@ -107,7 +105,8 @@ pub fn ensure_planner_pages(
         match db.find_page_by_address(section_id, addr) {
             Ok(Some(page)) => out.push(page),
             Ok(None) => {
-                let end_position = db.list_pages(section_id)
+                let end_position = db
+                    .list_pages(section_id)
                     .map(|v| v.len() as u32)
                     .unwrap_or(0);
                 let now = chrono::Utc::now();
@@ -127,7 +126,11 @@ pub fn ensure_planner_pages(
                     continue;
                 }
 
-                if let PlannerPageAddress::Day { date: new_date, template_index } = addr {
+                if let PlannerPageAddress::Day {
+                    date: new_date,
+                    template_index,
+                } = addr
+                {
                     let target = chronological_target_position(
                         db,
                         section_id,
@@ -153,7 +156,10 @@ pub fn ensure_planner_pages(
 /// Find the earliest `Day`-address date among all pages in `section_id` and
 /// (recursively) its descendant sections. Returns `None` for sections that
 /// contain no dated pages — they sort to the bottom in chronological reorder.
-fn min_day_date_in_section(db: &mut dyn JournalBackend, section_id: SectionId) -> Option<NaiveDate> {
+fn min_day_date_in_section(
+    db: &mut dyn JournalBackend,
+    section_id: SectionId,
+) -> Option<NaiveDate> {
     let mut min_d: Option<NaiveDate> = None;
     if let Ok(pages) = db.list_pages(section_id) {
         for p in &pages {
@@ -237,10 +243,11 @@ fn chronological_target_position(
             continue;
         }
         match p.planner_address {
-            Some(PlannerPageAddress::Day { date, template_index }) => {
-                if (date, template_index) > (new_date, new_template_index) {
-                    return idx;
-                }
+            Some(PlannerPageAddress::Day {
+                date,
+                template_index,
+            }) if (date, template_index) > (new_date, new_template_index) => {
+                return idx;
             }
             _ => {
                 // Non-Day pages (e.g. before-month wrappers if any) keep
@@ -268,7 +275,10 @@ pub fn goto_date(
         &template.section_title_formats.year,
         &TitleContext::new(date),
     );
-    let year_section = match backend_rc.borrow_mut().ensure_section(notebook_id, None, &year_title) {
+    let year_section = match backend_rc
+        .borrow_mut()
+        .ensure_section(notebook_id, None, &year_title)
+    {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("failed to ensure year section: {}", e);
@@ -286,7 +296,11 @@ pub fn goto_date(
             &TitleContext::new(date),
         ),
     };
-    let wrapper_section = match backend_rc.borrow_mut().ensure_section(notebook_id, Some(year_section.id), &wrapper_title) {
+    let wrapper_section = match backend_rc.borrow_mut().ensure_section(
+        notebook_id,
+        Some(year_section.id),
+        &wrapper_title,
+    ) {
         Ok(s) => s,
         Err(e) => {
             tracing::error!("failed to ensure wrapper section: {}", e);
@@ -316,7 +330,8 @@ pub fn goto_date(
     // Land on first daily page; fall back to wrapper section's first existing
     // page if no daily pages were generated.
     let landing = pages.into_iter().next().or_else(|| {
-        backend_rc.borrow_mut()
+        backend_rc
+            .borrow_mut()
             .list_pages(wrapper_section.id)
             .ok()
             .and_then(|v| v.into_iter().next())
@@ -378,10 +393,22 @@ fn draw_year_bar(ctx: &gtk4::cairo::Context, w: f64, h: f64, frac: f64) {
 fn rounded_rect(ctx: &gtk4::cairo::Context, x: f64, y: f64, w: f64, h: f64, r: f64) {
     let r = r.min(w / 2.0).min(h / 2.0);
     ctx.new_sub_path();
-    ctx.arc(x + r, y + r, r, std::f64::consts::PI, 3.0 * std::f64::consts::PI / 2.0);
+    ctx.arc(
+        x + r,
+        y + r,
+        r,
+        std::f64::consts::PI,
+        3.0 * std::f64::consts::PI / 2.0,
+    );
     ctx.arc(x + w - r, y + r, r, 3.0 * std::f64::consts::PI / 2.0, 0.0);
     ctx.arc(x + w - r, y + h - r, r, 0.0, std::f64::consts::PI / 2.0);
-    ctx.arc(x + r, y + h - r, r, std::f64::consts::PI / 2.0, std::f64::consts::PI);
+    ctx.arc(
+        x + r,
+        y + h - r,
+        r,
+        std::f64::consts::PI / 2.0,
+        std::f64::consts::PI,
+    );
     ctx.close_path();
 }
 
@@ -487,7 +514,13 @@ pub fn build_nav_strip(
                 cal_for_click.set_day(d.day() as i32);
                 suppress_for_click.set(false);
                 progress_for_click.queue_draw();
-                goto_date(&state_for_click, &canvas_for_click, notebook_id, &template_for_click, d);
+                goto_date(
+                    &state_for_click,
+                    &canvas_for_click,
+                    notebook_id,
+                    &template_for_click,
+                    d,
+                );
                 (on_refresh_for_click)();
             }
         });
@@ -536,7 +569,19 @@ pub fn build_nav_strip(
         let suppress = suppress_day_selected.clone();
         prev_btn.connect_clicked(move |_| {
             let d = current.get() - Duration::days(1);
-            nav(&state, &canvas, &template, &current, &label, &cal, &bar, d, notebook_id, &on_refresh_clone, &suppress);
+            nav(
+                &state,
+                &canvas,
+                &template,
+                &current,
+                &label,
+                &cal,
+                &bar,
+                d,
+                notebook_id,
+                &on_refresh_clone,
+                &suppress,
+            );
         });
     }
     {
@@ -551,7 +596,19 @@ pub fn build_nav_strip(
         let suppress = suppress_day_selected.clone();
         next_btn.connect_clicked(move |_| {
             let d = current.get() + Duration::days(1);
-            nav(&state, &canvas, &template, &current, &label, &cal, &bar, d, notebook_id, &on_refresh_clone, &suppress);
+            nav(
+                &state,
+                &canvas,
+                &template,
+                &current,
+                &label,
+                &cal,
+                &bar,
+                d,
+                notebook_id,
+                &on_refresh_clone,
+                &suppress,
+            );
         });
     }
     {
@@ -566,7 +623,19 @@ pub fn build_nav_strip(
         let suppress = suppress_day_selected.clone();
         today_btn.connect_clicked(move |_| {
             let d = Utc::now().date_naive();
-            nav(&state, &canvas, &template, &current, &label, &cal_clone, &bar, d, notebook_id, &on_refresh_clone, &suppress);
+            nav(
+                &state,
+                &canvas,
+                &template,
+                &current,
+                &label,
+                &cal_clone,
+                &bar,
+                d,
+                notebook_id,
+                &on_refresh_clone,
+                &suppress,
+            );
         });
     }
     {

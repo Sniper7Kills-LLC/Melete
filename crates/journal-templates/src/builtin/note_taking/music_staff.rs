@@ -18,14 +18,15 @@ pub fn builtin_music_staff() -> PageTemplate {
     let staff_line_spacing = 1.8_f64;
     let staff_height = staff_line_spacing * 4.0;
     let avail_h = US_LETTER.1 - top_margin - 16.0;
-    let gap =
-        (avail_h - staff_height * staff_count as f64) / (staff_count as f64 - 1.0).max(1.0);
+    let gap = (avail_h - staff_height * staff_count as f64) / (staff_count as f64 - 1.0).max(1.0);
     let mut widgets = Vec::with_capacity(staff_count as usize);
     for i in 0..staff_count {
         let y = top_margin + (staff_height + gap) * i as f64;
         widgets.push(TemplateWidget {
             id: Uuid::parse_str(&format!("a0000011-1{:03}-0000-0000-000000000000", i)).unwrap(),
-            kind: WidgetKind::LinesRegion { spacing_mm: staff_line_spacing },
+            kind: WidgetKind::LinesRegion {
+                spacing_mm: staff_line_spacing,
+            },
             rect: WidgetRect {
                 x: margin_x,
                 y,

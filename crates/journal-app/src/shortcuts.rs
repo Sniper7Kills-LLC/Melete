@@ -38,7 +38,10 @@ pub fn attach_keyboard_shortcuts(
                         let s = state.borrow();
                         s.transform.screen_size()
                     };
-                    state.borrow_mut().transform.zoom_at((sw * 0.5, sh * 0.5), 1.2);
+                    state
+                        .borrow_mut()
+                        .transform
+                        .zoom_at((sw * 0.5, sh * 0.5), 1.2);
                     canvas.queue_draw();
                     return glib::Propagation::Stop;
                 }
@@ -47,7 +50,10 @@ pub fn attach_keyboard_shortcuts(
                         let s = state.borrow();
                         s.transform.screen_size()
                     };
-                    state.borrow_mut().transform.zoom_at((sw * 0.5, sh * 0.5), 1.0 / 1.2);
+                    state
+                        .borrow_mut()
+                        .transform
+                        .zoom_at((sw * 0.5, sh * 0.5), 1.0 / 1.2);
                     canvas.queue_draw();
                     return glib::Propagation::Stop;
                 }

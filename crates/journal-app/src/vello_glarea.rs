@@ -110,7 +110,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
             // by canvas_widget's DrawingArea draw_func), so render Vello at
             // logical and let GL upscale to the physical viewport. Avoids
             // strokes shifting on zoom from a coord-vs-texture mismatch.
-            let scale = area.scale_factor().max(1) as i32;
+            let scale = area.scale_factor().max(1);
             let w = area.width().max(1) as u32;
             let h = area.height().max(1) as u32;
             let phys_w = (w as i32 * scale) as u32;
@@ -146,16 +146,15 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     }
                 }
                 let widgets_cell_p = widgets_cell.clone();
-                let rgba = match vello_cell.borrow_mut().as_mut().unwrap().render_placeholder(
-                    w,
-                    h,
-                    dark_mode,
-                    move |scene, sw, sh| {
+                let rgba = match vello_cell
+                    .borrow_mut()
+                    .as_mut()
+                    .unwrap()
+                    .render_placeholder(w, h, dark_mode, move |scene, sw, sh| {
                         widgets_cell_p
                             .borrow_mut()
                             .draw_placeholder(scene, sw as f64, sh as f64, dark_mode, &text);
-                    },
-                ) {
+                    }) {
                     Ok(b) => b,
                     Err(e) => {
                         tracing::error!("Vello placeholder render: {e}");
@@ -195,7 +194,17 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 return glib::Propagation::Stop;
             }
 
-            let (transform, strokes, background, page_rect, selected_ids, widgets, widget_ctx, overlays, brush_params) = {
+            let (
+                transform,
+                strokes,
+                background,
+                page_rect,
+                selected_ids,
+                widgets,
+                widget_ctx,
+                overlays,
+                brush_params,
+            ) = {
                 let s = state.borrow();
                 let mut frame: Vec<journal_core::Stroke> = s.strokes.clone();
                 if let Some(cs) = s.current_stroke.clone() {
@@ -214,10 +223,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 let selection_bbox = if s.selected_stroke_ids.is_empty() {
                     None
                 } else {
-                    journal_canvas::selection_combined_bbox(
-                        &s.strokes,
-                        &s.selected_stroke_ids,
-                    )
+                    journal_canvas::selection_combined_bbox(&s.strokes, &s.selected_stroke_ids)
                 };
                 let cursor_radius = compute_cursor_radius(&s);
                 let (cursor_shape, cursor_tip) = match s.active_brush_recipe.as_ref() {
@@ -277,31 +283,26 @@ pub fn build(state: SharedState) -> Option<GLArea> {
             }
 
             // Render Vello scene to RGBA8.
-            let rgba = match vello_cell
-                .borrow_mut()
-                .as_mut()
-                .unwrap()
-                .render_rgba(
-                    &transform,
-                    &background,
-                    page_rect,
-                    &strokes,
-                    &selected_ids,
-                    &overlays,
-                    &brush_params,
-                    w,
-                    h,
-                    |scene, world_to_screen, pr| {
-                        widgets_cell.borrow_mut().draw_widgets(
-                            scene,
-                            world_to_screen,
-                            &widgets,
-                            pr,
-                            &widget_ctx,
-                        );
-                    },
-                )
-            {
+            let rgba = match vello_cell.borrow_mut().as_mut().unwrap().render_rgba(
+                &transform,
+                &background,
+                page_rect,
+                &strokes,
+                &selected_ids,
+                &overlays,
+                &brush_params,
+                w,
+                h,
+                |scene, world_to_screen, pr| {
+                    widgets_cell.borrow_mut().draw_widgets(
+                        scene,
+                        world_to_screen,
+                        &widgets,
+                        pr,
+                        &widget_ctx,
+                    );
+                },
+            ) {
                 Ok(b) => b,
                 Err(e) => {
                     tracing::error!("Vello render: {e}");
@@ -577,11 +578,7 @@ void main() {
     Ok(program)
 }
 
-unsafe fn compile_shader(
-    gl: &glow::Context,
-    kind: u32,
-    src: &str,
-) -> Result<glow::Shader, String> {
+unsafe fn compile_shader(gl: &glow::Context, kind: u32, src: &str) -> Result<glow::Shader, String> {
     let shader = gl
         .create_shader(kind)
         .map_err(|e| format!("create_shader: {e}"))?;
@@ -715,7 +712,11 @@ fn bg_fingerprint<H: std::hash::Hasher>(bg: &journal_canvas::BackgroundConfig, h
             size_canvas.0.to_bits().hash(h);
             size_canvas.1.to_bits().hash(h);
         }
-        B::Pdf { path, page, size_canvas } => {
+        B::Pdf {
+            path,
+            page,
+            size_canvas,
+        } => {
             7u8.hash(h);
             path.hash(h);
             page.hash(h);

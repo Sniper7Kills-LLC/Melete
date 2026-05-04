@@ -315,7 +315,7 @@ fn refresh_notebook_template_list(
         let s = state.borrow();
         let reg = s.notebook_templates.borrow();
         let mut v: Vec<NotebookTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();
-        v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        v.sort_by_key(|a| a.name.to_lowercase());
         v
     };
 
@@ -330,7 +330,13 @@ fn refresh_notebook_template_list(
     }
 
     for t in templates {
-        let row = build_notebook_template_row(&t, state.clone(), list.clone(), parent, close_manager.clone());
+        let row = build_notebook_template_row(
+            &t,
+            state.clone(),
+            list.clone(),
+            parent,
+            close_manager.clone(),
+        );
         list.append(&row);
     }
 }
@@ -372,7 +378,11 @@ fn build_notebook_template_row(
     } else {
         t.description.clone()
     };
-    let desc_lbl = Label::builder().label(&desc).halign(Align::Start).wrap(true).build();
+    let desc_lbl = Label::builder()
+        .label(&desc)
+        .halign(Align::Start)
+        .wrap(true)
+        .build();
     desc_lbl.add_css_class("dim-label");
     text_col.append(&desc_lbl);
     row.append(&text_col);
@@ -418,7 +428,10 @@ fn build_notebook_template_row(
         });
         row.append(&del);
     } else {
-        let badge = Label::builder().label("built-in").halign(Align::End).build();
+        let badge = Label::builder()
+            .label("built-in")
+            .halign(Align::End)
+            .build();
         badge.add_css_class("dim-label");
         row.append(&badge);
     }
@@ -461,7 +474,10 @@ fn run_pdf_import(
     open_editor: OpenEditorFn,
     close_manager: Rc<dyn Fn()>,
 ) {
-    let dialog = FileDialog::builder().title("Import PDF").modal(true).build();
+    let dialog = FileDialog::builder()
+        .title("Import PDF")
+        .modal(true)
+        .build();
     let filter = FileFilter::new();
     filter.set_name(Some("PDF"));
     filter.add_mime_type("application/pdf");
@@ -472,34 +488,41 @@ fn run_pdf_import(
     dialog.set_default_filter(Some(&filter));
 
     let parent_for_cb = parent.clone();
-    dialog.open(Some(parent), None::<&gtk4::gio::Cancellable>, move |result| {
-        let file = match result {
-            Ok(f) => f,
-            Err(e) => {
-                if !e.matches(gtk4::gio::IOErrorEnum::Cancelled)
-                    && !e.matches(gtk4::gio::IOErrorEnum::Failed)
-                {
-                    tracing::warn!("pdf dialog error: {}", e);
+    dialog.open(
+        Some(parent),
+        None::<&gtk4::gio::Cancellable>,
+        move |result| {
+            let file = match result {
+                Ok(f) => f,
+                Err(e) => {
+                    if !e.matches(gtk4::gio::IOErrorEnum::Cancelled)
+                        && !e.matches(gtk4::gio::IOErrorEnum::Failed)
+                    {
+                        tracing::warn!("pdf dialog error: {}", e);
+                    }
+                    return;
                 }
-                return;
+            };
+            let src_path = match file.path() {
+                Some(p) => p,
+                None => {
+                    tracing::warn!("pdf file has no local path");
+                    return;
+                }
+            };
+            if let Err(e) = import_pdf(
+                &parent_for_cb,
+                &src_path,
+                state.clone(),
+                list.clone(),
+                open_editor.clone(),
+                close_manager.clone(),
+            ) {
+                tracing::error!("pdf import: {:#}", e);
+                show_error(&parent_for_cb, &format!("Failed to import PDF: {}", e));
             }
-        };
-        let src_path = match file.path() {
-            Some(p) => p,
-            None => { tracing::warn!("pdf file has no local path"); return; }
-        };
-        if let Err(e) = import_pdf(
-            &parent_for_cb,
-            &src_path,
-            state.clone(),
-            list.clone(),
-            open_editor.clone(),
-            close_manager.clone(),
-        ) {
-            tracing::error!("pdf import: {:#}", e);
-            show_error(&parent_for_cb, &format!("Failed to import PDF: {}", e));
-        }
-    });
+        },
+    );
 }
 
 fn pdf_page_count(path: &std::path::Path) -> u32 {
@@ -534,7 +557,11 @@ fn import_pdf(
     std::fs::copy(src, &dst)?;
 
     let n_pages = pdf_page_count(&dst);
-    let name = src.file_stem().and_then(|s| s.to_str()).unwrap_or("PDF").to_string();
+    let name = src
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("PDF")
+        .to_string();
     let dst_str = dst.to_string_lossy().to_string();
 
     if n_pages <= 1 {
@@ -545,7 +572,15 @@ fn import_pdf(
 
     // Ask the user which page to use (1-based display, 0-based storage).
     show_pdf_page_picker(
-        parent, id, name, dst_str, n_pages, state, list, open_editor, close_manager,
+        parent,
+        id,
+        name,
+        dst_str,
+        n_pages,
+        state,
+        list,
+        open_editor,
+        close_manager,
     );
     Ok(())
 }
@@ -555,7 +590,10 @@ fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: 
         id: journal_core::TemplateId(id),
         name: name.clone(),
         description: format!("PDF page {}", page + 1),
-        background: BackgroundType::Pdf { path: dst.clone(), page },
+        background: BackgroundType::Pdf {
+            path: dst.clone(),
+            page,
+        },
         size_mm: (215.9, 279.4),
         tiling: TilingMode::None,
         default_viewport: None,
@@ -565,7 +603,10 @@ fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: 
 
     let tdir = match templates_dir() {
         Some(d) => d,
-        None => { tracing::error!("could not resolve data dir"); return; }
+        None => {
+            tracing::error!("could not resolve data dir");
+            return;
+        }
     };
     if let Err(e) = std::fs::create_dir_all(&tdir) {
         tracing::error!("create templates dir: {}", e);
@@ -580,7 +621,10 @@ fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: 
                 return;
             }
         }
-        Err(e) => { tracing::error!("serialize template: {}", e); return; }
+        Err(e) => {
+            tracing::error!("serialize template: {}", e);
+            return;
+        }
     }
     let s = state.borrow();
     s.templates.borrow_mut().insert(template);
@@ -616,7 +660,10 @@ fn show_pdf_page_picker(
         .margin_end(16)
         .build();
 
-    let lbl = Label::new(Some(&format!("This PDF has {} pages.\nWhich page to use as background?", n_pages)));
+    let lbl = Label::new(Some(&format!(
+        "This PDF has {} pages.\nWhich page to use as background?",
+        n_pages
+    )));
     lbl.set_halign(Align::Start);
     body.append(&lbl);
 
@@ -707,7 +754,11 @@ fn refresh_list(
         );
         let row = ListBoxRow::new();
         row.set_child(Some(&row_widget));
-        let cat = if t.category.is_empty() { "Uncategorized".to_string() } else { t.category.clone() };
+        let cat = if t.category.is_empty() {
+            "Uncategorized".to_string()
+        } else {
+            t.category.clone()
+        };
         unsafe {
             row.set_data::<String>("template-category", cat);
         }
@@ -763,10 +814,7 @@ fn build_row(
         .hexpand(true)
         .valign(Align::Center)
         .build();
-    let name = Label::builder()
-        .label(&t.name)
-        .halign(Align::Start)
-        .build();
+    let name = Label::builder().label(&t.name).halign(Align::Start).build();
     name.add_css_class("title-4");
     text_col.append(&name);
     let kind = Label::builder()
@@ -859,8 +907,14 @@ fn build_template_preview(template: PageTemplate, dark_mode: bool) -> Frame {
         let bg = journal_templates::page_template_to_background_config(&template);
         let empty: HashSet<Uuid> = HashSet::new();
         paint_with_widgets(
-            ctx, &transform, &bg, page_rect,
-            &template.widgets, &[], &empty, dark_mode,
+            ctx,
+            &transform,
+            &bg,
+            page_rect,
+            &template.widgets,
+            &[],
+            &empty,
+            dark_mode,
         );
     });
 
@@ -958,7 +1012,10 @@ fn run_import(
     open_editor: OpenEditorFn,
     close_manager: Rc<dyn Fn()>,
 ) {
-    let dialog = FileDialog::builder().title("Import image").modal(true).build();
+    let dialog = FileDialog::builder()
+        .title("Import image")
+        .modal(true)
+        .build();
 
     let filter = FileFilter::new();
     filter.set_name(Some("Images"));
@@ -970,38 +1027,42 @@ fn run_import(
 
     let parent_for_cb = parent.clone();
     let parent_for_ref = parent.clone();
-    dialog.open(Some(parent), None::<&gtk4::gio::Cancellable>, move |result| {
-        let file = match result {
-            Ok(f) => f,
-            Err(e) => {
-                if !e.matches(gtk4::gio::IOErrorEnum::Cancelled)
-                    && !e.matches(gtk4::gio::IOErrorEnum::Failed)
-                {
-                    tracing::warn!("file dialog error: {}", e);
+    dialog.open(
+        Some(parent),
+        None::<&gtk4::gio::Cancellable>,
+        move |result| {
+            let file = match result {
+                Ok(f) => f,
+                Err(e) => {
+                    if !e.matches(gtk4::gio::IOErrorEnum::Cancelled)
+                        && !e.matches(gtk4::gio::IOErrorEnum::Failed)
+                    {
+                        tracing::warn!("file dialog error: {}", e);
+                    }
+                    return;
                 }
+            };
+            let src_path = match file.path() {
+                Some(p) => p,
+                None => {
+                    tracing::warn!("imported file has no local path");
+                    return;
+                }
+            };
+            if let Err(e) = import_image(&src_path, state.clone()) {
+                tracing::error!("failed to import template image: {:#}", e);
+                show_error(&parent_for_cb, &format!("Failed to import image: {}", e));
                 return;
             }
-        };
-        let src_path = match file.path() {
-            Some(p) => p,
-            None => {
-                tracing::warn!("imported file has no local path");
-                return;
-            }
-        };
-        if let Err(e) = import_image(&src_path, state.clone()) {
-            tracing::error!("failed to import template image: {:#}", e);
-            show_error(&parent_for_cb, &format!("Failed to import image: {}", e));
-            return;
-        }
-        refresh_list(
-            &list,
-            state.clone(),
-            &parent_for_ref,
-            open_editor.clone(),
-            close_manager.clone(),
-        );
-    });
+            refresh_list(
+                &list,
+                state.clone(),
+                &parent_for_ref,
+                open_editor.clone(),
+                close_manager.clone(),
+            );
+        },
+    );
 }
 
 fn import_image(src: &std::path::Path, state: SharedState) -> anyhow::Result<()> {
@@ -1041,8 +1102,8 @@ fn import_image(src: &std::path::Path, state: SharedState) -> anyhow::Result<()>
     std::fs::create_dir_all(&tdir)?;
     let toml_path = tdir.join(format!("{}.toml", id));
     let file = template_file_from_page_template(&template);
-    let toml_text = serialize_template_toml(&file)
-        .map_err(|e| anyhow::anyhow!("serialize template: {}", e))?;
+    let toml_text =
+        serialize_template_toml(&file).map_err(|e| anyhow::anyhow!("serialize template: {}", e))?;
     std::fs::write(&toml_path, toml_text)?;
 
     let s = state.borrow();
@@ -1058,4 +1119,3 @@ fn show_error(parent: &ApplicationWindow, message: &str) {
         .build();
     dialog.show(Some(parent));
 }
-

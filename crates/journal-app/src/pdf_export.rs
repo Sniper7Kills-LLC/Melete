@@ -17,12 +17,21 @@ const A4_H_PT: f64 = 841.89;
 pub fn export_page_to_pdf(state: &SharedState, path: &Path) -> anyhow::Result<()> {
     let (page_id, background, page_rect, backend) = {
         let s = state.borrow();
-        let page_id = s.current_page_id.ok_or_else(|| anyhow::anyhow!("no page selected"))?;
-        (page_id, s.background.clone(), s.page_rect, s.backend.clone())
+        let page_id = s
+            .current_page_id
+            .ok_or_else(|| anyhow::anyhow!("no page selected"))?;
+        (
+            page_id,
+            s.background.clone(),
+            s.page_rect,
+            s.backend.clone(),
+        )
     };
     let dark_mode = crate::is_dark_mode();
 
-    let strokes = backend.borrow_mut().list_strokes_for_page(page_id)
+    let strokes = backend
+        .borrow_mut()
+        .list_strokes_for_page(page_id)
         .map_err(|e| anyhow::anyhow!("failed to load strokes: {}", e))?;
 
     let path_str = path.to_string_lossy();
@@ -47,7 +56,15 @@ pub fn export_page_to_pdf(state: &SharedState, path: &Path) -> anyhow::Result<()
     let transform = ViewportTransform::new(viewport, A4_W_PT, A4_H_PT);
     let empty_selected = HashSet::new();
 
-    paint(&ctx, &transform, &background, page_rect, &strokes, &empty_selected, dark_mode);
+    paint(
+        &ctx,
+        &transform,
+        &background,
+        page_rect,
+        &strokes,
+        &empty_selected,
+        dark_mode,
+    );
 
     surface.finish();
     Ok(())
@@ -88,7 +105,8 @@ pub fn export_notebook_to_pdf(
         out: &mut Vec<journal_core::PageId>,
     ) -> anyhow::Result<()> {
         // Pages in this section, sorted by position.
-        let mut pages = backend.borrow_mut()
+        let mut pages = backend
+            .borrow_mut()
             .list_pages(section_id)
             .map_err(|e| anyhow::anyhow!("list_pages failed: {}", e))?;
         pages.sort_by_key(|p| p.position);
@@ -96,7 +114,8 @@ pub fn export_notebook_to_pdf(
             out.push(p.id);
         }
         // Child sections, sorted by position.
-        let mut children = backend.borrow_mut()
+        let mut children = backend
+            .borrow_mut()
             .list_child_sections(section_id)
             .map_err(|e| anyhow::anyhow!("list_child_sections failed: {}", e))?;
         children.sort_by_key(|s| s.position);
@@ -107,7 +126,8 @@ pub fn export_notebook_to_pdf(
     }
 
     // Walk root sections in position order.
-    let mut root_sections = backend.borrow_mut()
+    let mut root_sections = backend
+        .borrow_mut()
         .list_root_sections(notebook_id)
         .map_err(|e| anyhow::anyhow!("failed to list root sections: {}", e))?;
     root_sections.sort_by_key(|s| s.position);
@@ -123,26 +143,37 @@ pub fn export_notebook_to_pdf(
     let mut first_page = true;
     for page_id in ordered_page_ids {
         // Load the page to get its template_id and planner_address.
-        let page = backend.borrow_mut()
+        let page = backend
+            .borrow_mut()
             .get_page(page_id)
             .map_err(|e| anyhow::anyhow!("get_page failed: {}", e))?;
 
-        let strokes = backend.borrow_mut()
+        let strokes = backend
+            .borrow_mut()
             .list_strokes_for_page(page_id)
             .map_err(|e| anyhow::anyhow!("list_strokes failed: {}", e))?;
 
         // Resolve template → background + page_rect + widgets.
-        let template_opt = page.template_id.and_then(|tid| {
-            templates.borrow().get(tid).cloned()
-        });
+        let template_opt = page
+            .template_id
+            .and_then(|tid| templates.borrow().get(tid).cloned());
 
         let (background, page_rect, widgets) = if let Some(ref t) = template_opt {
             let bg = journal_templates::page_template_to_background_config(t);
-            let pr = Rect { x: 0.0, y: 0.0, width: t.size_mm.0, height: t.size_mm.1 };
+            let pr = Rect {
+                x: 0.0,
+                y: 0.0,
+                width: t.size_mm.0,
+                height: t.size_mm.1,
+            };
             let w = t.widgets.clone();
             (bg, pr, w)
         } else {
-            (crate::state::default_background(), crate::state::default_page_rect(), Vec::new())
+            (
+                crate::state::default_background(),
+                crate::state::default_page_rect(),
+                Vec::new(),
+            )
         };
 
         // Compute fit zoom with 5% margin.

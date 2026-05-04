@@ -69,11 +69,11 @@ pub fn build_toolbar(
         .margin_end(4)
         .build();
     for (tool, label) in [
-        (Tool::Pen,         "Pen"),
-        (Tool::Pencil,      "Pencil"),
+        (Tool::Pen, "Pen"),
+        (Tool::Pencil, "Pencil"),
         (Tool::Highlighter, "Highlighter"),
-        (Tool::Paintbrush,  "Paintbrush"),
-        (Tool::SprayCan,    "Spray can"),
+        (Tool::Paintbrush, "Paintbrush"),
+        (Tool::SprayCan, "Spray can"),
         (Tool::Calligraphy, "Calligraphy"),
     ] {
         let item = Button::builder()
@@ -381,7 +381,9 @@ pub fn build_toolbar(
                 Some(p) => p,
                 None => return,
             };
-            let Some(root) = handle_ref.root() else { return; };
+            let Some(root) = handle_ref.root() else {
+                return;
+            };
             let cur = handle_ref
                 .compute_point(&root, &GraphenePoint::new(cx as f32, cy as f32))
                 .unwrap_or_else(|| GraphenePoint::new(cx as f32, cy as f32));
@@ -390,8 +392,12 @@ pub fn build_toolbar(
 
             let mut new_x = (ox.get() as f64 + dx_root).round() as i32;
             let mut new_y = (oy.get() as f64 + dy_root).round() as i32;
-            if new_x < 0 { new_x = 0; }
-            if new_y < 0 { new_y = 0; }
+            if new_x < 0 {
+                new_x = 0;
+            }
+            if new_y < 0 {
+                new_y = 0;
+            }
 
             if let Some(parent) = bar_ref.parent() {
                 let pw = parent.width();
@@ -460,8 +466,7 @@ fn rebuild_brush_picker(
     let active_id = crate::tool_settings::tool_key(tool)
         .and_then(|k| state.borrow().tool_brushes.get(k).map(|b| b.id));
 
-    let mut entries: Vec<journal_core::Brush> =
-        crate::brush_library::built_ins();
+    let mut entries: Vec<journal_core::Brush> = crate::brush_library::built_ins();
     entries.extend(state.borrow().brush_library.clone());
 
     for brush in entries {
@@ -470,7 +475,11 @@ fn rebuild_brush_picker(
             .spacing(6)
             .build();
         let mark = gtk4::Label::builder()
-            .label(if Some(brush.id) == active_id { "●" } else { "  " })
+            .label(if Some(brush.id) == active_id {
+                "●"
+            } else {
+                "  "
+            })
             .width_chars(2)
             .build();
         let label = gtk4::Label::builder()
@@ -611,7 +620,10 @@ fn build_palette_popover(
     } else {
         format!("#{:02X}{:02X}{:02X}", r, g, b)
     };
-    let hex_lbl = Label::builder().label(&hex).halign(gtk4::Align::Start).build();
+    let hex_lbl = Label::builder()
+        .label(&hex)
+        .halign(gtk4::Align::Start)
+        .build();
     hex_lbl.add_css_class("kbd");
     body.append(&hex_lbl);
 
@@ -636,7 +648,7 @@ fn build_palette_popover(
             {
                 let mut s = state_c.borrow_mut();
                 let entry = s.tool_palettes.entry(key).or_default();
-                if !entry.iter().any(|c| *c == color) {
+                if !entry.contains(&color) {
                     entry.push(color);
                 }
             }
@@ -1078,10 +1090,8 @@ fn populate_slot_row(
             btn.add_controller(drag);
         }
         {
-            let drop = gtk4::DropTarget::new(
-                gtk4::glib::types::Type::STRING,
-                gtk4::gdk::DragAction::MOVE,
-            );
+            let drop =
+                gtk4::DropTarget::new(gtk4::glib::types::Type::STRING, gtk4::gdk::DragAction::MOVE);
             let rebuild_for_drop = rebuild.clone();
             let dst_idx = idx;
             let btn_css = btn.clone();

@@ -1,5 +1,7 @@
 //! Template definitions, built-ins, and on-disk registry (Phase 3).
 
+#![allow(clippy::too_many_arguments)]
+
 pub mod builtin;
 pub mod canvas_bridge;
 pub mod error;
@@ -77,13 +79,16 @@ mod tests {
     #[test]
     fn builtins_non_empty() {
         let r = TemplateRegistry::with_builtins();
-        assert!(r.len() > 0);
+        assert!(!r.is_empty());
         assert!(r.list().iter().any(|t| t.name == "Blank"));
     }
 
     #[test]
     fn widget_round_trip() {
-        use journal_core::{Color, PageTemplate, TemplateId, TemplateWidget, TilingMode, WidgetKind, WidgetRect, WidgetStyle};
+        use journal_core::{
+            Color, PageTemplate, TemplateId, TemplateWidget, TilingMode, WidgetKind, WidgetRect,
+            WidgetStyle,
+        };
         use uuid::Uuid;
         let t = PageTemplate {
             id: TemplateId(Uuid::new_v4()),
@@ -97,16 +102,36 @@ mod tests {
                 TemplateWidget {
                     id: Uuid::new_v4(),
                     kind: WidgetKind::GridRegion { spacing_mm: 5.0 },
-                    rect: WidgetRect { x: 10.0, y: 20.0, width: 100.0, height: 80.0 },
+                    rect: WidgetRect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: 100.0,
+                        height: 80.0,
+                    },
                     style: WidgetStyle::default(),
                 },
                 TemplateWidget {
                     id: Uuid::new_v4(),
                     kind: WidgetKind::CalendarMonth,
-                    rect: WidgetRect { x: 0.0, y: 0.0, width: 50.0, height: 50.0 },
+                    rect: WidgetRect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 50.0,
+                        height: 50.0,
+                    },
                     style: WidgetStyle {
-                        stroke_color: Color { r: 0, g: 0, b: 0, a: 255 },
-                        fill_color: Some(Color { r: 240, g: 240, b: 240, a: 255 }),
+                        stroke_color: Color {
+                            r: 0,
+                            g: 0,
+                            b: 0,
+                            a: 255,
+                        },
+                        fill_color: Some(Color {
+                            r: 240,
+                            g: 240,
+                            b: 240,
+                            a: 255,
+                        }),
                         stroke_width_mm: 0.2,
                     },
                 },
@@ -118,7 +143,9 @@ mod tests {
         let parsed = parse_template_toml(&toml).expect("parse");
         let back = template_file_to_page_template(parsed);
         assert_eq!(back.widgets.len(), 2);
-        assert!(matches!(&back.widgets[0].kind, WidgetKind::GridRegion { spacing_mm } if (*spacing_mm - 5.0).abs() < 1e-9));
+        assert!(
+            matches!(&back.widgets[0].kind, WidgetKind::GridRegion { spacing_mm } if (*spacing_mm - 5.0).abs() < 1e-9)
+        );
         assert!(matches!(&back.widgets[1].kind, WidgetKind::CalendarMonth));
     }
 
@@ -152,7 +179,9 @@ spacing = 5.0
         let f = parse_template_toml(src).expect("parse");
         let t = template_file_to_page_template(f);
         assert_eq!(t.name, "Dotted Grid");
-        assert!(matches!(t.background, BackgroundType::Dots { spacing } if (spacing - 5.0).abs() < 1e-9));
+        assert!(
+            matches!(t.background, BackgroundType::Dots { spacing } if (spacing - 5.0).abs() < 1e-9)
+        );
     }
 
     #[test]
@@ -272,7 +301,9 @@ type = "blank"
             id: TemplateId(Uuid::new_v4()),
             name: "Img".into(),
             description: String::new(),
-            background: BackgroundType::Image { path: "/tmp/x.png".into() },
+            background: BackgroundType::Image {
+                path: "/tmp/x.png".into(),
+            },
             size_mm: (200.0, 100.0),
             tiling: TilingMode::None,
             default_viewport: None,
@@ -297,7 +328,10 @@ type = "blank"
             id: TemplateId(Uuid::new_v4()),
             name: "P".into(),
             description: String::new(),
-            background: BackgroundType::Pdf { path: "/tmp/x.pdf".into(), page: 2 },
+            background: BackgroundType::Pdf {
+                path: "/tmp/x.pdf".into(),
+                page: 2,
+            },
             size_mm: (215.9, 279.4),
             tiling: TilingMode::None,
             default_viewport: None,
@@ -305,7 +339,11 @@ type = "blank"
             category: String::new(),
         };
         match page_template_to_background_config(&t) {
-            BackgroundConfig::Pdf { path, page, size_canvas } => {
+            BackgroundConfig::Pdf {
+                path,
+                page,
+                size_canvas,
+            } => {
                 assert_eq!(path.to_string_lossy(), "/tmp/x.pdf");
                 assert_eq!(page, 2);
                 assert_eq!(size_canvas, (215.9, 279.4));

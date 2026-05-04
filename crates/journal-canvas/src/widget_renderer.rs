@@ -25,7 +25,8 @@ pub struct WidgetRenderContext {
 }
 
 fn resolve_date(ctx: &WidgetRenderContext) -> chrono::NaiveDate {
-    ctx.date.unwrap_or_else(|| chrono::Local::now().date_naive())
+    ctx.date
+        .unwrap_or_else(|| chrono::Local::now().date_naive())
 }
 
 fn set_color(ctx: &cairo::Context, c: Color) {
@@ -68,7 +69,13 @@ pub fn draw_widgets(
     widgets: &[TemplateWidget],
     page_rect: Rect,
 ) {
-    draw_widgets_with_context(ctx, transform, widgets, page_rect, &WidgetRenderContext::default());
+    draw_widgets_with_context(
+        ctx,
+        transform,
+        widgets,
+        page_rect,
+        &WidgetRenderContext::default(),
+    );
 }
 
 /// Like [`draw_widgets`] but allows the caller to bind a date for
@@ -183,11 +190,17 @@ fn draw_widget(
             };
             draw_calendar_month(ctx, transform, r, style, date);
         }
-        WidgetKind::Timeline { start_hour, end_hour, slot_minutes } => {
+        WidgetKind::Timeline {
+            start_hour,
+            end_hour,
+            slot_minutes,
+        } => {
             let (s, e, m) = match override_ {
-                Some(WidgetOverride::Timeline { start_hour, end_hour, slot_minutes }) => {
-                    (*start_hour, *end_hour, *slot_minutes)
-                }
+                Some(WidgetOverride::Timeline {
+                    start_hour,
+                    end_hour,
+                    slot_minutes,
+                }) => (*start_hour, *end_hour, *slot_minutes),
                 _ => (*start_hour, *end_hour, *slot_minutes),
             };
             draw_timeline_stub(ctx, transform, r, style, s, e, m);
@@ -209,11 +222,15 @@ fn draw_widget(
             };
             draw_priority_list(ctx, transform, r, style, n);
         }
-        WidgetKind::DailyAppointments { start_hour, end_hour } => {
+        WidgetKind::DailyAppointments {
+            start_hour,
+            end_hour,
+        } => {
             let (s, e) = match override_ {
-                Some(WidgetOverride::DailyAppointments { start_hour, end_hour }) => {
-                    (*start_hour, *end_hour)
-                }
+                Some(WidgetOverride::DailyAppointments {
+                    start_hour,
+                    end_hour,
+                }) => (*start_hour, *end_hour),
                 _ => (*start_hour, *end_hour),
             };
             draw_daily_appointments(ctx, transform, r, style, s, e);
@@ -320,14 +337,13 @@ fn draw_calendar_month(
     use chrono::Datelike;
     let year = target_date.year();
     let month = target_date.month();
-    let first_of_month = chrono::NaiveDate::from_ymd_opt(year, month, 1)
-        .unwrap_or(target_date);
+    let first_of_month = chrono::NaiveDate::from_ymd_opt(year, month, 1).unwrap_or(target_date);
     let first_weekday = first_of_month.weekday().num_days_from_sunday() as usize; // 0=Sun
     let days_in_month = days_in_month(year, month);
 
     let cols = 7usize;
     let title_h = r.height * 0.10; // "September 2026" band
-    let dow_h = r.height * 0.06;   // S M T W T F S
+    let dow_h = r.height * 0.06; // S M T W T F S
     let body_h = r.height - title_h - dow_h;
     let rows = 6usize;
     let col_w = r.width / cols as f64;
@@ -433,16 +449,28 @@ fn days_in_month(year: i32, month: u32) -> u32 {
         chrono::NaiveDate::from_ymd_opt(year, month + 1, 1)
     };
     match next {
-        Some(d) => d.pred_opt().map(|p| chrono::Datelike::day(&p)).unwrap_or(28),
+        Some(d) => d
+            .pred_opt()
+            .map(|p| chrono::Datelike::day(&p))
+            .unwrap_or(28),
         None => 28,
     }
 }
 
 fn month_name(m: u32) -> &'static str {
     match m {
-        1 => "January", 2 => "February", 3 => "March", 4 => "April",
-        5 => "May", 6 => "June", 7 => "July", 8 => "August",
-        9 => "September", 10 => "October", 11 => "November", 12 => "December",
+        1 => "January",
+        2 => "February",
+        3 => "March",
+        4 => "April",
+        5 => "May",
+        6 => "June",
+        7 => "July",
+        8 => "August",
+        9 => "September",
+        10 => "October",
+        11 => "November",
+        12 => "December",
         _ => "",
     }
 }
@@ -462,7 +490,11 @@ fn draw_timeline_stub(
     ctx.set_line_width(lw);
 
     let total_hours = (end_hour as i32 - start_hour as i32).max(1) as f64;
-    let slots_per_hour = if slot_minutes == 0 { 1 } else { 60 / slot_minutes.max(1) };
+    let slots_per_hour = if slot_minutes == 0 {
+        1
+    } else {
+        60 / slot_minutes.max(1)
+    };
     let total_slots = (total_hours * slots_per_hour as f64) as usize;
     let slot_h = r.height / total_slots.max(1) as f64;
     let label_w = r.width * 0.15;

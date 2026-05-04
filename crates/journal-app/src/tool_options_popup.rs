@@ -18,13 +18,15 @@ use gtk4::{
     SpinButton, Stack, StackTransitionType, StringList, Window,
 };
 use journal_canvas::vello_renderer::{
-    ToolStyleParams, CalligraphyParams, CalligraphyShape, PaintbrushParams, PaintbrushShape, PenParams,
-    PenShape, PencilParams, PencilShape, SprayParams, SprayShape,
+    CalligraphyParams, CalligraphyShape, PaintbrushParams, PaintbrushShape, PenParams, PenShape,
+    PencilParams, PencilShape, SprayParams, SprayShape, ToolStyleParams,
 };
 use journal_core::{BlendMode, ToolStyle};
 
 use crate::state::{SharedState, Tool};
-use crate::tool_settings::{default_settings_for, settable_tools, tool_key, tool_label, ToolSettings};
+use crate::tool_settings::{
+    default_settings_for, settable_tools, tool_key, tool_label, ToolSettings,
+};
 
 const BLEND_MODES: &[(&str, BlendMode)] = &[
     ("Normal", BlendMode::Normal),
@@ -99,7 +101,10 @@ pub fn build_tool_options_panel(
     outer.append(&toggle_row);
     outer.append(&Separator::new(Orientation::Horizontal));
 
-    let scroll = ScrolledWindow::builder().hexpand(true).vexpand(true).build();
+    let scroll = ScrolledWindow::builder()
+        .hexpand(true)
+        .vexpand(true)
+        .build();
     let body = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(10)
@@ -301,10 +306,7 @@ impl ToolOptionsPanel {
 /// Back-compat shim — returns the floating window. Docking unavailable
 /// when called via this entry point.
 #[allow(dead_code)]
-pub fn build_tool_options_window(
-    parent: &gtk4::ApplicationWindow,
-    state: SharedState,
-) -> Window {
+pub fn build_tool_options_window(parent: &gtk4::ApplicationWindow, state: SharedState) -> Window {
     let dock_slot = GtkBox::builder().orientation(Orientation::Vertical).build();
     // Stub closure cell — back-compat callers don't have a Tool
     // Editor opener. The "Open in Tool Editor" button no-ops in
@@ -348,7 +350,7 @@ fn rebuild_for_tool(
     };
 
     let header = Label::builder()
-        .label(&format!("<b>{}</b>", tool_label(tool)))
+        .label(format!("<b>{}</b>", tool_label(tool)))
         .use_markup(true)
         .xalign(0.0)
         .build();
@@ -416,7 +418,10 @@ fn rebuild_for_tool(
         let scroll = scroll.clone();
         gtk4::glib::idle_add_local_once(move || {
             let adj = scroll.vadjustment();
-            let clamped = scroll_y.clamp(adj.lower(), (adj.upper() - adj.page_size()).max(adj.lower()));
+            let clamped = scroll_y.clamp(
+                adj.lower(),
+                (adj.upper() - adj.page_size()).max(adj.lower()),
+            );
             adj.set_value(clamped);
         });
     }
@@ -440,7 +445,14 @@ fn brush_style_stack_name(style: ToolStyle) -> &'static str {
 /// hidden) without the stale-widget/state desync that comes with
 /// permanently caching every spinner.
 fn populate_internals_stack(stack: &Stack, _state: &SharedState) {
-    for name in ["pen", "highlighter", "pencil", "paintbrush", "spray", "calligraphy"] {
+    for name in [
+        "pen",
+        "highlighter",
+        "pencil",
+        "paintbrush",
+        "spray",
+        "calligraphy",
+    ] {
         let page = GtkBox::builder()
             .orientation(Orientation::Vertical)
             .spacing(8)
@@ -471,7 +483,7 @@ fn repopulate_internals_page(stack: &Stack, state: &SharedState, style: ToolStyl
         ToolStyle::Calligraphy => "Calligraphy",
     };
     let header = Label::builder()
-        .label(&format!("<b>{} internals</b>", title))
+        .label(format!("<b>{} internals</b>", title))
         .use_markup(true)
         .xalign(0.0)
         .build();
@@ -531,10 +543,7 @@ fn add_brush_recipe_section(
             })
     };
 
-    let title = Label::builder()
-        .label("Brush recipe")
-        .xalign(0.0)
-        .build();
+    let title = Label::builder().label("Brush recipe").xalign(0.0).build();
     title.add_css_class("dim-label");
     body.append(&title);
 
@@ -543,7 +552,7 @@ fn add_brush_recipe_section(
         .map(|b| b.name.clone())
         .unwrap_or_else(|| "(none)".to_string());
     let name_lbl = Label::builder()
-        .label(&format!("<b>{}</b>", glib_escape(&name)))
+        .label(format!("<b>{}</b>", glib_escape(&name)))
         .use_markup(true)
         .xalign(0.0)
         .build();
@@ -575,10 +584,7 @@ fn add_brush_recipe_section(
             };
             let mark = if layer.enabled { "•" } else { "○" };
             let row = Label::builder()
-                .label(&format!(
-                    "{} L{} — {} · {} · {}",
-                    mark, i + 1, geo, w, tip
-                ))
+                .label(format!("{} L{} — {} · {} · {}", mark, i + 1, geo, w, tip))
                 .xalign(0.0)
                 .build();
             row.add_css_class("dim-label");
@@ -605,7 +611,9 @@ fn add_brush_recipe_section(
 /// user-controlled brush field, so escape `<>&` to avoid markup
 /// injection in the popup label.
 fn glib_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn add_preset_picker(body: &GtkBox, state: &SharedState, tool: Tool) {
@@ -615,7 +623,10 @@ fn add_preset_picker(body: &GtkBox, state: &SharedState, tool: Tool) {
         None => return,
     };
 
-    let row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .build();
     row.append(&Label::builder().label("Preset:").xalign(0.0).build());
 
     let presets: Vec<String> = state
@@ -630,10 +641,7 @@ fn add_preset_picker(body: &GtkBox, state: &SharedState, tool: Tool) {
         .get(&key)
         .cloned()
         .unwrap_or_else(|| "Default".into());
-    let active_idx = presets
-        .iter()
-        .position(|n| n == &active_name)
-        .unwrap_or(0) as u32;
+    let active_idx = presets.iter().position(|n| n == &active_name).unwrap_or(0) as u32;
 
     let names_strs: Vec<&str> = presets.iter().map(|s| s.as_str()).collect();
     let strs = StringList::new(&names_strs);
@@ -667,9 +675,7 @@ fn add_preset_picker(body: &GtkBox, state: &SharedState, tool: Tool) {
         let state = state.clone();
         let key = key.clone();
         save_as.connect_clicked(move |btn| {
-            let parent = btn
-                .root()
-                .and_then(|r| r.downcast::<gtk4::Window>().ok());
+            let parent = btn.root().and_then(|r| r.downcast::<gtk4::Window>().ok());
             let dialog = gtk4::Window::builder()
                 .modal(true)
                 .title("New preset")
@@ -689,7 +695,10 @@ fn add_preset_picker(body: &GtkBox, state: &SharedState, tool: Tool) {
             inner.append(&Label::builder().label("Name").xalign(0.0).build());
             let entry = Entry::builder().placeholder_text("e.g. Bold pen").build();
             inner.append(&entry);
-            let row2 = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
+            let row2 = GtkBox::builder()
+                .orientation(Orientation::Horizontal)
+                .spacing(6)
+                .build();
             let cancel = Button::with_label("Cancel");
             let ok = Button::with_label("Create");
             row2.append(&cancel);
@@ -715,12 +724,10 @@ fn add_preset_picker(body: &GtkBox, state: &SharedState, tool: Tool) {
                         .tool_settings
                         .get(&key)
                         .copied()
-                        .unwrap_or_else(|| {
-                            crate::tool_settings::default_settings_for(tool)
-                        });
+                        .unwrap_or_else(|| crate::tool_settings::default_settings_for(tool));
                     {
                         let mut s = state.borrow_mut();
-                        let entry_list = s.tool_presets.entry(key.clone()).or_insert_with(Vec::new);
+                        let entry_list = s.tool_presets.entry(key.clone()).or_default();
                         if entry_list.iter().any(|p| p.name == name) {
                             return; // duplicate name — silent ignore
                         }
@@ -755,10 +762,8 @@ fn add_preset_picker(body: &GtkBox, state: &SharedState, tool: Tool) {
                     .get(&key)
                     .and_then(|v| v.iter().find(|p| p.name == active).cloned())
                     .map(|p| p.settings)
-                    .unwrap_or_else(|| {
-                        crate::tool_settings::default_settings_for(tool)
-                    });
-                let entry_list = s.tool_presets.entry(key.clone()).or_insert_with(Vec::new);
+                    .unwrap_or_else(|| crate::tool_settings::default_settings_for(tool));
+                let entry_list = s.tool_presets.entry(key.clone()).or_default();
                 let mut candidate = format!("{active} copy");
                 let mut n = 2;
                 while entry_list.iter().any(|p| p.name == candidate) {
@@ -818,30 +823,60 @@ fn add_tool_settings_section(body: &GtkBox, state: &SharedState, tool: Tool) {
         .copied()
         .unwrap_or_else(|| default_settings_for(tool));
 
-    let grid = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
+    let grid = gtk4::Grid::builder()
+        .row_spacing(4)
+        .column_spacing(10)
+        .build();
 
-    grid.attach(&Label::builder().label("Default size (mm)").xalign(1.0).build(), 0, 0, 1, 1);
+    grid.attach(
+        &Label::builder()
+            .label("Default size (mm)")
+            .xalign(1.0)
+            .build(),
+        0,
+        0,
+        1,
+        1,
+    );
     let bw = SpinButton::with_range(0.1, 60.0, 0.5);
     bw.set_digits(1);
     bw.set_value(initial.default_base_width);
     bw.set_hexpand(true);
     grid.attach(&bw, 1, 0, 1, 1);
 
-    grid.attach(&Label::builder().label("Opacity ×").xalign(1.0).build(), 0, 1, 1, 1);
+    grid.attach(
+        &Label::builder().label("Opacity ×").xalign(1.0).build(),
+        0,
+        1,
+        1,
+        1,
+    );
     let op = SpinButton::with_range(0.0, 2.0, 0.05);
     op.set_digits(2);
     op.set_value(initial.opacity_mult as f64);
     op.set_hexpand(true);
     grid.attach(&op, 1, 1, 1, 1);
 
-    grid.attach(&Label::builder().label("Width ×").xalign(1.0).build(), 0, 2, 1, 1);
+    grid.attach(
+        &Label::builder().label("Width ×").xalign(1.0).build(),
+        0,
+        2,
+        1,
+        1,
+    );
     let w = SpinButton::with_range(0.05, 12.0, 0.1);
     w.set_digits(2);
     w.set_value(initial.width_mult);
     w.set_hexpand(true);
     grid.attach(&w, 1, 2, 1, 1);
 
-    grid.attach(&Label::builder().label("Blend").xalign(1.0).build(), 0, 3, 1, 1);
+    grid.attach(
+        &Label::builder().label("Blend").xalign(1.0).build(),
+        0,
+        3,
+        1,
+        1,
+    );
     let blend_strs = StringList::new(&BLEND_MODES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
     let blend_dd = DropDown::builder().model(&blend_strs).hexpand(true).build();
     blend_dd.set_selected(blend_index(initial.blend_mode));
@@ -963,7 +998,8 @@ fn add_palette_section(body: &GtkBox, state: &SharedState, tool: Tool) {
             .cloned()
             .unwrap_or_default();
         for (idx, color_rgba) in palette.iter().enumerate() {
-            let swatch = build_swatch_button(*color_rgba, state.clone(), key.to_string(), idx, tool);
+            let swatch =
+                build_swatch_button(*color_rgba, state.clone(), key.to_string(), idx, tool);
             row.append(&swatch);
         }
     }
@@ -971,7 +1007,10 @@ fn add_palette_section(body: &GtkBox, state: &SharedState, tool: Tool) {
     render_swatches(&row, state, &key, tool);
     body.append(&row);
 
-    let add_row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(6).build();
+    let add_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .build();
     let dialog = ColorDialog::builder().with_alpha(false).build();
     let picker = ColorDialogButton::builder().dialog(&dialog).build();
     add_row.append(&picker);
@@ -996,7 +1035,7 @@ fn add_palette_section(body: &GtkBox, state: &SharedState, tool: Tool) {
                 .borrow_mut()
                 .tool_palettes
                 .entry(key.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(bytes);
             crate::state::persist_tool_state(&state);
             render_swatches(&row, &state, &key, tool);
@@ -1109,7 +1148,10 @@ fn pen_shape_idx(s: PenShape) -> u32 {
 
 fn append_pen_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.pen;
-    let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
+    let g = gtk4::Grid::builder()
+        .row_spacing(4)
+        .column_spacing(10)
+        .build();
     g.attach(&row("Tip shape"), 0, 0, 1, 1);
     let shape_strs = StringList::new(&PEN_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
     let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
@@ -1183,7 +1225,10 @@ fn pencil_shape_idx(s: PencilShape) -> u32 {
 
 fn append_pencil_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.pencil;
-    let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
+    let g = gtk4::Grid::builder()
+        .row_spacing(4)
+        .column_spacing(10)
+        .build();
     g.attach(&row("Tip shape"), 0, 0, 1, 1);
     let shape_strs = StringList::new(&PENCIL_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
     let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
@@ -1273,15 +1318,25 @@ const PAINTBRUSH_SHAPES: &[(&str, PaintbrushShape)] = &[
     ("Fan", PaintbrushShape::Fan),
 ];
 fn paintbrush_shape_idx(s: PaintbrushShape) -> u32 {
-    PAINTBRUSH_SHAPES.iter().position(|(_, v)| *v == s).unwrap_or(0) as u32
+    PAINTBRUSH_SHAPES
+        .iter()
+        .position(|(_, v)| *v == s)
+        .unwrap_or(0) as u32
 }
 
 fn append_paintbrush_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.paintbrush;
-    let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
+    let g = gtk4::Grid::builder()
+        .row_spacing(4)
+        .column_spacing(10)
+        .build();
     g.attach(&row("Bristle shape"), 0, 0, 1, 1);
-    let shape_strs =
-        StringList::new(&PAINTBRUSH_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
+    let shape_strs = StringList::new(
+        &PAINTBRUSH_SHAPES
+            .iter()
+            .map(|(s, _)| *s)
+            .collect::<Vec<_>>(),
+    );
     let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
     shape_dd.set_selected(paintbrush_shape_idx(p.shape));
     g.attach(&shape_dd, 1, 0, 1, 1);
@@ -1388,7 +1443,10 @@ fn spray_shape_idx(s: SprayShape) -> u32 {
 
 fn append_spray_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.spray;
-    let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
+    let g = gtk4::Grid::builder()
+        .row_spacing(4)
+        .column_spacing(10)
+        .build();
     g.attach(&row("Spray shape"), 0, 0, 1, 1);
     let shape_strs = StringList::new(&SPRAY_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
     let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
@@ -1410,8 +1468,13 @@ fn append_spray_internals(body: &GtkBox, state: &SharedState) {
 
     let reset = Button::with_label("Reset Spray internals");
     {
-        let (shape_dd, dpp, drf, mdr, cone) =
-            (shape_dd.clone(), dpp.clone(), drf.clone(), mdr.clone(), cone.clone());
+        let (shape_dd, dpp, drf, mdr, cone) = (
+            shape_dd.clone(),
+            dpp.clone(),
+            drf.clone(),
+            mdr.clone(),
+            cone.clone(),
+        );
         reset.connect_clicked(move |_| {
             let d = SprayParams::default();
             shape_dd.set_selected(spray_shape_idx(d.shape));
@@ -1425,8 +1488,13 @@ fn append_spray_internals(body: &GtkBox, state: &SharedState) {
 
     let apply = {
         let state = state.clone();
-        let (shape_dd, dpp, drf, mdr, cone) =
-            (shape_dd.clone(), dpp.clone(), drf.clone(), mdr.clone(), cone.clone());
+        let (shape_dd, dpp, drf, mdr, cone) = (
+            shape_dd.clone(),
+            dpp.clone(),
+            drf.clone(),
+            mdr.clone(),
+            cone.clone(),
+        );
         move || {
             state.borrow_mut().brush_params.spray = SprayParams {
                 shape: SPRAY_SHAPES[shape_dd.selected() as usize].1,
@@ -1454,15 +1522,25 @@ const CALLIGRAPHY_SHAPES: &[(&str, CalligraphyShape)] = &[
     ("Brush nib (pressure)", CalligraphyShape::BrushNib),
 ];
 fn calligraphy_shape_idx(s: CalligraphyShape) -> u32 {
-    CALLIGRAPHY_SHAPES.iter().position(|(_, v)| *v == s).unwrap_or(0) as u32
+    CALLIGRAPHY_SHAPES
+        .iter()
+        .position(|(_, v)| *v == s)
+        .unwrap_or(0) as u32
 }
 
 fn append_calligraphy_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.calligraphy;
-    let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
+    let g = gtk4::Grid::builder()
+        .row_spacing(4)
+        .column_spacing(10)
+        .build();
     g.attach(&row("Nib shape"), 0, 0, 1, 1);
-    let shape_strs =
-        StringList::new(&CALLIGRAPHY_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
+    let shape_strs = StringList::new(
+        &CALLIGRAPHY_SHAPES
+            .iter()
+            .map(|(s, _)| *s)
+            .collect::<Vec<_>>(),
+    );
     let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
     shape_dd.set_selected(calligraphy_shape_idx(p.shape));
     g.attach(&shape_dd, 1, 0, 1, 1);
@@ -1482,8 +1560,13 @@ fn append_calligraphy_internals(body: &GtkBox, state: &SharedState) {
 
     let reset = Button::with_label("Reset Calligraphy internals");
     {
-        let (shape_dd, nib, mr, rs, smooth) =
-            (shape_dd.clone(), nib.clone(), mr.clone(), rs.clone(), smooth.clone());
+        let (shape_dd, nib, mr, rs, smooth) = (
+            shape_dd.clone(),
+            nib.clone(),
+            mr.clone(),
+            rs.clone(),
+            smooth.clone(),
+        );
         reset.connect_clicked(move |_| {
             let d = CalligraphyParams::default();
             shape_dd.set_selected(calligraphy_shape_idx(d.shape));
@@ -1497,8 +1580,13 @@ fn append_calligraphy_internals(body: &GtkBox, state: &SharedState) {
 
     let apply = {
         let state = state.clone();
-        let (shape_dd, nib, mr, rs, smooth) =
-            (shape_dd.clone(), nib.clone(), mr.clone(), rs.clone(), smooth.clone());
+        let (shape_dd, nib, mr, rs, smooth) = (
+            shape_dd.clone(),
+            nib.clone(),
+            mr.clone(),
+            rs.clone(),
+            smooth.clone(),
+        );
         move || {
             state.borrow_mut().brush_params.calligraphy = CalligraphyParams {
                 shape: CALLIGRAPHY_SHAPES[shape_dd.selected() as usize].1,

@@ -172,14 +172,15 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     stack.add_named(&home_container, Some(HOME_NAME));
     stack.add_named(&notebook_container, Some(NOTEBOOK_NAME));
     stack.add_named(&template_editor_container, Some(TEMPLATE_EDITOR_NAME));
-    stack.add_named(&notebook_template_editor_container, Some(NOTEBOOK_TEMPLATE_EDITOR_NAME));
+    stack.add_named(
+        &notebook_template_editor_container,
+        Some(NOTEBOOK_TEMPLATE_EDITOR_NAME),
+    );
     stack.add_named(&tool_editor_container, Some(TOOL_EDITOR_NAME));
 
     parent.set_titlebar(Some(&header));
 
-    let root = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .build();
+    let root = GtkBox::builder().orientation(Orientation::Vertical).build();
     root.append(&stack);
 
     let win = Rc::new(RefCell::new(AppWindow {
@@ -406,12 +407,11 @@ fn build_menu_button(
 
     popover.set_child(Some(&vbox));
 
-    let menu_btn = MenuButton::builder()
+    MenuButton::builder()
         .icon_name("open-menu-symbolic")
         .popover(&popover)
         .tooltip_text("Menu")
-        .build();
-    menu_btn
+        .build()
 }
 
 fn do_pdf_export(parent: &ApplicationWindow, state: SharedState) {
@@ -567,16 +567,16 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
         let _ = planner_nav::goto_date(&state, &canvas, notebook_id, template, today);
     }
 
-    let view = notebook_view::build_notebook_view(
-        &parent,
-        state.clone(),
-        notebook_id,
-        canvas,
-        overlay,
-    );
+    let view =
+        notebook_view::build_notebook_view(&parent, state.clone(), notebook_id, canvas, overlay);
     container.append(&view.root);
 
-    let title = match state.borrow().backend.borrow_mut().get_notebook(notebook_id) {
+    let title = match state
+        .borrow()
+        .backend
+        .borrow_mut()
+        .get_notebook(notebook_id)
+    {
         Ok(nb) => nb.name,
         Err(_) => "Notebook".to_string(),
     };
@@ -645,12 +645,7 @@ pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
         }
     });
 
-    let view = crate::template_creator::build_editor_view(
-        &parent,
-        state,
-        edit,
-        on_done.clone(),
-    );
+    let view = crate::template_creator::build_editor_view(&parent, state, edit, on_done.clone());
     container.append(&view);
 
     let w = win.borrow();
@@ -740,7 +735,8 @@ pub fn show_notebook_template_editor(win: &SharedWindow, edit: Option<NotebookTe
     w.back_btn.set_visible(false);
     w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
-    w.stack.set_visible_child_name(NOTEBOOK_TEMPLATE_EDITOR_NAME);
+    w.stack
+        .set_visible_child_name(NOTEBOOK_TEMPLATE_EDITOR_NAME);
 }
 
 /// Compute the zoom value at which the page would exactly fit the viewport
@@ -885,32 +881,32 @@ fn background_is_grid(bg: &journal_canvas::BackgroundConfig) -> bool {
 
 fn build_cheatsheet_button() -> MenuButton {
     let popover = Popover::new();
-    let grid = Grid::builder()
-        .row_spacing(2)
-        .column_spacing(12)
-        .build();
+    let grid = Grid::builder().row_spacing(2).column_spacing(12).build();
     grid.add_css_class("cheatsheet-grid");
 
-    let title = Label::builder().label("Keyboard shortcuts").halign(Align::Start).build();
+    let title = Label::builder()
+        .label("Keyboard shortcuts")
+        .halign(Align::Start)
+        .build();
     title.add_css_class("title-4");
     grid.attach(&title, 0, 0, 2, 1);
 
     let entries: &[(&str, &str)] = &[
-        ("B",            "Pen"),
-        ("H",            "Highlighter"),
-        ("E",            "Eraser (cycle)"),
-        ("V",            "Selection"),
-        ("Ctrl+Z",       "Undo"),
+        ("B", "Pen"),
+        ("H", "Highlighter"),
+        ("E", "Eraser (cycle)"),
+        ("V", "Selection"),
+        ("Ctrl+Z", "Undo"),
         ("Ctrl+Shift+Z", "Redo"),
-        ("Ctrl+C",       "Copy selection"),
-        ("Ctrl+V",       "Paste"),
-        ("Ctrl+0",       "Fit page"),
-        ("Ctrl++",       "Zoom in"),
-        ("Ctrl+-",       "Zoom out"),
-        ("Ctrl+S",       "Save (template editor)"),
-        ("Esc",          "Clear selection"),
-        ("Delete",       "Delete selection"),
-        ("F11",          "Fullscreen"),
+        ("Ctrl+C", "Copy selection"),
+        ("Ctrl+V", "Paste"),
+        ("Ctrl+0", "Fit page"),
+        ("Ctrl++", "Zoom in"),
+        ("Ctrl+-", "Zoom out"),
+        ("Ctrl+S", "Save (template editor)"),
+        ("Esc", "Clear selection"),
+        ("Delete", "Delete selection"),
+        ("F11", "Fullscreen"),
     ];
     for (i, (key, action)) in entries.iter().enumerate() {
         let row = (i + 1) as i32;

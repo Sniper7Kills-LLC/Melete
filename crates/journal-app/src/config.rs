@@ -11,19 +11,31 @@ pub struct PenPreset {
 
 fn default_pen_presets() -> Vec<PenPreset> {
     vec![
-        PenPreset { name: "Black fine".into(), color_rgba: [20, 20, 20, 255], width_mm: 1.5 },
-        PenPreset { name: "Blue".into(),       color_rgba: [30, 90, 200, 255], width_mm: 2.0 },
-        PenPreset { name: "Red".into(),        color_rgba: [200, 50, 50, 255], width_mm: 2.0 },
-        PenPreset { name: "Marker".into(),     color_rgba: [20, 20, 20, 255], width_mm: 4.0 },
+        PenPreset {
+            name: "Black fine".into(),
+            color_rgba: [20, 20, 20, 255],
+            width_mm: 1.5,
+        },
+        PenPreset {
+            name: "Blue".into(),
+            color_rgba: [30, 90, 200, 255],
+            width_mm: 2.0,
+        },
+        PenPreset {
+            name: "Red".into(),
+            color_rgba: [200, 50, 50, 255],
+            width_mm: 2.0,
+        },
+        PenPreset {
+            name: "Marker".into(),
+            color_rgba: [20, 20, 20, 255],
+            width_mm: 4.0,
+        },
     ]
 }
 
 fn default_color_slots() -> Vec<[u8; 4]> {
-    vec![
-        [20, 20, 20, 255],
-        [200, 50, 50, 255],
-        [30, 90, 200, 255],
-    ]
+    vec![[20, 20, 20, 255], [200, 50, 50, 255], [30, 90, 200, 255]]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,8 +208,12 @@ fn config_path() -> Option<PathBuf> {
 }
 
 pub fn load() -> AppConfig {
-    let Some(p) = config_path() else { return AppConfig::default(); };
-    let Ok(text) = std::fs::read_to_string(&p) else { return AppConfig::default(); };
+    let Some(p) = config_path() else {
+        return AppConfig::default();
+    };
+    let Ok(text) = std::fs::read_to_string(&p) else {
+        return AppConfig::default();
+    };
     match toml::from_str(&text) {
         Ok(cfg) => cfg,
         Err(e) => {
@@ -209,7 +225,10 @@ pub fn load() -> AppConfig {
 
 pub fn save(cfg: &AppConfig) -> std::io::Result<()> {
     let Some(p) = config_path() else {
-        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, "config dir"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "config dir",
+        ));
     };
     if let Some(parent) = p.parent() {
         std::fs::create_dir_all(parent)?;

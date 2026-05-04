@@ -12,7 +12,12 @@ use crate::builtin::US_LETTER;
 pub const BUILTIN_COLLEGE_RULED_ID: Uuid = uuid!("00000000-0000-0000-0000-00000000000c");
 
 pub fn builtin_college_ruled() -> PageTemplate {
-    let red = Color { r: 200, g: 60, b: 70, a: 230 };
+    let red = Color {
+        r: 200,
+        g: 60,
+        b: 70,
+        a: 230,
+    };
     let red_style = WidgetStyle {
         stroke_color: red,
         fill_color: None,
@@ -47,7 +52,8 @@ pub fn builtin_college_ruled() -> PageTemplate {
     PageTemplate {
         id: TemplateId(BUILTIN_COLLEGE_RULED_ID),
         name: "College Ruled Paper".into(),
-        description: "College-ruled notebook paper (7.1mm lines) with red margin and header strip.".into(),
+        description: "College-ruled notebook paper (7.1mm lines) with red margin and header strip."
+            .into(),
         background: BackgroundType::Lines { spacing: 7.1 },
         size_mm: US_LETTER,
         tiling: TilingMode::None,

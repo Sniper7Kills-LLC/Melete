@@ -40,7 +40,12 @@ pub fn builtin_monthly_goals() -> PageTemplate {
     let calendar = TemplateWidget {
         id: Uuid::parse_str("a0000009-0002-0000-0000-000000000000").unwrap(),
         kind: WidgetKind::CalendarMonth,
-        rect: WidgetRect { x: margin, y: body_top, width: half_w, height: upper_h },
+        rect: WidgetRect {
+            x: margin,
+            y: body_top,
+            width: half_w,
+            height: upper_h,
+        },
         style: WidgetStyle::default(),
     };
 

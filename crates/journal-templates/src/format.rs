@@ -95,8 +95,12 @@ impl From<&BackgroundType> for BackgroundFile {
             BackgroundType::Dots { spacing } => BackgroundFile::Dots { spacing: *spacing },
             BackgroundType::Lines { spacing } => BackgroundFile::Lines { spacing: *spacing },
             BackgroundType::Grid { spacing } => BackgroundFile::Grid { spacing: *spacing },
-            BackgroundType::Isometric { spacing } => BackgroundFile::Isometric { spacing: *spacing },
-            BackgroundType::Hexagonal { spacing } => BackgroundFile::Hexagonal { spacing: *spacing },
+            BackgroundType::Isometric { spacing } => {
+                BackgroundFile::Isometric { spacing: *spacing }
+            }
+            BackgroundType::Hexagonal { spacing } => {
+                BackgroundFile::Hexagonal { spacing: *spacing }
+            }
             BackgroundType::Image { path } => BackgroundFile::Image { path: path.clone() },
             BackgroundType::Pdf { path, page } => BackgroundFile::Pdf {
                 path: path.clone(),

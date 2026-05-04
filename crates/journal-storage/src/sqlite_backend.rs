@@ -20,13 +20,16 @@ pub struct SqliteBackend {
 
 impl SqliteBackend {
     pub fn open(path: &Path) -> Result<Self> {
-        Ok(Self { db: Db::open(path)? })
+        Ok(Self {
+            db: Db::open(path)?,
+        })
     }
 
     pub fn open_in_memory() -> Result<Self> {
-        Ok(Self { db: Db::open_in_memory()? })
+        Ok(Self {
+            db: Db::open_in_memory()?,
+        })
     }
-
 }
 
 impl NotebookStore for SqliteBackend {

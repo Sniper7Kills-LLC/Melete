@@ -153,10 +153,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         // Nullable: legacy strokes have NULL and fall back to the
         // brush-style + ToolStyleParams legacy adapter at render time.
         if !column_exists(conn, "strokes", "brush_recipe_json")? {
-            conn.execute(
-                "ALTER TABLE strokes ADD COLUMN brush_recipe_json TEXT",
-                [],
-            )?;
+            conn.execute("ALTER TABLE strokes ADD COLUMN brush_recipe_json TEXT", [])?;
         }
         conn.pragma_update(None, "user_version", 6)?;
     }

@@ -26,25 +26,45 @@ pub fn builtin_cornell_notes() -> PageTemplate {
             text: "Topic ____________   Date ____________".into(),
             font_size_mm: 4.0,
         },
-        rect: WidgetRect { x: 6.0, y: 4.0, width: page_w - 12.0, height: header_h - 4.0 },
+        rect: WidgetRect {
+            x: 6.0,
+            y: 4.0,
+            width: page_w - 12.0,
+            height: header_h - 4.0,
+        },
         style: WidgetStyle::default(),
     };
     let header_divider = TemplateWidget {
         id: uuid!("a000000d-0002-0000-0000-000000000000"),
         kind: WidgetKind::Line { thickness_mm: 0.4 },
-        rect: WidgetRect { x: 0.0, y: header_h, width: page_w, height: 0.0 },
+        rect: WidgetRect {
+            x: 0.0,
+            y: header_h,
+            width: page_w,
+            height: 0.0,
+        },
         style: WidgetStyle::default(),
     };
     let cue_divider = TemplateWidget {
         id: uuid!("a000000d-0003-0000-0000-000000000000"),
         kind: WidgetKind::Line { thickness_mm: 0.4 },
-        rect: WidgetRect { x: cue_w, y: body_top, width: 0.0, height: body_h },
+        rect: WidgetRect {
+            x: cue_w,
+            y: body_top,
+            width: 0.0,
+            height: body_h,
+        },
         style: WidgetStyle::default(),
     };
     let summary_divider = TemplateWidget {
         id: uuid!("a000000d-0004-0000-0000-000000000000"),
         kind: WidgetKind::Line { thickness_mm: 0.4 },
-        rect: WidgetRect { x: 0.0, y: body_top + body_h, width: page_w, height: 0.0 },
+        rect: WidgetRect {
+            x: 0.0,
+            y: body_top + body_h,
+            width: page_w,
+            height: 0.0,
+        },
         style: WidgetStyle::default(),
     };
     let cue_label = TemplateWidget {
@@ -53,7 +73,12 @@ pub fn builtin_cornell_notes() -> PageTemplate {
             text: "Cues / Questions".into(),
             font_size_mm: 3.5,
         },
-        rect: WidgetRect { x: 4.0, y: body_top + 3.0, width: cue_w - 8.0, height: 5.0 },
+        rect: WidgetRect {
+            x: 4.0,
+            y: body_top + 3.0,
+            width: cue_w - 8.0,
+            height: 5.0,
+        },
         style: WidgetStyle::default(),
     };
     let notes_label = TemplateWidget {
@@ -62,7 +87,12 @@ pub fn builtin_cornell_notes() -> PageTemplate {
             text: "Notes".into(),
             font_size_mm: 3.5,
         },
-        rect: WidgetRect { x: cue_w + 4.0, y: body_top + 3.0, width: 30.0, height: 5.0 },
+        rect: WidgetRect {
+            x: cue_w + 4.0,
+            y: body_top + 3.0,
+            width: 30.0,
+            height: 5.0,
+        },
         style: WidgetStyle::default(),
     };
     let notes_lines = TemplateWidget {
@@ -82,7 +112,12 @@ pub fn builtin_cornell_notes() -> PageTemplate {
             text: "Summary".into(),
             font_size_mm: 3.8,
         },
-        rect: WidgetRect { x: 4.0, y: body_top + body_h + 3.0, width: 30.0, height: 5.0 },
+        rect: WidgetRect {
+            x: 4.0,
+            y: body_top + body_h + 3.0,
+            width: 30.0,
+            height: 5.0,
+        },
         style: WidgetStyle::default(),
     };
     let summary_lines = TemplateWidget {

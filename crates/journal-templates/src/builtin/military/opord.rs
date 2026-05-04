@@ -48,7 +48,13 @@ pub fn builtin_military_opord() -> PageTemplate {
     let mut y = body_top;
     for (i, (label, frac)) in blocks.iter().enumerate() {
         let h = body_h * frac;
-        widgets.push(rect(mw(t, (10 + i) as u16), margin, y, page_w - margin * 2.0, h));
+        widgets.push(rect(
+            mw(t, (10 + i) as u16),
+            margin,
+            y,
+            page_w - margin * 2.0,
+            h,
+        ));
         widgets.push(text(
             mw(t, (20 + i) as u16),
             margin + 1.5,

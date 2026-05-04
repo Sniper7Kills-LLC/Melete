@@ -86,8 +86,14 @@ fn mini_page_preview(t: &PageTemplate) -> Frame {
         let bg = journal_templates::page_template_to_background_config(&template);
         let empty: StdHashSet<Uuid> = StdHashSet::new();
         paint_with_widgets(
-            ctx, &transform, &bg, page_rect,
-            &template.widgets, &[], &empty, false,
+            ctx,
+            &transform,
+            &bg,
+            page_rect,
+            &template.widgets,
+            &[],
+            &empty,
+            false,
         );
     });
     let frame = Frame::builder().build();
@@ -158,10 +164,7 @@ fn append_section_label(strip: &GtkBox, title: &str, mult: &str) {
 /// page name). Section labels (Year ×1 / Quarter ×4 / …) sit inline-
 /// left of their chips. Wrapped in a horizontal-only ScrolledWindow so
 /// long lists scroll sideways without growing the editor vertically.
-fn refresh_layout_preview(
-    es: &Rc<RefCell<EditorState>>,
-    page_templates: &Rc<Vec<PageTemplate>>,
-) {
+fn refresh_layout_preview(es: &Rc<RefCell<EditorState>>, page_templates: &Rc<Vec<PageTemplate>>) {
     LAYOUT_PREVIEW.with(|cell| {
         let body_opt = cell.borrow().clone();
         let Some(body) = body_opt else { return };
@@ -178,7 +181,11 @@ fn refresh_layout_preview(
             + s.template.before_quarter.len()
             + s.template.before_month.len()
             + s.template.before_week.len()
-            + s.template.daily_slots.iter().map(|d| d.templates.len()).sum::<usize>();
+            + s.template
+                .daily_slots
+                .iter()
+                .map(|d| d.templates.len())
+                .sum::<usize>();
         let daily_slot_count = s.template.daily_slots.len();
         let grouping = match s.template.grouping {
             PlannerGrouping::Week => "Week",
@@ -354,7 +361,8 @@ fn install_flat_chip_reorder_drop(
         if let Some(rest) = s.strip_prefix("slot-chip:") {
             if let Some((src_kind, src_idx)) = parse_flat_chip_key(rest) {
                 if src_kind == slot {
-                    es2.borrow_mut().move_within_flat_slot(slot, src_idx, target_idx);
+                    es2.borrow_mut()
+                        .move_within_flat_slot(slot, src_idx, target_idx);
                     rebuild_flat_slot_flow(&flow2, slot, &es2, &pts2, &opts2);
                     return true;
                 }
@@ -398,7 +406,8 @@ fn install_daily_chip_reorder_drop(
         if let Some(rest) = s.strip_prefix("slot-chip:") {
             if let Some((src_slot, src_idx)) = parse_daily_chip_key(rest) {
                 if src_slot == slot_idx {
-                    es2.borrow_mut().move_within_daily_slot(slot_idx, src_idx, target_idx);
+                    es2.borrow_mut()
+                        .move_within_daily_slot(slot_idx, src_idx, target_idx);
                     rebuild_daily_slot_flow(&flow2, slot_idx, &es2, &pts2, &opts2);
                     return true;
                 }
@@ -441,7 +450,11 @@ fn remap_index_after_move(n: usize, src: usize, dst: usize) -> usize {
     // After remove: indices > src shift down by 1.
     let after_remove = if n > src { n - 1 } else { n };
     // After insert at dst: indices >= dst shift up by 1.
-    if after_remove >= dst { after_remove + 1 } else { after_remove }
+    if after_remove >= dst {
+        after_remove + 1
+    } else {
+        after_remove
+    }
 }
 
 // ─── EditorState ─────────────────────────────────────────────────────────────
@@ -455,16 +468,15 @@ struct EditorState {
 
 impl EditorState {
     fn new(template: NotebookTemplate) -> Self {
-        Self { template, selected_key: None }
+        Self {
+            template,
+            selected_key: None,
+        }
     }
 
     /// Remove a template from a flat slot Vec and renumber `entry_options` keys
     /// so they stay aligned with the new Vec indices.
-    fn remove_from_flat_slot(
-        &mut self,
-        slot: FlatSlot,
-        idx: usize,
-    ) {
+    fn remove_from_flat_slot(&mut self, slot: FlatSlot, idx: usize) {
         let vec = self.flat_slot_mut(slot);
         if idx < vec.len() {
             vec.remove(idx);
@@ -542,7 +554,11 @@ impl EditorState {
         }
         let item = vec.remove(src_idx);
         // After remove, target shifts left if dst > src.
-        let dst_adj = if dst_idx > src_idx { dst_idx - 1 } else { dst_idx };
+        let dst_adj = if dst_idx > src_idx {
+            dst_idx - 1
+        } else {
+            dst_idx
+        };
         let dst_clamped = dst_adj.min(vec.len());
         vec.insert(dst_clamped, item);
 
@@ -565,12 +581,18 @@ impl EditorState {
 
     /// Move a template within a daily slot from `src_idx` to `dst_idx`.
     fn move_within_daily_slot(&mut self, slot_idx: usize, src_idx: usize, dst_idx: usize) {
-        let Some(ds) = self.template.daily_slots.get_mut(slot_idx) else { return };
+        let Some(ds) = self.template.daily_slots.get_mut(slot_idx) else {
+            return;
+        };
         if src_idx >= ds.templates.len() {
             return;
         }
         let item = ds.templates.remove(src_idx);
-        let dst_adj = if dst_idx > src_idx { dst_idx - 1 } else { dst_idx };
+        let dst_adj = if dst_idx > src_idx {
+            dst_idx - 1
+        } else {
+            dst_idx
+        };
         let dst_clamped = dst_adj.min(ds.templates.len());
         ds.templates.insert(dst_clamped, item);
 
@@ -603,14 +625,12 @@ impl EditorState {
                 let parts: Vec<&str> = rest.splitn(2, ':').collect();
                 if parts.len() == 2 {
                     if let (Ok(s), Ok(n)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
-                        if s != slot_idx {
-                            new_map.insert(k, v);
-                        } else if n < removed_tmpl {
+                        if s != slot_idx || n < removed_tmpl {
                             new_map.insert(k, v);
                         } else if n > removed_tmpl {
                             new_map.insert(key_daily(s, n - 1), v);
                         }
-                        // n == removed_tmpl: drop it
+                        // s == slot_idx && n == removed_tmpl: drop it
                         continue;
                     }
                 }
@@ -675,7 +695,7 @@ pub fn build_editor_view(
         let s = state.borrow();
         let reg = s.templates.borrow();
         let mut v: Vec<PageTemplate> = reg.list().iter().map(|t| (*t).clone()).collect();
-        v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        v.sort_by_key(|a| a.name.to_lowercase());
         v
     };
 
@@ -812,14 +832,11 @@ pub fn build_editor_view(
             state.borrow().notebook_templates.borrow_mut().insert(t);
             indicator.set_label("Saved \u{2713}");
             let on_done = on_done.clone();
-            gtk4::glib::timeout_add_local_once(
-                std::time::Duration::from_millis(450),
-                move || {
-                    LAYOUT_PREVIEW.with(|cell| *cell.borrow_mut() = None);
-                    CHIP_OPENER.with(|cell| *cell.borrow_mut() = None);
-                    (on_done)();
-                },
-            );
+            gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(450), move || {
+                LAYOUT_PREVIEW.with(|cell| *cell.borrow_mut() = None);
+                CHIP_OPENER.with(|cell| *cell.borrow_mut() = None);
+                (on_done)();
+            });
         });
     }
 
@@ -828,10 +845,7 @@ pub fn build_editor_view(
 
 // ─── Meta row ────────────────────────────────────────────────────────────────
 
-fn build_meta_row(
-    es: &Rc<RefCell<EditorState>>,
-    page_templates: &Rc<Vec<PageTemplate>>,
-) -> GtkBox {
+fn build_meta_row(es: &Rc<RefCell<EditorState>>, page_templates: &Rc<Vec<PageTemplate>>) -> GtkBox {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(12)
@@ -843,7 +857,10 @@ fn build_meta_row(
 
     // Name
     {
-        let col = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
+        let col = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(2)
+            .build();
         col.append(&Label::builder().label("Name").halign(Align::Start).build());
         let entry = Entry::builder()
             .placeholder_text("My Planner Template")
@@ -864,8 +881,16 @@ fn build_meta_row(
 
     // Description
     {
-        let col = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-        col.append(&Label::builder().label("Description").halign(Align::Start).build());
+        let col = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(2)
+            .build();
+        col.append(
+            &Label::builder()
+                .label("Description")
+                .halign(Align::Start)
+                .build(),
+        );
         let entry = Entry::builder()
             .hexpand(true)
             .text(&es.borrow().template.description)
@@ -882,8 +907,16 @@ fn build_meta_row(
 
     // Grouping
     {
-        let col = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-        col.append(&Label::builder().label("Group by").halign(Align::Start).build());
+        let col = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(2)
+            .build();
+        col.append(
+            &Label::builder()
+                .label("Group by")
+                .halign(Align::Start)
+                .build(),
+        );
         let model = StringList::new(&["Month", "Week"]);
         let sel = match es.borrow().template.grouping {
             PlannerGrouping::Week => 1,
@@ -907,8 +940,16 @@ fn build_meta_row(
 
     // Page title format
     {
-        let col = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-        col.append(&Label::builder().label("Page title format").halign(Align::Start).build());
+        let col = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(2)
+            .build();
+        col.append(
+            &Label::builder()
+                .label("Page title format")
+                .halign(Align::Start)
+                .build(),
+        );
         let entry = Entry::builder()
             .hexpand(true)
             .text(&es.borrow().template.page_title_format)
@@ -926,10 +967,21 @@ fn build_meta_row(
 
     // Section title formats
     {
-        let col = GtkBox::builder().orientation(Orientation::Vertical).spacing(2).build();
-        col.append(&Label::builder().label("Year / Month / Week section titles").halign(Align::Start).build());
+        let col = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(2)
+            .build();
+        col.append(
+            &Label::builder()
+                .label("Year / Month / Week section titles")
+                .halign(Align::Start)
+                .build(),
+        );
 
-        let fmts_row = GtkBox::builder().orientation(Orientation::Horizontal).spacing(4).build();
+        let fmts_row = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(4)
+            .build();
 
         let year_e = Entry::builder()
             .placeholder_text("Year")
@@ -1038,7 +1090,7 @@ fn build_palette(page_templates: &Rc<Vec<PageTemplate>>) -> ScrolledWindow {
         inner.append(&header);
 
         let mut group = by_cat.remove(&cat).unwrap_or_default();
-        group.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        group.sort_by_key(|a| a.name.to_lowercase());
         for t in group {
             inner.append(&build_palette_chip(t));
         }
@@ -1203,14 +1255,8 @@ fn build_slots_pane(
                     s.template.daily_slots.push(new_slot.clone());
                     s.template.daily_slots.len() - 1
                 };
-                let widget = build_daily_slot_widget(
-                    slot_idx,
-                    &new_slot,
-                    &es,
-                    &pts,
-                    &opts,
-                    &container,
-                );
+                let widget =
+                    build_daily_slot_widget(slot_idx, &new_slot, &es, &pts, &opts, &container);
                 container.append(&widget);
             });
         }
@@ -1268,7 +1314,10 @@ fn build_flat_slot_section(
     rebuild_flat_slot_flow(&flow_rc, slot, es, page_templates, options_panel);
 
     // Drop target on the zone — accepts even when the chip Box is empty.
-    let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::COPY | DragAction::MOVE);
+    let drop = DropTarget::new(
+        gtk4::glib::types::Type::STRING,
+        DragAction::COPY | DragAction::MOVE,
+    );
     {
         let es2 = es.clone();
         let flow2 = flow_rc.clone();
@@ -1360,23 +1409,17 @@ fn rebuild_flat_slot_flow(
     for (n, tid) in ids.iter().enumerate() {
         if let Some(pt) = page_templates.iter().find(|t| t.id == *tid) {
             let chip_key = slot.make_key(n);
-            let chip = build_slot_chip(
-                &pt.name,
-                &chip_key,
-                es,
-                options_panel,
-                {
-                    let es2 = es.clone();
-                    let flow2 = flow.clone();
-                    let pts2 = page_templates.clone();
-                    let opts2 = options_panel.clone();
-                    let n_captured = n;
-                    Box::new(move || {
-                        es2.borrow_mut().remove_from_flat_slot(slot, n_captured);
-                        rebuild_flat_slot_flow(&flow2, slot, &es2, &pts2, &opts2);
-                    })
-                },
-            );
+            let chip = build_slot_chip(&pt.name, &chip_key, es, options_panel, {
+                let es2 = es.clone();
+                let flow2 = flow.clone();
+                let pts2 = page_templates.clone();
+                let opts2 = options_panel.clone();
+                let n_captured = n;
+                Box::new(move || {
+                    es2.borrow_mut().remove_from_flat_slot(slot, n_captured);
+                    rebuild_flat_slot_flow(&flow2, slot, &es2, &pts2, &opts2);
+                })
+            });
             // Per-chip drop target: dropping a slot-chip onto chip N
             // moves the dragged chip to position N (insert-before).
             install_flat_chip_reorder_drop(&chip, slot, n, es, flow, page_templates, options_panel);
@@ -1410,8 +1453,13 @@ fn build_daily_slot_widget(
 
     let day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     let weekdays = [
-        Weekday::Mon, Weekday::Tue, Weekday::Wed, Weekday::Thu,
-        Weekday::Fri, Weekday::Sat, Weekday::Sun,
+        Weekday::Mon,
+        Weekday::Tue,
+        Weekday::Wed,
+        Weekday::Thu,
+        Weekday::Fri,
+        Weekday::Sat,
+        Weekday::Sun,
     ];
     for (i, name) in day_names.iter().enumerate() {
         let active = ds.days.contains(&weekdays[i]);
@@ -1493,7 +1541,10 @@ fn build_daily_slot_widget(
 
     rebuild_daily_slot_flow(&flow_rc, slot_idx, es, page_templates, options_panel);
 
-    let drop = DropTarget::new(gtk4::glib::types::Type::STRING, DragAction::COPY | DragAction::MOVE);
+    let drop = DropTarget::new(
+        gtk4::glib::types::Type::STRING,
+        DragAction::COPY | DragAction::MOVE,
+    );
     {
         let es2 = es.clone();
         let flow2 = flow_rc.clone();
@@ -1567,7 +1618,8 @@ fn rebuild_daily_slot_flow(
     }
     let ids: Vec<TemplateId> = {
         let s = es.borrow();
-        s.template.daily_slots
+        s.template
+            .daily_slots
             .get(slot_idx)
             .map(|ds| ds.templates.clone())
             .unwrap_or_default()
@@ -1586,24 +1638,27 @@ fn rebuild_daily_slot_flow(
     for (n, tid) in ids.iter().enumerate() {
         if let Some(pt) = page_templates.iter().find(|t| t.id == *tid) {
             let chip_key = key_daily(slot_idx, n);
-            let chip = build_slot_chip(
-                &pt.name,
-                &chip_key,
+            let chip = build_slot_chip(&pt.name, &chip_key, es, options_panel, {
+                let es2 = es.clone();
+                let flow2 = flow.clone();
+                let pts2 = page_templates.clone();
+                let opts2 = options_panel.clone();
+                let n_captured = n;
+                Box::new(move || {
+                    es2.borrow_mut()
+                        .remove_from_daily_slot(slot_idx, n_captured);
+                    rebuild_daily_slot_flow(&flow2, slot_idx, &es2, &pts2, &opts2);
+                })
+            });
+            install_daily_chip_reorder_drop(
+                &chip,
+                slot_idx,
+                n,
                 es,
+                flow,
+                page_templates,
                 options_panel,
-                {
-                    let es2 = es.clone();
-                    let flow2 = flow.clone();
-                    let pts2 = page_templates.clone();
-                    let opts2 = options_panel.clone();
-                    let n_captured = n;
-                    Box::new(move || {
-                        es2.borrow_mut().remove_from_daily_slot(slot_idx, n_captured);
-                        rebuild_daily_slot_flow(&flow2, slot_idx, &es2, &pts2, &opts2);
-                    })
-                },
             );
-            install_daily_chip_reorder_drop(&chip, slot_idx, n, es, flow, page_templates, options_panel);
             flow.append(&chip);
         }
     }
@@ -1708,7 +1763,7 @@ fn refresh_options_panel(panel: &GtkBox, es: &Rc<RefCell<EditorState>>) {
 
     // Slot label + template name
     let slot_lbl = Label::builder()
-        .label(&format!("Slot: {}", &key))
+        .label(format!("Slot: {}", &key))
         .halign(Align::Start)
         .wrap(true)
         .build();
@@ -1729,7 +1784,10 @@ fn refresh_options_panel(panel: &GtkBox, es: &Rc<RefCell<EditorState>>) {
             .hexpand(true)
             .build();
         let sw = Switch::new();
-        let cur_val = es.borrow().template.entry_options
+        let cur_val = es
+            .borrow()
+            .template
+            .entry_options
             .get(&key)
             .map(|f| f.bridge_previous)
             .unwrap_or(false);
@@ -1760,7 +1818,10 @@ fn refresh_options_panel(panel: &GtkBox, es: &Rc<RefCell<EditorState>>) {
             .hexpand(true)
             .build();
         let sw = Switch::new();
-        let cur_val = es.borrow().template.entry_options
+        let cur_val = es
+            .borrow()
+            .template
+            .entry_options
             .get(&key)
             .map(|f| f.bridge_next)
             .unwrap_or(false);

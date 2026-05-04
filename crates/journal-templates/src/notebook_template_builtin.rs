@@ -4,9 +4,7 @@
 use chrono::Weekday;
 use uuid::{uuid, Uuid};
 
-use journal_core::{
-    DailySlot, NotebookTemplate, PlannerGrouping, SectionTitleFormats, TemplateId,
-};
+use journal_core::{DailySlot, NotebookTemplate, PlannerGrouping, SectionTitleFormats, TemplateId};
 
 use crate::builtin::BUILTIN_DAILY_PLANNER_ID;
 
@@ -17,8 +15,7 @@ pub fn builtin_yearly_planner() -> NotebookTemplate {
         id: TemplateId(BUILTIN_YEARLY_PLANNER_ID),
         name: "Yearly Planner".into(),
         description:
-            "Year section per calendar year, month wrapper sections, one daily page per day."
-                .into(),
+            "Year section per calendar year, month wrapper sections, one daily page per day.".into(),
         year_start: vec![],
         before_quarter: vec![],
         before_month: vec![],

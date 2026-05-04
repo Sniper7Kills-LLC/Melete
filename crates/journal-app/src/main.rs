@@ -1,3 +1,11 @@
+// GTK-style apps lean on `Rc<RefCell<Option<Rc<dyn Fn(...)>>>>` as a
+// standard handle-deferred-closure pattern, and the renderer surface fns
+// that thread transform/state/canvas all happen to take 8–11 params.
+// Both clippy lints flag stylistic noise rather than bugs in this crate;
+// silence at the crate level so real findings stay readable.
+#![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
+
 mod brush_library;
 mod canvas_widget;
 mod config;
@@ -28,11 +36,11 @@ use std::rc::Rc;
 
 use anyhow::{Context, Result};
 use gtk4::glib;
-use gtk4::{ApplicationWindow, CssProvider};
 use gtk4::prelude::*;
-use libadwaita as adw;
+use gtk4::{ApplicationWindow, CssProvider};
 use journal_storage::{JournalBackend, MultiFileSqliteBackend};
 use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
+use libadwaita as adw;
 use tracing_subscriber::EnvFilter;
 
 const APP_ID: &str = "dev.s7k.journal";
@@ -491,12 +499,12 @@ fn data_dir() -> Result<PathBuf> {
 
 fn open_backend() -> Result<MultiFileSqliteBackend> {
     let dir = data_dir()?;
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("create data dir {:?}", dir))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("create data dir {:?}", dir))?;
     // File-per-notebook layout: index.db at the root, journals/{id}.journal
     // per notebook. The first call after upgrade migrates any pre-existing
     // single-file `journal.db` automatically.
-    MultiFileSqliteBackend::open(&dir).with_context(|| format!("open multi-file backend at {:?}", dir))
+    MultiFileSqliteBackend::open(&dir)
+        .with_context(|| format!("open multi-file backend at {:?}", dir))
 }
 
 fn load_templates() -> TemplateRegistry {
@@ -520,10 +528,7 @@ fn build_ui(app: &adw::Application) -> Result<()> {
     if let Some(display) = gtk4::gdk::Display::default() {
         let icon_theme = gtk4::IconTheme::for_display(&display);
         if let Ok(exe) = std::env::current_exe() {
-            if let Some(repo_root) = exe
-                .ancestors()
-                .find(|p| p.join("resources/icons").exists())
-            {
+            if let Some(repo_root) = exe.ancestors().find(|p| p.join("resources/icons").exists()) {
                 icon_theme.add_search_path(repo_root.join("resources/icons"));
             }
         }

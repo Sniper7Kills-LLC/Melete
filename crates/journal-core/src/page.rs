@@ -22,16 +22,41 @@ pub struct PageId(pub Uuid);
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WidgetOverride {
-    CalendarMonth { year: i32, month: u32 },
-    Timeline { start_hour: u8, end_hour: u8, slot_minutes: u32 },
-    DailyAppointments { start_hour: u8, end_hour: u8 },
-    PriorityList { count: u32 },
-    Checklist { items: Vec<String> },
-    TextBlock { text: String, font_size_mm: f64 },
-    LinesRegion { spacing_mm: f64 },
-    GridRegion { spacing_mm: f64 },
-    DotsRegion { spacing_mm: f64 },
-    Line { thickness_mm: f64 },
+    CalendarMonth {
+        year: i32,
+        month: u32,
+    },
+    Timeline {
+        start_hour: u8,
+        end_hour: u8,
+        slot_minutes: u32,
+    },
+    DailyAppointments {
+        start_hour: u8,
+        end_hour: u8,
+    },
+    PriorityList {
+        count: u32,
+    },
+    Checklist {
+        items: Vec<String>,
+    },
+    TextBlock {
+        text: String,
+        font_size_mm: f64,
+    },
+    LinesRegion {
+        spacing_mm: f64,
+    },
+    GridRegion {
+        spacing_mm: f64,
+    },
+    DotsRegion {
+        spacing_mm: f64,
+    },
+    Line {
+        thickness_mm: f64,
+    },
 }
 
 /// A single page within a notebook section.

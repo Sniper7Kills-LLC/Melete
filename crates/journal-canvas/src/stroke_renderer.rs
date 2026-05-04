@@ -1,13 +1,10 @@
 use gtk4::cairo;
-use journal_core::{BlendMode, ToolStyle, PenSettings, Rect, Stroke, StrokePoint};
+use journal_core::{BlendMode, PenSettings, Rect, Stroke, StrokePoint, ToolStyle};
 
 use crate::viewport_transform::ViewportTransform;
 
 fn rects_intersect(a: &Rect, b: &Rect) -> bool {
-    a.x < b.x + b.width
-        && b.x < a.x + a.width
-        && a.y < b.y + b.height
-        && b.y < a.y + a.height
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
 }
 
 fn set_color(ctx: &cairo::Context, c: journal_core::Color, opacity: f32) {
@@ -131,7 +128,7 @@ fn draw_smooth(ctx: &cairo::Context, stroke: &Stroke, pen: &PenSettings) {
 /// pressure, they get darker and grainier).
 fn draw_pencil(ctx: &cairo::Context, stroke: &Stroke, pen: &PenSettings) {
     let zoc = stroke.zoom_at_creation.max(1e-6);
-    let core_w = (pen.base_width / zoc).max(0.6).min(1.6);
+    let core_w = (pen.base_width / zoc).clamp(0.6, 1.6);
     let speck_radius = core_w * 1.6;
 
     let pts = &stroke.points;
@@ -200,7 +197,13 @@ fn draw_paintbrush(ctx: &cairo::Context, stroke: &Stroke, pen: &PenSettings) {
     }
     if pts.len() == 1 {
         let p = &pts[0];
-        stamp_soft_dab(ctx, p.x, p.y, radius_full * (p.pressure.max(0.2) as f64), pen);
+        stamp_soft_dab(
+            ctx,
+            p.x,
+            p.y,
+            radius_full * (p.pressure.max(0.2) as f64),
+            pen,
+        );
         return;
     }
 
@@ -302,7 +305,13 @@ fn draw_calligraphy(ctx: &cairo::Context, stroke: &Stroke, pen: &PenSettings) {
     }
     if pts.len() == 1 {
         let p = &pts[0];
-        ctx.arc(p.x, p.y, max_width * 0.5 * min_ratio, 0.0, std::f64::consts::TAU);
+        ctx.arc(
+            p.x,
+            p.y,
+            max_width * 0.5 * min_ratio,
+            0.0,
+            std::f64::consts::TAU,
+        );
         let _ = ctx.fill();
         return;
     }

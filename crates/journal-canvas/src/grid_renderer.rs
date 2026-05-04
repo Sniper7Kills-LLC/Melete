@@ -17,7 +17,12 @@ impl Default for GridSettings {
         Self {
             base_spacing: 20.0,
             subdivisions: 4,
-            color: Color { r: 80, g: 80, b: 90, a: 255 },
+            color: Color {
+                r: 80,
+                g: 80,
+                b: 90,
+                a: 255,
+            },
         }
     }
 }

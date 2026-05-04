@@ -23,7 +23,16 @@ pub fn paint(
     selected_ids: &HashSet<Uuid>,
     dark_mode: bool,
 ) {
-    paint_with_widgets(ctx, transform, background, page_rect, &[], strokes, selected_ids, dark_mode);
+    paint_with_widgets(
+        ctx,
+        transform,
+        background,
+        page_rect,
+        &[],
+        strokes,
+        selected_ids,
+        dark_mode,
+    );
 }
 
 /// Paint a frame including template widgets between background and strokes.
@@ -95,7 +104,10 @@ pub fn paint_with_widgets_ctx(
 
 /// Compute the combined bounding box of all selected strokes (canvas space).
 pub fn selection_combined_bbox(strokes: &[Stroke], selected_ids: &HashSet<Uuid>) -> Option<Rect> {
-    let selected: Vec<&Stroke> = strokes.iter().filter(|s| selected_ids.contains(&s.id)).collect();
+    let selected: Vec<&Stroke> = strokes
+        .iter()
+        .filter(|s| selected_ids.contains(&s.id))
+        .collect();
     if selected.is_empty() {
         return None;
     }
@@ -110,13 +122,17 @@ pub fn selection_combined_bbox(strokes: &[Stroke], selected_ids: &HashSet<Uuid>)
         max_x = max_x.max(bb.x + bb.width);
         max_y = max_y.max(bb.y + bb.height);
     }
-    Some(Rect { x: min_x, y: min_y, width: max_x - min_x, height: max_y - min_y })
+    Some(Rect {
+        x: min_x,
+        y: min_y,
+        width: max_x - min_x,
+        height: max_y - min_y,
+    })
 }
 
 fn handle_anchors(transform: &ViewportTransform, selection_bbox: Rect) -> [(f64, f64); 8] {
-    let to_screen = |cx: f64, cy: f64| -> (f64, f64) {
-        transform.canvas_to_screen(Point { x: cx, y: cy })
-    };
+    let to_screen =
+        |cx: f64, cy: f64| -> (f64, f64) { transform.canvas_to_screen(Point { x: cx, y: cy }) };
     let bb = selection_bbox;
     let mx = bb.x + bb.width * 0.5;
     let my = bb.y + bb.height * 0.5;

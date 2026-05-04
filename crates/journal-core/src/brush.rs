@@ -45,9 +45,11 @@ pub struct Brush {
 /// shows where the next stroke will land.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[derive(Default)]
 pub enum CursorShape {
     /// Derive from the brush's first layer (tip shape + computed
     /// width at the current pen base width). Default.
+    #[default]
     Auto,
     /// Fixed circle outline.
     Circle,
@@ -62,12 +64,6 @@ pub enum CursorShape {
     /// (e.g. crosshair, brush silhouette) independent of what the
     /// brush actually paints.
     Custom { points: Vec<(f64, f64)> },
-}
-
-impl Default for CursorShape {
-    fn default() -> Self {
-        CursorShape::Auto
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -176,14 +172,22 @@ pub enum WidthMode {
 pub enum TipShape {
     Round,
     Square,
-    FlatNib { angle_deg: f64, aspect: f64 },
+    FlatNib {
+        angle_deg: f64,
+        aspect: f64,
+    },
     Diamond,
-    StarN { points: u8, inner_ratio: f64 },
+    StarN {
+        points: u8,
+        inner_ratio: f64,
+    },
     /// User-designed polygon. Points are in unit space (-1..1 on
     /// each axis around the stamp centre); the renderer scales them
     /// by the layer's width. Minimum 3 points, edges connect in
     /// order, the polygon auto-closes.
-    Custom { points: Vec<(f64, f64)> },
+    Custom {
+        points: Vec<(f64, f64)>,
+    },
 }
 
 /// Per-layer multiplier on the stroke's pen color. Lets multi-pass
@@ -244,12 +248,48 @@ pub fn nib_presets() -> Vec<(&'static str, TipShape)> {
         ("Round point", TipShape::Round),
         ("Square block", TipShape::Square),
         ("Diamond", TipShape::Diamond),
-        ("Italic 45°", TipShape::FlatNib { angle_deg: 45.0, aspect: 0.25 }),
-        ("Italic 30°", TipShape::FlatNib { angle_deg: 30.0, aspect: 0.20 }),
-        ("Chisel 0°", TipShape::FlatNib { angle_deg: 0.0, aspect: 0.18 }),
-        ("Broad-edge 60°", TipShape::FlatNib { angle_deg: 60.0, aspect: 0.30 }),
-        ("Star (5)", TipShape::StarN { points: 5, inner_ratio: 0.5 }),
-        ("Star (8)", TipShape::StarN { points: 8, inner_ratio: 0.4 }),
+        (
+            "Italic 45°",
+            TipShape::FlatNib {
+                angle_deg: 45.0,
+                aspect: 0.25,
+            },
+        ),
+        (
+            "Italic 30°",
+            TipShape::FlatNib {
+                angle_deg: 30.0,
+                aspect: 0.20,
+            },
+        ),
+        (
+            "Chisel 0°",
+            TipShape::FlatNib {
+                angle_deg: 0.0,
+                aspect: 0.18,
+            },
+        ),
+        (
+            "Broad-edge 60°",
+            TipShape::FlatNib {
+                angle_deg: 60.0,
+                aspect: 0.30,
+            },
+        ),
+        (
+            "Star (5)",
+            TipShape::StarN {
+                points: 5,
+                inner_ratio: 0.5,
+            },
+        ),
+        (
+            "Star (8)",
+            TipShape::StarN {
+                points: 8,
+                inner_ratio: 0.4,
+            },
+        ),
         (
             "Leaf",
             TipShape::Custom {

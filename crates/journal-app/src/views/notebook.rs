@@ -7,7 +7,7 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, DrawingArea as GtkDrawingArea, DragSource,
+    ApplicationWindow, Box as GtkBox, Button, DragSource, DrawingArea as GtkDrawingArea,
     DrawingArea, DropTarget, Entry, EventControllerFocus, EventControllerKey, Expander,
     GestureClick, Label, Orientation, Overlay, Paned, PopoverMenu, ScrolledWindow, Stack, Window,
 };
@@ -126,7 +126,11 @@ pub fn build_notebook_view(
             dialogs::prompt_new_section(
                 &ctx.parent,
                 Box::new(move |name| {
-                    let position = match ctx_inner.db.borrow_mut().list_sections(ctx_inner.notebook_id) {
+                    let position = match ctx_inner
+                        .db
+                        .borrow_mut()
+                        .list_sections(ctx_inner.notebook_id)
+                    {
                         Ok(v) => v.len() as u32,
                         Err(_) => 0,
                     };
@@ -138,9 +142,7 @@ pub fn build_notebook_view(
                         allowed_templates: None,
                         parent_section_id: None,
                     };
-                    if let Err(e) =
-                        ctx_inner.db.borrow_mut().insert_section(&section)
-                    {
+                    if let Err(e) = ctx_inner.db.borrow_mut().insert_section(&section) {
                         tracing::error!("failed to insert section: {}", e);
                         return;
                     }
@@ -156,7 +158,8 @@ pub fn build_notebook_view(
         .vexpand(true)
         .build();
 
-    if let Some(template) = crate::views::planner_nav::resolve_planner_template(&state, notebook_id) {
+    if let Some(template) = crate::views::planner_nav::resolve_planner_template(&state, notebook_id)
+    {
         let ctx_for_refresh = ctx.clone();
         let on_refresh: Rc<dyn Fn()> = Rc::new(move || ctx_for_refresh.refresh());
         let strip = crate::views::planner_nav::build_nav_strip(
@@ -181,8 +184,7 @@ pub fn build_notebook_view(
         let paned_for_tick = paned.clone();
         let last_orientation: Rc<std::cell::Cell<Option<bool>>> =
             Rc::new(std::cell::Cell::new(None));
-        let last_landscape_position: Rc<std::cell::Cell<i32>> =
-            Rc::new(std::cell::Cell::new(280));
+        let last_landscape_position: Rc<std::cell::Cell<i32>> = Rc::new(std::cell::Cell::new(280));
         paned.add_tick_callback(move |p, _| {
             let w = p.width();
             let h = p.height();
@@ -347,9 +349,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
                         name: String::new(),
                         widget_overrides,
                     };
-                    if let Err(e) =
-                        ctx_inner.db.borrow_mut().insert_page(&page)
-                    {
+                    if let Err(e) = ctx_inner.db.borrow_mut().insert_page(&page) {
                         tracing::error!("failed to insert page: {}", e);
                         return;
                     }
@@ -378,10 +378,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
     section_label.add_css_class("section-header-label");
-    let entry = Entry::builder()
-        .text(&section.name)
-        .hexpand(true)
-        .build();
+    let entry = Entry::builder().text(&section.name).hexpand(true).build();
     entry.add_css_class("inline-rename");
     name_stack.add_named(&section_label, Some("label"));
     name_stack.add_named(&entry, Some("edit"));
@@ -446,7 +443,10 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
             if save && !trimmed.is_empty() && trimmed != label.text() {
                 let current = match ctx.db.borrow_mut().get_section(section_id_local) {
                     Ok(s) => s,
-                    Err(e) => { tracing::error!("rename section: {}", e); return; }
+                    Err(e) => {
+                        tracing::error!("rename section: {}", e);
+                        return;
+                    }
                 };
                 let mut updated = current;
                 updated.name = trimmed.to_string();
@@ -527,10 +527,7 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
         .hexpand(true)
         .ellipsize(gtk4::pango::EllipsizeMode::End)
         .build();
-    let entry = Entry::builder()
-        .text(&label_text)
-        .hexpand(true)
-        .build();
+    let entry = Entry::builder().text(&label_text).hexpand(true).build();
     entry.add_css_class("inline-rename");
     name_stack.add_named(&label, Some("label"));
     name_stack.add_named(&entry, Some("edit"));
@@ -812,9 +809,8 @@ fn build_page_thumbnail(ctx: &SidebarCtx, page: &Page) -> GtkDrawingArea {
         let state = state.clone();
         thumb_area.set_draw_func(move |_area, ctx_cairo, _w, _h| {
             let dark_mode = crate::is_dark_mode();
-            let template = template_id.and_then(|tid| {
-                state.borrow().templates.borrow().get(tid).cloned()
-            });
+            let template =
+                template_id.and_then(|tid| state.borrow().templates.borrow().get(tid).cloned());
 
             if let Some(surface) = crate::thumbnail::get_or_generate_thumbnail(
                 &state,
@@ -837,7 +833,12 @@ fn build_page_thumbnail(ctx: &SidebarCtx, page: &Page) -> GtkDrawingArea {
 
                     ctx_cairo.set_source_rgba(0.5, 0.5, 0.5, 0.4);
                     ctx_cairo.set_line_width(0.5);
-                    ctx_cairo.rectangle(0.0, 0.0, crate::thumbnail::THUMB_W as f64, crate::thumbnail::THUMB_H as f64);
+                    ctx_cairo.rectangle(
+                        0.0,
+                        0.0,
+                        crate::thumbnail::THUMB_W as f64,
+                        crate::thumbnail::THUMB_H as f64,
+                    );
                     let _ = ctx_cairo.stroke();
                 }
             } else {
@@ -919,7 +920,9 @@ fn attach_page_drop_target(
         let result = if src_section_id == target_section_id {
             ctx.db.borrow_mut().reorder_page(src_id, target_index)
         } else {
-            ctx.db.borrow_mut().move_page(src_id, target_section_id, target_index)
+            ctx.db
+                .borrow_mut()
+                .move_page(src_id, target_section_id, target_index)
         };
         if let Err(e) = result {
             tracing::error!("failed to move/reorder page: {}", e);
@@ -986,7 +989,9 @@ fn attach_section_drop_target(
             if src_section_id == target_section_id {
                 return false;
             }
-            let n = ctx.db.borrow_mut()
+            let n = ctx
+                .db
+                .borrow_mut()
                 .list_pages(target_section_id)
                 .map(|v| v.len() as u32)
                 .unwrap_or(0);

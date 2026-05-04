@@ -331,11 +331,19 @@ mod tests {
             name: "Custom Pen".into(),
             layers: vec![BrushLayer {
                 enabled: true,
-                geometry: Geometry::Smooth { resample_step_mm: 0.8 },
-                width: WidthMode::Pressure { floor: 0.5, amp: 0.5 },
+                geometry: Geometry::Smooth {
+                    resample_step_mm: 0.8,
+                },
+                width: WidthMode::Pressure {
+                    floor: 0.5,
+                    amp: 0.5,
+                },
                 tip: TipShape::Round,
                 tip_scale: 1.0,
-                color: ColorMod { alpha_mult: 0.9, hue_shift_deg: 0.0 },
+                color: ColorMod {
+                    alpha_mult: 0.9,
+                    hue_shift_deg: 0.0,
+                },
                 blend: BlendMode::Normal,
             }],
             cursor: CursorShape::Auto,
@@ -352,7 +360,7 @@ mod tests {
     #[test]
     fn rtree_culls_strokes_outside_rect() {
         let (db, pid) = setup();
-        let near = make_stroke(10.0, 10.0, 5.0);   // bbox (10..15, 10..15)
+        let near = make_stroke(10.0, 10.0, 5.0); // bbox (10..15, 10..15)
         let far = make_stroke(1000.0, 1000.0, 5.0); // bbox (1000..1005, 1000..1005)
         insert_stroke(db.conn(), &near, pid).unwrap();
         insert_stroke(db.conn(), &far, pid).unwrap();

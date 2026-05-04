@@ -98,7 +98,8 @@ pub fn builtin_quarterly_review() -> PageTemplate {
     PageTemplate {
         id: TemplateId(BUILTIN_QUARTERLY_REVIEW_ID),
         name: "Quarterly Review".into(),
-        description: "Per-month notes for the past quarter plus a 9-row wins/lessons/next list.".into(),
+        description: "Per-month notes for the past quarter plus a 9-row wins/lessons/next list."
+            .into(),
         background: BackgroundType::Blank,
         size_mm: US_LETTER,
         tiling: TilingMode::None,

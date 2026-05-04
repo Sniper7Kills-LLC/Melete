@@ -4,7 +4,9 @@ use std::rc::Rc;
 
 use gtk4::cairo;
 use journal_canvas::{BackgroundConfig, GridSettings, ViewportTransform};
-use journal_core::{Color, PageId, PageTemplate, PenSettings, Point, Rect, Stroke, TilingMode, Viewport};
+use journal_core::{
+    Color, PageId, PageTemplate, PenSettings, Point, Rect, Stroke, TilingMode, Viewport,
+};
 use journal_storage::JournalBackend;
 use journal_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use uuid::Uuid;
@@ -20,7 +22,14 @@ pub enum EraserMode {
 /// Which of the 8 resize handles the user grabbed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HandlePos {
-    TL, T, TR, R, BR, B, BL, L,
+    TL,
+    T,
+    TR,
+    R,
+    BR,
+    B,
+    BL,
+    L,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,8 +108,7 @@ pub struct CanvasState {
     pub current_page_date: Option<chrono::NaiveDate>,
     /// Per-widget overrides loaded from `Page.widget_overrides` for the
     /// currently-loaded page. Empty when no page is loaded.
-    pub current_page_overrides:
-        std::collections::HashMap<uuid::Uuid, journal_core::WidgetOverride>,
+    pub current_page_overrides: std::collections::HashMap<uuid::Uuid, journal_core::WidgetOverride>,
     /// Installed by the planner navigation strip; called from `load_page`
     /// when the user clicks a Day-addressed planner page so prev/next walk
     /// from that date instead of from "today".
@@ -198,7 +206,12 @@ pub fn default_background() -> BackgroundConfig {
     BackgroundConfig::Grid(GridSettings {
         base_spacing: 20.0,
         subdivisions: 4,
-        color: Color { r: 200, g: 200, b: 220, a: 255 },
+        color: Color {
+            r: 200,
+            g: 200,
+            b: 220,
+            a: 255,
+        },
     })
 }
 
@@ -219,7 +232,12 @@ pub fn new_shared_state(
     let transform = ViewportTransform::new(viewport, 1280.0, 800.0);
 
     let pen = PenSettings {
-        color: Color { r: 20, g: 20, b: 20, a: 255 },
+        color: Color {
+            r: 20,
+            g: 20,
+            b: 20,
+            a: 255,
+        },
         base_width: 2.0,
         opacity: 1.0,
         blend_mode: journal_core::BlendMode::Normal,
@@ -294,15 +312,12 @@ pub fn load_tool_settings_from_config(state: &SharedState) {
     // Backfill: if the legacy flat `tool_settings` map has a value the
     // preset list doesn't, treat it as the user's "Default" preset.
     for (key, value) in cfg.tool_settings {
-        let entry = s
-            .tool_presets
-            .entry(key.clone())
-            .or_insert_with(|| {
-                vec![crate::tool_settings::NamedToolSettings {
-                    name: "Default".into(),
-                    settings: value,
-                }]
-            });
+        let entry = s.tool_presets.entry(key.clone()).or_insert_with(|| {
+            vec![crate::tool_settings::NamedToolSettings {
+                name: "Default".into(),
+                settings: value,
+            }]
+        });
         if entry.iter().any(|p| p.name == "Default") {
             for p in entry.iter_mut() {
                 if p.name == "Default" {
@@ -388,7 +403,7 @@ pub fn persist_tool_state(state: &SharedState) {
 }
 
 /// Resolve `cfg.tool_brush_assignments` (key→Uuid) against built-in
-/// + user-library brushes; populate `state.tool_brushes`. IDs that
+/// and user-library brushes; populate `state.tool_brushes`. IDs that
 /// don't resolve (e.g. a custom brush the user has since deleted)
 /// are silently dropped.
 pub fn load_tool_brush_assignments(state: &SharedState) {
@@ -402,8 +417,7 @@ pub fn load_tool_brush_assignments(state: &SharedState) {
     }
     // After populating, snap the active tool's recipe to its slot.
     let tool = s.tool;
-    let active = crate::tool_settings::tool_key(tool)
-        .and_then(|k| s.tool_brushes.get(k).cloned());
+    let active = crate::tool_settings::tool_key(tool).and_then(|k| s.tool_brushes.get(k).cloned());
     s.active_brush_recipe = active;
 }
 
@@ -557,8 +571,8 @@ pub fn set_tool(state: &SharedState, tool: Tool) {
     // Each tool has an optional per-slot brush assignment. Switching
     // to a tool loads its assigned brush (or `None` → legacy adapter).
     if prev_tool != tool {
-        let assigned = crate::tool_settings::tool_key(tool)
-            .and_then(|k| s.tool_brushes.get(k).cloned());
+        let assigned =
+            crate::tool_settings::tool_key(tool).and_then(|k| s.tool_brushes.get(k).cloned());
         s.active_brush_recipe = assigned;
     }
     if let Some(key) = crate::tool_settings::tool_key(tool) {

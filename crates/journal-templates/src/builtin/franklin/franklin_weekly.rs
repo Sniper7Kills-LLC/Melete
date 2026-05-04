@@ -40,7 +40,12 @@ pub fn builtin_franklin_weekly() -> PageTemplate {
     let compass = TemplateWidget {
         id: Uuid::parse_str("a0000008-0002-0000-0000-000000000000").unwrap(),
         kind: WidgetKind::WeeklyCompass,
-        rect: WidgetRect { x: margin, y: body_top, width: half_w, height: body_h },
+        rect: WidgetRect {
+            x: margin,
+            y: body_top,
+            width: half_w,
+            height: body_h,
+        },
         style: WidgetStyle::default(),
     };
 
@@ -53,7 +58,7 @@ pub fn builtin_franklin_weekly() -> PageTemplate {
         widgets.push(TemplateWidget {
             id: Uuid::parse_str(&format!("a0000008-1{:03}-0000-0000-000000000000", i)).unwrap(),
             kind: WidgetKind::TextBlock {
-                text: format!("{}", day),
+                text: day.to_string(),
                 font_size_mm: 3.5,
             },
             rect: WidgetRect {
