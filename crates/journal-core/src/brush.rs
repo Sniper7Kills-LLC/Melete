@@ -14,9 +14,10 @@
 //!
 //! See `docs/brush-engine.md` for the full plan.
 
-use journal_core::BlendMode;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+use crate::pen::BlendMode;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Brush {

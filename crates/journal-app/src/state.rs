@@ -158,6 +158,12 @@ pub struct CanvasState {
     /// list of RGBA swatches the user has saved for fast access from
     /// the Tool Options popup.
     pub tool_palettes: std::collections::HashMap<String, Vec<[u8; 4]>>,
+
+    /// Optional composable-brush recipe stamped onto every new
+    /// stroke. `None` means "use the built-in for the active tool's
+    /// brush_style + BrushParams". `Some(brush)` overrides — used by
+    /// the Tool Editor when the user is drawing with a custom brush.
+    pub active_brush_recipe: Option<journal_core::Brush>,
 }
 
 pub type SharedState = Rc<RefCell<CanvasState>>;
@@ -242,6 +248,7 @@ pub fn new_shared_state(
         active_tool_preset: crate::tool_settings::default_active_preset_map(),
         brush_params: journal_canvas::vello_renderer::BrushParams::default(),
         tool_palettes: std::collections::HashMap::new(),
+        active_brush_recipe: None,
     }))
 }
 

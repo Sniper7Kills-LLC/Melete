@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::brush::Brush;
 use crate::pen::PenSettings;
 use crate::Rect;
 
@@ -23,4 +24,11 @@ pub struct Stroke {
     pub pen: PenSettings,
     pub zoom_at_creation: f64,
     pub bounding_box: Rect,
+    /// Optional composable-brush recipe captured at stroke creation.
+    /// `None` falls back to `legacy_brush_for(pen.brush_style,
+    /// brush_params)` at render time. Older `.journal` files written
+    /// before this field existed deserialize with `None`, so legacy
+    /// strokes keep rendering identically.
+    #[serde(default)]
+    pub brush_recipe: Option<Brush>,
 }

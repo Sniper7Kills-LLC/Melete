@@ -9,11 +9,16 @@ use crate::util::{blob_to_uuid, uuid_to_blob};
 pub fn insert_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Result<()> {
     let blob = pack_points(&stroke.points);
     let pen_json = serde_json::to_string(&stroke.pen)?;
+    let recipe_json = stroke
+        .brush_recipe
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
     let bbox = stroke.bounding_box;
 
     conn.execute(
-        "INSERT INTO strokes (id, page_id, points_blob, pen_json, zoom_at_creation, bbox_x, bbox_y, bbox_w, bbox_h)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO strokes (id, page_id, points_blob, pen_json, zoom_at_creation, bbox_x, bbox_y, bbox_w, bbox_h, brush_recipe_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             uuid_to_blob(stroke.id),
             uuid_to_blob(page_id.0),
@@ -24,6 +29,7 @@ pub fn insert_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Res
             bbox.y,
             bbox.width,
             bbox.height,
+            recipe_json,
         ],
     )?;
 
@@ -60,12 +66,17 @@ pub fn delete_stroke(conn: &Connection, id: uuid::Uuid) -> Result<()> {
 pub fn update_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Result<()> {
     let blob = pack_points(&stroke.points);
     let pen_json = serde_json::to_string(&stroke.pen)?;
+    let recipe_json = stroke
+        .brush_recipe
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
     let bbox = stroke.bounding_box;
 
     let updated = conn.execute(
         "UPDATE strokes SET points_blob = ?1, pen_json = ?2, zoom_at_creation = ?3,
-         bbox_x = ?4, bbox_y = ?5, bbox_w = ?6, bbox_h = ?7
-         WHERE id = ?8 AND page_id = ?9",
+         bbox_x = ?4, bbox_y = ?5, bbox_w = ?6, bbox_h = ?7, brush_recipe_json = ?8
+         WHERE id = ?9 AND page_id = ?10",
         params![
             blob,
             pen_json,
@@ -74,6 +85,7 @@ pub fn update_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Res
             bbox.y,
             bbox.width,
             bbox.height,
+            recipe_json,
             uuid_to_blob(stroke.id),
             uuid_to_blob(page_id.0),
         ],
@@ -123,7 +135,7 @@ pub fn delete_strokes_batch(conn: &Connection, ids: &[uuid::Uuid]) -> Result<()>
 
 pub fn list_strokes_for_page(conn: &Connection, page_id: PageId) -> Result<Vec<Stroke>> {
     let mut stmt = conn.prepare(
-        "SELECT id, points_blob, pen_json, zoom_at_creation, bbox_x, bbox_y, bbox_w, bbox_h
+        "SELECT id, points_blob, pen_json, zoom_at_creation, bbox_x, bbox_y, bbox_w, bbox_h, brush_recipe_json
          FROM strokes WHERE page_id = ?1 ORDER BY rowid ASC",
     )?;
     let rows = stmt.query_map(params![uuid_to_blob(page_id.0)], row_to_stroke)?;
@@ -142,7 +154,7 @@ pub fn query_strokes_in_rect(
     let max_x = rect.x + rect.width;
     let max_y = rect.y + rect.height;
     let mut stmt = conn.prepare(
-        "SELECT s.id, s.points_blob, s.pen_json, s.zoom_at_creation, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h
+        "SELECT s.id, s.points_blob, s.pen_json, s.zoom_at_creation, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, s.brush_recipe_json
          FROM strokes_rtree r
          JOIN strokes s ON s.rowid = r.id
          WHERE s.page_id = ?1
@@ -170,10 +182,15 @@ fn row_to_stroke(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Stroke>> {
     let by: f64 = row.get(5)?;
     let bw: f64 = row.get(6)?;
     let bh: f64 = row.get(7)?;
+    let recipe_json: Option<String> = row.get(8)?;
     Ok((|| {
         let id = blob_to_uuid(&id_blob)?;
         let points = unpack_points(&points_blob)?;
         let pen: PenSettings = serde_json::from_str(&pen_json)?;
+        let brush_recipe = match recipe_json.as_deref() {
+            Some(s) if !s.is_empty() => Some(serde_json::from_str(s)?),
+            _ => None,
+        };
         Ok(Stroke {
             id,
             points,
@@ -185,6 +202,7 @@ fn row_to_stroke(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Stroke>> {
                 width: bw,
                 height: bh,
             },
+            brush_recipe,
         })
     })())
 }
@@ -282,6 +300,7 @@ mod tests {
                 width: size,
                 height: size,
             },
+            brush_recipe: None,
         }
     }
 
@@ -297,6 +316,32 @@ mod tests {
         assert_eq!(got.points, s.points);
         assert_eq!(got.pen, s.pen);
         assert_eq!(got.bounding_box, s.bounding_box);
+        assert!(got.brush_recipe.is_none(), "default stroke has no recipe");
+    }
+
+    #[test]
+    fn round_trip_stroke_with_brush_recipe() {
+        use journal_core::{Brush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
+        let (db, pid) = setup();
+        let mut s = make_stroke(0.0, 0.0, 50.0);
+        let recipe = Brush {
+            id: Uuid::new_v4(),
+            name: "Custom Pen".into(),
+            layers: vec![BrushLayer {
+                enabled: true,
+                geometry: Geometry::Smooth { resample_step_mm: 0.8 },
+                width: WidthMode::Pressure { floor: 0.5, amp: 0.5 },
+                tip: TipShape::Round,
+                color: ColorMod { alpha_mult: 0.9, hue_shift_deg: 0.0 },
+                blend: BlendMode::Normal,
+            }],
+        };
+        s.brush_recipe = Some(recipe.clone());
+        insert_stroke(db.conn(), &s, pid).unwrap();
+        let listed = list_strokes_for_page(db.conn(), pid).unwrap();
+        assert_eq!(listed.len(), 1);
+        let got = &listed[0];
+        assert_eq!(got.brush_recipe.as_ref(), Some(&recipe));
     }
 
     #[test]

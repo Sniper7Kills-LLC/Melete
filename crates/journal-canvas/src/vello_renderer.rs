@@ -1334,10 +1334,19 @@ fn draw_stroke(
     stroke: &Stroke,
     params: &BrushParams,
 ) {
-    // Phase 0: try the composable engine first. Tools with a native
-    // composition route through `draw_brush_into_scene`; the WIP shape
-    // variants (Marker, Carpenter, Fan, …) still fall through to
-    // their legacy `draw_*` fns until Phase 5 rewrites them.
+    // Phase 1: a stroke's own `brush_recipe` (set at creation time
+    // from the active Tool Editor brush) wins. Custom brushes survive
+    // a tool/style change because the recipe is captured into the
+    // stroke itself.
+    if let Some(brush) = stroke.brush_recipe.as_ref() {
+        draw_brush_into_scene(scene, transform, stroke, brush);
+        return;
+    }
+    // Phase 0: legacy strokes (no recipe) — try the composable
+    // engine via the built-in adapter. Tools whose current shape has
+    // a native composition route through `draw_brush_into_scene`; the
+    // WIP shape variants (Marker, Carpenter, Fan, …) still fall
+    // through to their legacy `draw_*` fns until Phase 5 rewrites them.
     if let Some(brush) = crate::built_in_brushes::legacy_brush_for(stroke.pen.brush_style, params) {
         draw_brush_into_scene(scene, transform, stroke, &brush);
         return;
@@ -2127,7 +2136,9 @@ fn pseudo_noise(x: f64, y: f64) -> f64 {
 // build them in the Tool Editor see a hint to file a bug. Phase 5
 // fills in the remainder.
 
-use crate::brush::{Brush as RBrush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
+use journal_core::{
+    Brush as RBrush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode,
+};
 
 /// Public entry point. Iterates the brush's layers in order and emits
 /// each one onto the scene.

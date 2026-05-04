@@ -50,6 +50,9 @@ CREATE TABLE IF NOT EXISTS strokes (
     bbox_w REAL NOT NULL,
     bbox_h REAL NOT NULL
 );";
+// `brush_recipe_json` column added by the v6 migration. Leave
+// CREATE_STROKES at the original Phase 2 shape so the migration
+// pipeline stays idempotent on a fresh DB.
 
 pub const CREATE_PAGE_TEMPLATES: &str = "
 CREATE TABLE IF NOT EXISTS page_templates (
@@ -144,6 +147,18 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             )?;
         }
         conn.pragma_update(None, "user_version", 5)?;
+    }
+    if v < 6 {
+        // Brush engine Phase 1 — per-stroke composable-brush recipe.
+        // Nullable: legacy strokes have NULL and fall back to the
+        // brush-style + BrushParams legacy adapter at render time.
+        if !column_exists(conn, "strokes", "brush_recipe_json")? {
+            conn.execute(
+                "ALTER TABLE strokes ADD COLUMN brush_recipe_json TEXT",
+                [],
+            )?;
+        }
+        conn.pragma_update(None, "user_version", 6)?;
     }
     Ok(())
 }

@@ -393,12 +393,14 @@ fn begin_stroke(state: &SharedState, sx: f64, sy: f64, pressure: f32, tx: f32, t
     pen.blend_mode = blend;
     pen.brush_style = brush;
 
+    let brush_recipe = s.active_brush_recipe.clone();
     s.current_stroke = Some(Stroke {
         id: Uuid::new_v4(),
         points: vec![pt],
         pen,
         zoom_at_creation: s.transform.zoom(),
         bounding_box: bbox,
+        brush_recipe,
     });
 }
 
@@ -535,6 +537,7 @@ fn split_stroke_by_eraser(stroke: &Stroke, cx: f64, cy: f64, r: f64) -> Vec<Stro
                     pen: stroke.pen,
                     zoom_at_creation: stroke.zoom_at_creation,
                     bounding_box: bbox,
+                    brush_recipe: stroke.brush_recipe.clone(),
                 });
             }
             run.clear();
@@ -550,6 +553,7 @@ fn split_stroke_by_eraser(stroke: &Stroke, cx: f64, cy: f64, r: f64) -> Vec<Stro
             pen: stroke.pen,
             zoom_at_creation: stroke.zoom_at_creation,
             bounding_box: bbox,
+            brush_recipe: stroke.brush_recipe.clone(),
         });
     }
     children
@@ -657,6 +661,7 @@ fn split_stroke_by_lasso(
             pen: stroke.pen,
             zoom_at_creation: stroke.zoom_at_creation,
             bounding_box: bbox,
+            brush_recipe: stroke.brush_recipe.clone(),
         };
         if current_inside {
             selected_children.push(child);

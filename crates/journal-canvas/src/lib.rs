@@ -1,4 +1,3 @@
-pub mod brush;
 pub mod built_in_brushes;
 pub mod renderer;
 pub mod viewport_transform;
@@ -9,8 +8,6 @@ pub mod widget_renderer;
 
 #[cfg(feature = "vello")]
 pub mod vello_renderer;
-
-pub use brush::{Brush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
 
 pub use renderer::{
     draw_lasso_overlay, draw_selection_handles, hit_test_handle, paint, paint_with_widgets,

@@ -13,10 +13,8 @@
 //!
 //! See `docs/brush-engine.md` §4.3 for the design table.
 
-use journal_core::BlendMode;
+use journal_core::{BlendMode, Brush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
 use uuid::{uuid, Uuid};
-
-use crate::brush::{Brush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
 
 #[cfg(feature = "vello")]
 use crate::vello_renderer::{

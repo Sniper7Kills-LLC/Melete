@@ -1,6 +1,7 @@
 pub mod stroke;
 pub mod viewport;
 pub mod pen;
+pub mod brush;
 pub mod page;
 pub mod notebook;
 pub mod template;
@@ -10,6 +11,7 @@ pub mod title_format;
 pub use stroke::{Stroke, StrokePoint};
 pub use viewport::Viewport;
 pub use pen::{PenSettings, Color, BlendMode, BrushStyle};
+pub use brush::{Brush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
 pub use page::{Page, PageId, WidgetOverride};
 pub use notebook::{Notebook, NotebookId, NotebookKind, Section, SectionId};
 pub use template::{
