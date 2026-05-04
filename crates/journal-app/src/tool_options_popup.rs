@@ -18,7 +18,8 @@ use gtk4::{
     SpinButton, StringList, Window,
 };
 use journal_canvas::vello_renderer::{
-    BrushParams, CalligraphyParams, PaintbrushParams, PenParams, PencilParams, SprayParams,
+    BrushParams, CalligraphyParams, CalligraphyShape, PaintbrushParams, PaintbrushShape, PenParams,
+    PenShape, PencilParams, PencilShape, SprayParams, SprayShape,
 };
 use journal_core::{BlendMode, BrushStyle};
 
@@ -860,41 +861,66 @@ fn persist(state: &SharedState) {
     crate::state::persist_tool_state(state);
 }
 
+const PEN_SHAPES: &[(&str, PenShape)] = &[
+    ("Round", PenShape::Round),
+    ("Flat (variable-width polygon)", PenShape::Flat),
+    ("Marker (chunky tip)", PenShape::Marker),
+];
+fn pen_shape_idx(s: PenShape) -> u32 {
+    PEN_SHAPES.iter().position(|(_, v)| *v == s).unwrap_or(0) as u32
+}
+
 fn append_pen_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.pen;
     let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
-    g.attach(&row("Width floor"), 0, 0, 1, 1);
+    g.attach(&row("Tip shape"), 0, 0, 1, 1);
+    let shape_strs = StringList::new(&PEN_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
+    let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
+    shape_dd.set_selected(pen_shape_idx(p.shape));
+    g.attach(&shape_dd, 1, 0, 1, 1);
+    g.attach(&row("Width floor"), 0, 1, 1, 1);
     let floor = spin(0.0, 1.5, 0.05, 2, p.width_floor);
-    g.attach(&floor, 1, 0, 1, 1);
-    g.attach(&row("Pressure amplitude"), 0, 1, 1, 1);
+    g.attach(&floor, 1, 1, 1, 1);
+    g.attach(&row("Pressure amplitude"), 0, 2, 1, 1);
     let amp = spin(0.0, 1.5, 0.05, 2, p.width_pressure_amplitude);
-    g.attach(&amp, 1, 1, 1, 1);
+    g.attach(&amp, 1, 2, 1, 1);
+    g.attach(&row("Marker width ×"), 0, 3, 1, 1);
+    let marker = spin(0.5, 5.0, 0.05, 2, p.marker_width_mult);
+    g.attach(&marker, 1, 3, 1, 1);
     body.append(&g);
 
     let reset = Button::with_label("Reset Pen internals");
     {
-        let floor = floor.clone();
-        let amp = amp.clone();
+        let (shape_dd, floor, amp, marker) =
+            (shape_dd.clone(), floor.clone(), amp.clone(), marker.clone());
         reset.connect_clicked(move |_| {
             let d = PenParams::default();
+            shape_dd.set_selected(pen_shape_idx(d.shape));
             floor.set_value(d.width_floor);
             amp.set_value(d.width_pressure_amplitude);
+            marker.set_value(d.marker_width_mult);
         });
     }
     body.append(&reset);
 
     let apply = {
         let state = state.clone();
-        let floor = floor.clone();
-        let amp = amp.clone();
+        let (shape_dd, floor, amp, marker) =
+            (shape_dd.clone(), floor.clone(), amp.clone(), marker.clone());
         move || {
             state.borrow_mut().brush_params.pen = PenParams {
+                shape: PEN_SHAPES[shape_dd.selected() as usize].1,
                 width_floor: floor.value(),
                 width_pressure_amplitude: amp.value(),
+                marker_width_mult: marker.value(),
             };
             persist(&state);
         }
     };
+    {
+        let a = apply.clone();
+        shape_dd.connect_selected_notify(move |_| a());
+    }
     {
         let a = apply.clone();
         floor.connect_value_changed(move |_| a());
@@ -903,191 +929,327 @@ fn append_pen_internals(body: &GtkBox, state: &SharedState) {
         let a = apply.clone();
         amp.connect_value_changed(move |_| a());
     }
+    {
+        let a = apply.clone();
+        marker.connect_value_changed(move |_| a());
+    }
+}
+
+const PENCIL_SHAPES: &[(&str, PencilShape)] = &[
+    ("Cylindrical", PencilShape::Cylindrical),
+    ("Carpenter (flat lead)", PencilShape::Carpenter),
+    ("Mechanical (thin)", PencilShape::Mechanical),
+];
+fn pencil_shape_idx(s: PencilShape) -> u32 {
+    PENCIL_SHAPES.iter().position(|(_, v)| *v == s).unwrap_or(0) as u32
 }
 
 fn append_pencil_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.pencil;
     let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
-    g.attach(&row("Core min"), 0, 0, 1, 1);
+    g.attach(&row("Tip shape"), 0, 0, 1, 1);
+    let shape_strs = StringList::new(&PENCIL_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
+    let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
+    shape_dd.set_selected(pencil_shape_idx(p.shape));
+    g.attach(&shape_dd, 1, 0, 1, 1);
+    g.attach(&row("Core min"), 0, 1, 1, 1);
     let cmin = spin(0.05, 3.0, 0.05, 2, p.core_clamp_min);
-    g.attach(&cmin, 1, 0, 1, 1);
-    g.attach(&row("Core max"), 0, 1, 1, 1);
+    g.attach(&cmin, 1, 1, 1, 1);
+    g.attach(&row("Core max"), 0, 2, 1, 1);
     let cmax = spin(0.05, 5.0, 0.05, 2, p.core_clamp_max);
-    g.attach(&cmax, 1, 1, 1, 1);
-    g.attach(&row("Tilt threshold"), 0, 2, 1, 1);
+    g.attach(&cmax, 1, 2, 1, 1);
+    g.attach(&row("Tilt threshold"), 0, 3, 1, 1);
     let thr = spin(0.0, 1.0, 0.02, 2, p.tilt_threshold);
-    g.attach(&thr, 1, 2, 1, 1);
-    g.attach(&row("Tilt band ×"), 0, 3, 1, 1);
+    g.attach(&thr, 1, 3, 1, 1);
+    g.attach(&row("Tilt band ×"), 0, 4, 1, 1);
     let tband = spin(0.0, 30.0, 0.5, 1, p.tilt_band_mult);
-    g.attach(&tband, 1, 3, 1, 1);
-    g.attach(&row("Tilt alpha"), 0, 4, 1, 1);
+    g.attach(&tband, 1, 4, 1, 1);
+    g.attach(&row("Tilt alpha"), 0, 5, 1, 1);
     let talpha = spin(0.0, 1.0, 0.02, 2, p.tilt_alpha_scale);
-    g.attach(&talpha, 1, 4, 1, 1);
+    g.attach(&talpha, 1, 5, 1, 1);
+    g.attach(&row("Carpenter ×"), 0, 6, 1, 1);
+    let carp = spin(0.5, 5.0, 0.05, 2, p.carpenter_width_mult);
+    g.attach(&carp, 1, 6, 1, 1);
     body.append(&g);
 
     let reset = Button::with_label("Reset Pencil internals");
     {
-        let (cmin, cmax, thr, tband, talpha) =
-            (cmin.clone(), cmax.clone(), thr.clone(), tband.clone(), talpha.clone());
+        let (shape_dd, cmin, cmax, thr, tband, talpha, carp) = (
+            shape_dd.clone(),
+            cmin.clone(),
+            cmax.clone(),
+            thr.clone(),
+            tband.clone(),
+            talpha.clone(),
+            carp.clone(),
+        );
         reset.connect_clicked(move |_| {
             let d = PencilParams::default();
+            shape_dd.set_selected(pencil_shape_idx(d.shape));
             cmin.set_value(d.core_clamp_min);
             cmax.set_value(d.core_clamp_max);
             thr.set_value(d.tilt_threshold);
             tband.set_value(d.tilt_band_mult);
             talpha.set_value(d.tilt_alpha_scale);
+            carp.set_value(d.carpenter_width_mult);
         });
     }
     body.append(&reset);
 
     let apply = {
         let state = state.clone();
-        let (cmin, cmax, thr, tband, talpha) =
-            (cmin.clone(), cmax.clone(), thr.clone(), tband.clone(), talpha.clone());
+        let (shape_dd, cmin, cmax, thr, tband, talpha, carp) = (
+            shape_dd.clone(),
+            cmin.clone(),
+            cmax.clone(),
+            thr.clone(),
+            tband.clone(),
+            talpha.clone(),
+            carp.clone(),
+        );
         move || {
             state.borrow_mut().brush_params.pencil = PencilParams {
+                shape: PENCIL_SHAPES[shape_dd.selected() as usize].1,
                 core_clamp_min: cmin.value(),
                 core_clamp_max: cmax.value(),
                 tilt_threshold: thr.value(),
                 tilt_band_mult: tband.value(),
                 tilt_alpha_scale: talpha.value(),
+                carpenter_width_mult: carp.value(),
             };
             persist(&state);
         }
     };
-    for s in [&cmin, &cmax, &thr, &tband, &talpha] {
+    {
+        let a = apply.clone();
+        shape_dd.connect_selected_notify(move |_| a());
+    }
+    for s in [&cmin, &cmax, &thr, &tband, &talpha, &carp] {
         let a = apply.clone();
         s.connect_value_changed(move |_| a());
     }
 }
 
+const PAINTBRUSH_SHAPES: &[(&str, PaintbrushShape)] = &[
+    ("Round (3-pass halo)", PaintbrushShape::Round),
+    ("Flat (sumi)", PaintbrushShape::Flat),
+    ("Fan", PaintbrushShape::Fan),
+];
+fn paintbrush_shape_idx(s: PaintbrushShape) -> u32 {
+    PAINTBRUSH_SHAPES.iter().position(|(_, v)| *v == s).unwrap_or(0) as u32
+}
+
 fn append_paintbrush_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.paintbrush;
     let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
-    g.attach(&row("Halo width ×"), 0, 0, 1, 1);
+    g.attach(&row("Bristle shape"), 0, 0, 1, 1);
+    let shape_strs =
+        StringList::new(&PAINTBRUSH_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
+    let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
+    shape_dd.set_selected(paintbrush_shape_idx(p.shape));
+    g.attach(&shape_dd, 1, 0, 1, 1);
+    g.attach(&row("Halo width ×"), 0, 1, 1, 1);
     let hw = spin(1.0, 5.0, 0.05, 2, p.halo_width_mult);
-    g.attach(&hw, 1, 0, 1, 1);
-    g.attach(&row("Outer halo ×"), 0, 1, 1, 1);
+    g.attach(&hw, 1, 1, 1, 1);
+    g.attach(&row("Outer halo ×"), 0, 2, 1, 1);
     let oh = spin(0.5, 4.0, 0.05, 2, p.outer_halo_mult);
-    g.attach(&oh, 1, 1, 1, 1);
-    g.attach(&row("Mid halo ×"), 0, 2, 1, 1);
+    g.attach(&oh, 1, 2, 1, 1);
+    g.attach(&row("Mid halo ×"), 0, 3, 1, 1);
     let mh = spin(0.2, 3.0, 0.05, 2, p.mid_halo_mult);
-    g.attach(&mh, 1, 2, 1, 1);
-    g.attach(&row("Outer alpha"), 0, 3, 1, 1);
+    g.attach(&mh, 1, 3, 1, 1);
+    g.attach(&row("Outer alpha"), 0, 4, 1, 1);
     let oa = spin(0.0, 1.0, 0.01, 2, p.outer_alpha);
-    g.attach(&oa, 1, 3, 1, 1);
-    g.attach(&row("Mid alpha"), 0, 4, 1, 1);
+    g.attach(&oa, 1, 4, 1, 1);
+    g.attach(&row("Mid alpha"), 0, 5, 1, 1);
     let ma = spin(0.0, 1.0, 0.01, 2, p.mid_alpha);
-    g.attach(&ma, 1, 4, 1, 1);
-    g.attach(&row("Core alpha"), 0, 5, 1, 1);
+    g.attach(&ma, 1, 5, 1, 1);
+    g.attach(&row("Core alpha"), 0, 6, 1, 1);
     let ca = spin(0.0, 1.0, 0.01, 2, p.core_alpha);
-    g.attach(&ca, 1, 5, 1, 1);
+    g.attach(&ca, 1, 6, 1, 1);
+    g.attach(&row("Fan tines"), 0, 7, 1, 1);
+    let fc = spin(2.0, 8.0, 1.0, 0, p.fan_count as f64);
+    g.attach(&fc, 1, 7, 1, 1);
+    g.attach(&row("Fan spread ×"), 0, 8, 1, 1);
+    let fs = spin(0.5, 4.0, 0.1, 2, p.fan_spread_mult);
+    g.attach(&fs, 1, 8, 1, 1);
     body.append(&g);
 
     let reset = Button::with_label("Reset Paintbrush internals");
     {
-        let (hw, oh, mh, oa, ma, ca) =
-            (hw.clone(), oh.clone(), mh.clone(), oa.clone(), ma.clone(), ca.clone());
+        let (shape_dd, hw, oh, mh, oa, ma, ca, fc, fs) = (
+            shape_dd.clone(),
+            hw.clone(),
+            oh.clone(),
+            mh.clone(),
+            oa.clone(),
+            ma.clone(),
+            ca.clone(),
+            fc.clone(),
+            fs.clone(),
+        );
         reset.connect_clicked(move |_| {
             let d = PaintbrushParams::default();
+            shape_dd.set_selected(paintbrush_shape_idx(d.shape));
             hw.set_value(d.halo_width_mult);
             oh.set_value(d.outer_halo_mult);
             mh.set_value(d.mid_halo_mult);
             oa.set_value(d.outer_alpha);
             ma.set_value(d.mid_alpha);
             ca.set_value(d.core_alpha);
+            fc.set_value(d.fan_count as f64);
+            fs.set_value(d.fan_spread_mult);
         });
     }
     body.append(&reset);
 
     let apply = {
         let state = state.clone();
-        let (hw, oh, mh, oa, ma, ca) =
-            (hw.clone(), oh.clone(), mh.clone(), oa.clone(), ma.clone(), ca.clone());
+        let (shape_dd, hw, oh, mh, oa, ma, ca, fc, fs) = (
+            shape_dd.clone(),
+            hw.clone(),
+            oh.clone(),
+            mh.clone(),
+            oa.clone(),
+            ma.clone(),
+            ca.clone(),
+            fc.clone(),
+            fs.clone(),
+        );
         move || {
             state.borrow_mut().brush_params.paintbrush = PaintbrushParams {
+                shape: PAINTBRUSH_SHAPES[shape_dd.selected() as usize].1,
                 halo_width_mult: hw.value(),
                 outer_halo_mult: oh.value(),
                 mid_halo_mult: mh.value(),
                 outer_alpha: oa.value(),
                 mid_alpha: ma.value(),
                 core_alpha: ca.value(),
+                fan_count: fc.value() as u32,
+                fan_spread_mult: fs.value(),
             };
             persist(&state);
         }
     };
-    for s in [&hw, &oh, &mh, &oa, &ma, &ca] {
+    {
+        let a = apply.clone();
+        shape_dd.connect_selected_notify(move |_| a());
+    }
+    for s in [&hw, &oh, &mh, &oa, &ma, &ca, &fc, &fs] {
         let a = apply.clone();
         s.connect_value_changed(move |_| a());
     }
 }
 
+const SPRAY_SHAPES: &[(&str, SprayShape)] = &[
+    ("Circle scatter", SprayShape::Circle),
+    ("Square stamp", SprayShape::Square),
+    ("Cone (tilt-driven)", SprayShape::Cone),
+];
+fn spray_shape_idx(s: SprayShape) -> u32 {
+    SPRAY_SHAPES.iter().position(|(_, v)| *v == s).unwrap_or(0) as u32
+}
+
 fn append_spray_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.spray;
     let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
-    g.attach(&row("Dots/point"), 0, 0, 1, 1);
+    g.attach(&row("Spray shape"), 0, 0, 1, 1);
+    let shape_strs = StringList::new(&SPRAY_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
+    let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
+    shape_dd.set_selected(spray_shape_idx(p.shape));
+    g.attach(&shape_dd, 1, 0, 1, 1);
+    g.attach(&row("Dots/point"), 0, 1, 1, 1);
     let dpp = spin(1.0, 200.0, 1.0, 0, p.dots_per_point as f64);
-    g.attach(&dpp, 1, 0, 1, 1);
-    g.attach(&row("Dot factor"), 0, 1, 1, 1);
+    g.attach(&dpp, 1, 1, 1, 1);
+    g.attach(&row("Dot factor"), 0, 2, 1, 1);
     let drf = spin(0.01, 1.0, 0.01, 2, p.dot_radius_factor);
-    g.attach(&drf, 1, 1, 1, 1);
-    g.attach(&row("Min radius"), 0, 2, 1, 1);
+    g.attach(&drf, 1, 2, 1, 1);
+    g.attach(&row("Min radius"), 0, 3, 1, 1);
     let mdr = spin(0.05, 4.0, 0.05, 2, p.min_dot_radius);
-    g.attach(&mdr, 1, 2, 1, 1);
+    g.attach(&mdr, 1, 3, 1, 1);
+    g.attach(&row("Cone spread (°)"), 0, 4, 1, 1);
+    let cone = spin(5.0, 90.0, 1.0, 0, p.cone_spread_deg);
+    g.attach(&cone, 1, 4, 1, 1);
     body.append(&g);
 
     let reset = Button::with_label("Reset Spray internals");
     {
-        let (dpp, drf, mdr) = (dpp.clone(), drf.clone(), mdr.clone());
+        let (shape_dd, dpp, drf, mdr, cone) =
+            (shape_dd.clone(), dpp.clone(), drf.clone(), mdr.clone(), cone.clone());
         reset.connect_clicked(move |_| {
             let d = SprayParams::default();
+            shape_dd.set_selected(spray_shape_idx(d.shape));
             dpp.set_value(d.dots_per_point as f64);
             drf.set_value(d.dot_radius_factor);
             mdr.set_value(d.min_dot_radius);
+            cone.set_value(d.cone_spread_deg);
         });
     }
     body.append(&reset);
 
     let apply = {
         let state = state.clone();
-        let (dpp, drf, mdr) = (dpp.clone(), drf.clone(), mdr.clone());
+        let (shape_dd, dpp, drf, mdr, cone) =
+            (shape_dd.clone(), dpp.clone(), drf.clone(), mdr.clone(), cone.clone());
         move || {
             state.borrow_mut().brush_params.spray = SprayParams {
+                shape: SPRAY_SHAPES[shape_dd.selected() as usize].1,
                 dots_per_point: dpp.value() as u32,
                 dot_radius_factor: drf.value(),
                 min_dot_radius: mdr.value(),
+                cone_spread_deg: cone.value(),
             };
             persist(&state);
         }
     };
-    for s in [&dpp, &drf, &mdr] {
+    {
+        let a = apply.clone();
+        shape_dd.connect_selected_notify(move |_| a());
+    }
+    for s in [&dpp, &drf, &mdr, &cone] {
         let a = apply.clone();
         s.connect_value_changed(move |_| a());
     }
 }
 
+const CALLIGRAPHY_SHAPES: &[(&str, CalligraphyShape)] = &[
+    ("Flat-cut nib", CalligraphyShape::FlatCut),
+    ("Round nib", CalligraphyShape::Round),
+    ("Brush nib (pressure)", CalligraphyShape::BrushNib),
+];
+fn calligraphy_shape_idx(s: CalligraphyShape) -> u32 {
+    CALLIGRAPHY_SHAPES.iter().position(|(_, v)| *v == s).unwrap_or(0) as u32
+}
+
 fn append_calligraphy_internals(body: &GtkBox, state: &SharedState) {
     let p = state.borrow().brush_params.calligraphy;
     let g = gtk4::Grid::builder().row_spacing(4).column_spacing(10).build();
-    g.attach(&row("Nib angle (°)"), 0, 0, 1, 1);
+    g.attach(&row("Nib shape"), 0, 0, 1, 1);
+    let shape_strs =
+        StringList::new(&CALLIGRAPHY_SHAPES.iter().map(|(s, _)| *s).collect::<Vec<_>>());
+    let shape_dd = DropDown::builder().model(&shape_strs).hexpand(true).build();
+    shape_dd.set_selected(calligraphy_shape_idx(p.shape));
+    g.attach(&shape_dd, 1, 0, 1, 1);
+    g.attach(&row("Nib angle (°)"), 0, 1, 1, 1);
     let nib = spin(-90.0, 90.0, 1.0, 0, p.nib_angle_deg);
-    g.attach(&nib, 1, 0, 1, 1);
-    g.attach(&row("Min ratio"), 0, 1, 1, 1);
+    g.attach(&nib, 1, 1, 1, 1);
+    g.attach(&row("Min ratio"), 0, 2, 1, 1);
     let mr = spin(0.0, 1.0, 0.02, 2, p.min_ratio);
-    g.attach(&mr, 1, 1, 1, 1);
-    g.attach(&row("Resample step ×"), 0, 2, 1, 1);
+    g.attach(&mr, 1, 2, 1, 1);
+    g.attach(&row("Resample step ×"), 0, 3, 1, 1);
     let rs = spin(0.05, 2.0, 0.05, 2, p.resample_step_mult);
-    g.attach(&rs, 1, 2, 1, 1);
+    g.attach(&rs, 1, 3, 1, 1);
     let smooth = CheckButton::with_label("Smooth outline");
     smooth.set_active(p.smooth_outline);
-    g.attach(&smooth, 0, 3, 2, 1);
+    g.attach(&smooth, 0, 4, 2, 1);
     body.append(&g);
 
     let reset = Button::with_label("Reset Calligraphy internals");
     {
-        let (nib, mr, rs, smooth) = (nib.clone(), mr.clone(), rs.clone(), smooth.clone());
+        let (shape_dd, nib, mr, rs, smooth) =
+            (shape_dd.clone(), nib.clone(), mr.clone(), rs.clone(), smooth.clone());
         reset.connect_clicked(move |_| {
             let d = CalligraphyParams::default();
+            shape_dd.set_selected(calligraphy_shape_idx(d.shape));
             nib.set_value(d.nib_angle_deg);
             mr.set_value(d.min_ratio);
             rs.set_value(d.resample_step_mult);
@@ -1098,9 +1260,11 @@ fn append_calligraphy_internals(body: &GtkBox, state: &SharedState) {
 
     let apply = {
         let state = state.clone();
-        let (nib, mr, rs, smooth) = (nib.clone(), mr.clone(), rs.clone(), smooth.clone());
+        let (shape_dd, nib, mr, rs, smooth) =
+            (shape_dd.clone(), nib.clone(), mr.clone(), rs.clone(), smooth.clone());
         move || {
             state.borrow_mut().brush_params.calligraphy = CalligraphyParams {
+                shape: CALLIGRAPHY_SHAPES[shape_dd.selected() as usize].1,
                 nib_angle_deg: nib.value(),
                 min_ratio: mr.value(),
                 resample_step_mult: rs.value(),
@@ -1109,6 +1273,10 @@ fn append_calligraphy_internals(body: &GtkBox, state: &SharedState) {
             persist(&state);
         }
     };
+    {
+        let a = apply.clone();
+        shape_dd.connect_selected_notify(move |_| a());
+    }
     for s in [&nib, &mr, &rs] {
         let a = apply.clone();
         s.connect_value_changed(move |_| a());

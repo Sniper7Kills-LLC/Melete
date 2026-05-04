@@ -42,73 +42,200 @@ use crate::viewport_transform::ViewportTransform;
 // before this struct existed, so callers that don't pass an override
 // see the same output as before.
 
+/// Tip geometry for the Pen / Highlighter family. `Round` is the
+/// default — single smooth path stroked with a round-cap circle. `Flat`
+/// turns the stroke into a calligraphy-lite variable-width polygon
+/// (always perpendicular to the path). `Marker` is a fixed
+/// chunky-tipped bookbinder marker.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PenShape {
+    #[default]
+    Round,
+    Flat,
+    Marker,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PenParams {
+    #[serde(default)]
+    pub shape: PenShape,
     pub width_floor: f64,
     pub width_pressure_amplitude: f64,
+    /// Used by `PenShape::Marker` — multiplier on `base_width` for the
+    /// chunky marker tip.
+    #[serde(default = "default_marker_mult")]
+    pub marker_width_mult: f64,
+}
+fn default_marker_mult() -> f64 {
+    1.8
 }
 impl Default for PenParams {
     fn default() -> Self {
-        Self { width_floor: 0.6, width_pressure_amplitude: 0.4 }
+        Self {
+            shape: PenShape::Round,
+            width_floor: 0.6,
+            width_pressure_amplitude: 0.4,
+            marker_width_mult: 1.8,
+        }
     }
+}
+
+/// Pencil-tip shape. `Cylindrical` is a normal pencil point.
+/// `Carpenter` simulates a flat carpenter pencil — wider, with width
+/// modulated by stroke direction (similar to calligraphy's flat-cut).
+/// `Mechanical` is a very thin precision tip with no tilt shading.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PencilShape {
+    #[default]
+    Cylindrical,
+    Carpenter,
+    Mechanical,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PencilParams {
+    #[serde(default)]
+    pub shape: PencilShape,
     pub core_clamp_min: f64,
     pub core_clamp_max: f64,
     pub tilt_threshold: f64,
     pub tilt_band_mult: f64,
     pub tilt_alpha_scale: f64,
+    /// Carpenter-shape: maximum width as a multiple of `base_width`.
+    #[serde(default = "default_carpenter_mult")]
+    pub carpenter_width_mult: f64,
+}
+fn default_carpenter_mult() -> f64 {
+    2.0
 }
 impl Default for PencilParams {
     fn default() -> Self {
         Self {
+            shape: PencilShape::Cylindrical,
             core_clamp_min: 0.4,
             core_clamp_max: 0.9,
             tilt_threshold: 0.12,
             tilt_band_mult: 8.0,
             tilt_alpha_scale: 0.22,
+            carpenter_width_mult: 2.0,
         }
     }
 }
 
+/// Paintbrush bristle shape. `Round` is the default 3-pass halo+core
+/// (current). `Flat` is a single hard-edge wide stroke — like a flat
+/// sumi brush. `Fan` lays down 3 parallel offset strokes spread
+/// perpendicular to the stroke direction (fan-bristle effect).
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PaintbrushShape {
+    #[default]
+    Round,
+    Flat,
+    Fan,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PaintbrushParams {
+    #[serde(default)]
+    pub shape: PaintbrushShape,
     pub halo_width_mult: f64,
     pub outer_halo_mult: f64,
     pub mid_halo_mult: f64,
     pub outer_alpha: f64,
     pub mid_alpha: f64,
     pub core_alpha: f64,
+    /// Fan-shape: number of parallel tines.
+    #[serde(default = "default_fan_count")]
+    pub fan_count: u32,
+    /// Fan-shape: spread perpendicular to stroke as a multiple of
+    /// stroke width (1.0 = the full bristle spread equals the brush
+    /// width).
+    #[serde(default = "default_fan_spread")]
+    pub fan_spread_mult: f64,
+}
+fn default_fan_count() -> u32 {
+    3
+}
+fn default_fan_spread() -> f64 {
+    1.4
 }
 impl Default for PaintbrushParams {
     fn default() -> Self {
         Self {
+            shape: PaintbrushShape::Round,
             halo_width_mult: 1.6,
             outer_halo_mult: 1.4,
             mid_halo_mult: 0.95,
             outer_alpha: 0.07,
             mid_alpha: 0.20,
             core_alpha: 0.95,
+            fan_count: 3,
+            fan_spread_mult: 1.4,
         }
     }
 }
 
+/// Spray-can scatter shape. `Circle` (default) — uniform-radius
+/// circular spread. `Square` stamps small squares instead of circles.
+/// `Cone` biases scatter direction along the stylus tilt vector,
+/// simulating an angled airbrush.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SprayShape {
+    #[default]
+    Circle,
+    Square,
+    Cone,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SprayParams {
+    #[serde(default)]
+    pub shape: SprayShape,
     pub dots_per_point: u32,
     pub dot_radius_factor: f64,
     pub min_dot_radius: f64,
+    /// Cone-shape: half-angle of the cone in degrees. Smaller =
+    /// tighter directional spray.
+    #[serde(default = "default_cone_spread")]
+    pub cone_spread_deg: f64,
+}
+fn default_cone_spread() -> f64 {
+    35.0
 }
 impl Default for SprayParams {
     fn default() -> Self {
-        Self { dots_per_point: 36, dot_radius_factor: 0.06, min_dot_radius: 0.35 }
+        Self {
+            shape: SprayShape::Circle,
+            dots_per_point: 36,
+            dot_radius_factor: 0.06,
+            min_dot_radius: 0.35,
+            cone_spread_deg: 35.0,
+        }
     }
+}
+
+/// Calligraphy nib shape. `FlatCut` (default) is the angled italic
+/// nib — width varies by direction relative to the nib axis. `Round`
+/// is a constant-width round nib (no angle bias). `BrushNib` is a
+/// soft brush-tip with width driven by pen pressure rather than
+/// stroke direction.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CalligraphyShape {
+    #[default]
+    FlatCut,
+    Round,
+    BrushNib,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CalligraphyParams {
+    #[serde(default)]
+    pub shape: CalligraphyShape,
     pub nib_angle_deg: f64,
     pub min_ratio: f64,
     pub resample_step_mult: f64,
@@ -117,6 +244,7 @@ pub struct CalligraphyParams {
 impl Default for CalligraphyParams {
     fn default() -> Self {
         Self {
+            shape: CalligraphyShape::FlatCut,
             nib_angle_deg: 45.0,
             min_ratio: 0.18,
             resample_step_mult: 0.5,
@@ -1235,6 +1363,14 @@ fn solid_color(color: journal_core::Color, alpha: f64) -> Color {
 // ---------------------------------------------------------------------------
 
 fn draw_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &PenParams) {
+    match params.shape {
+        PenShape::Round => draw_pen_round(scene, transform, stroke, params),
+        PenShape::Flat => draw_pen_flat(scene, transform, stroke, params),
+        PenShape::Marker => draw_pen_marker(scene, transform, stroke, params),
+    }
+}
+
+fn draw_pen_round(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &PenParams) {
     let pen = stroke.pen;
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let canvas_width_full = pen.base_width / zoc;
@@ -1257,14 +1393,93 @@ fn draw_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &P
     let width =
         canvas_width_full * (params.width_floor + params.width_pressure_amplitude * avg_pressure);
 
+    let path = build_smooth_path(pts);
+    let mut style = KStroke::new(width);
+    style.start_cap = Cap::Round;
+    style.end_cap = Cap::Round;
+    style.join = Join::Round;
+    scene.stroke(&style, transform, &brush, None, &path);
+}
+
+/// `PenShape::Flat` — draws the path as a calligraphy-lite
+/// variable-width filled polygon, but the offset is purely
+/// perpendicular to the stroke direction (no nib-angle bias). Width
+/// scales with pressure floor + amplitude.
+fn draw_pen_flat(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &PenParams) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let max_width = pen.base_width / zoc;
+    let pts = &stroke.points;
+    if pts.len() < 2 {
+        draw_pen_round(scene, transform, stroke, params);
+        return;
+    }
+    let brush = solid(pen.color, pen.opacity);
+    let resample_step = (max_width * 0.5).max(0.5);
+    let samples = resample_path(pts, resample_step);
+    if samples.len() < 2 {
+        return;
+    }
+
+    let n = samples.len();
+    let mut left: Vec<(f64, f64)> = Vec::with_capacity(n);
+    let mut right: Vec<(f64, f64)> = Vec::with_capacity(n);
+    for i in 0..n {
+        let (x, y, press) = samples[i];
+        let (tx, ty) = sample_tangent(&samples, i);
+        let tlen = (tx * tx + ty * ty).sqrt().max(1e-6);
+        let press_eff =
+            (params.width_floor + params.width_pressure_amplitude * press.max(0.05)).max(0.1);
+        let w = max_width * press_eff * 0.5;
+        let nxn = -ty / tlen;
+        let nyn = tx / tlen;
+        left.push((x + nxn * w, y + nyn * w));
+        right.push((x - nxn * w, y - nyn * w));
+    }
+    let mut path = BezPath::new();
+    path.move_to(left[0]);
+    smooth_polyline(&mut path, &left[1..]);
+    let right_rev: Vec<(f64, f64)> = right.iter().rev().copied().collect();
+    smooth_polyline(&mut path, &right_rev);
+    path.close_path();
+    scene.fill(Fill::NonZero, transform, &brush, None, &path);
+}
+
+/// `PenShape::Marker` — fixed wide tip with constant width across the
+/// stroke (no pressure modulation), suitable for a bookbinder /
+/// permanent-marker feel.
+fn draw_pen_marker(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &PenParams) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let width = (pen.base_width / zoc) * params.marker_width_mult;
+    let brush = solid(pen.color, pen.opacity);
+    let pts = &stroke.points;
+    if pts.is_empty() {
+        return;
+    }
+    if pts.len() == 1 {
+        let p = &pts[0];
+        let path = Circle::new((p.x, p.y), width * 0.5).to_path(0.05);
+        scene.fill(Fill::NonZero, transform, &brush, None, &path);
+        return;
+    }
+    let path = build_smooth_path(pts);
+    let mut style = KStroke::new(width);
+    style.start_cap = Cap::Round;
+    style.end_cap = Cap::Round;
+    style.join = Join::Round;
+    scene.stroke(&style, transform, &brush, None, &path);
+}
+
+/// Build a quadratic-through-midpoints BezPath from a list of
+/// `StrokePoint`s. Shared between Pen-Round and Pen-Marker.
+fn build_smooth_path(pts: &[journal_core::StrokePoint]) -> BezPath {
+    let n = pts.len();
     let mut path = BezPath::new();
     path.move_to((pts[0].x, pts[0].y));
     if n == 2 {
         path.line_to((pts[1].x, pts[1].y));
     } else {
-        // Quadratic-through-midpoints: each interior point is a control
-        // point; the curve passes through midpoints of consecutive
-        // segments. Matches the visual smoothing the Cairo path used.
         for i in 0..n - 1 {
             let p0 = &pts[i];
             let p1 = &pts[i + 1];
@@ -1279,12 +1494,56 @@ fn draw_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &P
             }
         }
     }
+    path
+}
 
-    let mut style = KStroke::new(width);
-    style.start_cap = Cap::Round;
-    style.end_cap = Cap::Round;
-    style.join = Join::Round;
-    scene.stroke(&style, transform, &brush, None, &path);
+/// Resample a polyline so that consecutive samples are at most `step`
+/// apart. Pressure is linearly interpolated. Used by the variable-width
+/// outline shapes (PenFlat / Calligraphy).
+fn resample_path(
+    pts: &[journal_core::StrokePoint],
+    step: f64,
+) -> Vec<(f64, f64, f64)> {
+    let mut out = Vec::with_capacity(pts.len() * 2);
+    for i in 0..pts.len() {
+        let p = &pts[i];
+        let press = p.pressure as f64;
+        if i == 0 {
+            out.push((p.x, p.y, press));
+            continue;
+        }
+        let prev = &pts[i - 1];
+        let dx = p.x - prev.x;
+        let dy = p.y - prev.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        let n = ((len / step.max(1e-6)).ceil() as i32).max(1);
+        for k in 1..=n {
+            let t = k as f64 / n as f64;
+            let x = prev.x + dx * t;
+            let y = prev.y + dy * t;
+            let pp = prev.pressure as f64 + (press - prev.pressure as f64) * t;
+            out.push((x, y, pp));
+        }
+    }
+    out
+}
+
+/// Compute a tangent vector at sample `i`. Uses neighbour difference
+/// internally and clamps at endpoints to avoid zero-length tangents.
+fn sample_tangent(samples: &[(f64, f64, f64)], i: usize) -> (f64, f64) {
+    let n = samples.len();
+    let (x, y, _) = samples[i];
+    if i == 0 {
+        let (nx, ny, _) = samples[1];
+        (nx - x, ny - y)
+    } else if i == n - 1 {
+        let (px, py, _) = samples[i - 1];
+        (x - px, y - py)
+    } else {
+        let (px, py, _) = samples[i - 1];
+        let (nx, ny, _) = samples[i + 1];
+        (nx - px, ny - py)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1298,6 +1557,19 @@ fn draw_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &P
 // each segment so the band width tracks the user's wrist angle smoothly.
 
 fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &PencilParams) {
+    match params.shape {
+        PencilShape::Cylindrical => draw_pencil_cylindrical(scene, transform, stroke, params),
+        PencilShape::Carpenter => draw_pencil_carpenter(scene, transform, stroke, params),
+        PencilShape::Mechanical => draw_pencil_mechanical(scene, transform, stroke, params),
+    }
+}
+
+fn draw_pencil_cylindrical(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    params: &PencilParams,
+) {
     let pen = stroke.pen;
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let core_w = (pen.base_width / zoc).clamp(params.core_clamp_min, params.core_clamp_max);
@@ -1307,7 +1579,6 @@ fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &P
         return;
     }
 
-    // 1) Sharp core line — graphite point trace, always present.
     let core_brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64));
     let mut core = BezPath::new();
     core.move_to((pts[0].x, pts[0].y));
@@ -1324,13 +1595,7 @@ fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &P
         return;
     }
 
-    // 2) Per-segment tilt shading. Stylus drivers report tilt_x/tilt_y in
-    //    radians (typically ±π/2). Magnitude in [0, π/2]; normalize by π/2
-    //    so tilt_factor ∈ [0, 1]. Below `params.tilt_threshold` the
-    //    overlay is a no-op, so an upright stylus leaves only the sharp
-    //    core.
     let inv_half_pi = 2.0 / std::f64::consts::PI;
-
     for i in 0..pts.len() - 1 {
         let a = &pts[i];
         let b = &pts[i + 1];
@@ -1356,6 +1621,83 @@ fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &P
     }
 }
 
+/// Carpenter pencil — wider flat lead, width modulated by stroke
+/// direction (similar to a flat-cut nib). Tilt-shading reused at lower
+/// intensity since the wide lead already implies "shaded".
+fn draw_pencil_carpenter(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    params: &PencilParams,
+) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let max_width = (pen.base_width / zoc) * params.carpenter_width_mult;
+    let pts = &stroke.points;
+    if pts.len() < 2 {
+        draw_pencil_cylindrical(scene, transform, stroke, params);
+        return;
+    }
+    let brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64 * 0.85));
+    let resample_step = (max_width * 0.4).max(0.5);
+    let samples = resample_path(pts, resample_step);
+    if samples.len() < 2 {
+        return;
+    }
+    let nib_angle: f64 = std::f64::consts::FRAC_PI_4;
+    let min_ratio = 0.35;
+    let n = samples.len();
+    let mut left: Vec<(f64, f64)> = Vec::with_capacity(n);
+    let mut right: Vec<(f64, f64)> = Vec::with_capacity(n);
+    for i in 0..n {
+        let (x, y, press) = samples[i];
+        let (tx, ty) = sample_tangent(&samples, i);
+        let tlen = (tx * tx + ty * ty).sqrt().max(1e-6);
+        let dir = ty.atan2(tx);
+        let rel = (dir - nib_angle).sin().abs();
+        let press_clamped = press.max(0.4);
+        let w = max_width * (min_ratio + (1.0 - min_ratio) * rel) * press_clamped * 0.5;
+        let nxn = -ty / tlen;
+        let nyn = tx / tlen;
+        left.push((x + nxn * w, y + nyn * w));
+        right.push((x - nxn * w, y - nyn * w));
+    }
+    let mut path = BezPath::new();
+    path.move_to(left[0]);
+    smooth_polyline(&mut path, &left[1..]);
+    let right_rev: Vec<(f64, f64)> = right.iter().rev().copied().collect();
+    smooth_polyline(&mut path, &right_rev);
+    path.close_path();
+    scene.fill(Fill::NonZero, transform, &brush, None, &path);
+}
+
+/// Mechanical pencil — extra-thin precision tip, no tilt shading.
+fn draw_pencil_mechanical(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    _params: &PencilParams,
+) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let core_w = (pen.base_width / zoc * 0.5).clamp(0.2, 0.6);
+    let pts = &stroke.points;
+    if pts.is_empty() {
+        return;
+    }
+    let core_brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64));
+    let mut core = BezPath::new();
+    core.move_to((pts[0].x, pts[0].y));
+    for p in pts.iter().skip(1) {
+        core.line_to((p.x, p.y));
+    }
+    let mut core_style = KStroke::new(core_w);
+    core_style.start_cap = Cap::Round;
+    core_style.end_cap = Cap::Round;
+    core_style.join = Join::Round;
+    scene.stroke(&core_style, transform, &core_brush, None, &core);
+}
+
 // ---------------------------------------------------------------------------
 // Paintbrush — two-pass stroke for soft-edge feathered look
 // ---------------------------------------------------------------------------
@@ -1367,6 +1709,19 @@ fn draw_pencil(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &P
 // fewer paths, much faster, and overlaps don't darken to opacity).
 
 fn draw_paintbrush(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    params: &PaintbrushParams,
+) {
+    match params.shape {
+        PaintbrushShape::Round => draw_paintbrush_round(scene, transform, stroke, params),
+        PaintbrushShape::Flat => draw_paintbrush_flat(scene, transform, stroke, params),
+        PaintbrushShape::Fan => draw_paintbrush_fan(scene, transform, stroke, params),
+    }
+}
+
+fn draw_paintbrush_round(
     scene: &mut Scene,
     transform: Affine,
     stroke: &Stroke,
@@ -1390,7 +1745,8 @@ fn draw_paintbrush(
 
     if n == 1 {
         let p = &pts[0];
-        let halo_brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64 * params.mid_alpha));
+        let halo_brush =
+            Brush::Solid(solid_color(pen.color, pen.opacity as f64 * params.mid_alpha));
         let core_brush = solid(pen.color, pen.opacity * params.core_alpha as f32);
         let halo = Circle::new((p.x, p.y), halo_w * 0.5).to_path(0.05);
         scene.fill(Fill::NonZero, transform, &halo_brush, None, &halo);
@@ -1399,30 +1755,7 @@ fn draw_paintbrush(
         return;
     }
 
-    let mut path = BezPath::new();
-    path.move_to((pts[0].x, pts[0].y));
-    if n == 2 {
-        path.line_to((pts[1].x, pts[1].y));
-    } else {
-        for i in 0..n - 1 {
-            let p0 = &pts[i];
-            let p1 = &pts[i + 1];
-            if i == 0 {
-                let mid = ((p0.x + p1.x) * 0.5, (p0.y + p1.y) * 0.5);
-                path.quad_to((p0.x, p0.y), mid);
-            } else if i == n - 2 {
-                path.quad_to((p0.x, p0.y), (p1.x, p1.y));
-            } else {
-                let next_mid = ((p0.x + p1.x) * 0.5, (p0.y + p1.y) * 0.5);
-                path.quad_to((p0.x, p0.y), next_mid);
-            }
-        }
-    }
-
-    // Three layered passes simulate bristle softness — the outer halo
-    // fades nearly to transparent, the mid pass is ~half body alpha, and
-    // the saturated core sits inside. Stacked, they read as a watercolor
-    // brush instead of a flat band like the Highlighter.
+    let path = build_smooth_path(pts);
     let bands: [(f64, f64); 3] = [
         (halo_w * params.outer_halo_mult, params.outer_alpha),
         (halo_w * params.mid_halo_mult, params.mid_alpha),
@@ -1431,6 +1764,105 @@ fn draw_paintbrush(
     for &(w, alpha_mult) in &bands {
         let brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64 * alpha_mult));
         let mut style = KStroke::new(w);
+        style.start_cap = Cap::Round;
+        style.end_cap = Cap::Round;
+        style.join = Join::Round;
+        scene.stroke(&style, transform, &brush, None, &path);
+    }
+}
+
+/// `PaintbrushShape::Flat` — single hard-edge wide stroke, no halo.
+/// Crisper than Round; reads as a flat sumi brush.
+fn draw_paintbrush_flat(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    params: &PaintbrushParams,
+) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let canvas_width_full = pen.base_width / zoc;
+    let pts = &stroke.points;
+    if pts.is_empty() {
+        return;
+    }
+    let avg_pressure = (pts.iter().map(|p| p.pressure as f64).sum::<f64>()
+        / pts.len() as f64)
+        .max(0.2);
+    let width = canvas_width_full * avg_pressure;
+    let brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64 * params.core_alpha));
+    if pts.len() == 1 {
+        let p = &pts[0];
+        let path = Circle::new((p.x, p.y), width * 0.5).to_path(0.05);
+        scene.fill(Fill::NonZero, transform, &brush, None, &path);
+        return;
+    }
+    let path = build_smooth_path(pts);
+    let mut style = KStroke::new(width);
+    style.start_cap = Cap::Square;
+    style.end_cap = Cap::Square;
+    style.join = Join::Miter;
+    scene.stroke(&style, transform, &brush, None, &path);
+}
+
+/// `PaintbrushShape::Fan` — multiple parallel offset strokes spread
+/// perpendicular to the stroke direction. Each "tine" is a thin
+/// stroke; together they look like fan-bristle hair.
+fn draw_paintbrush_fan(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    params: &PaintbrushParams,
+) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let canvas_width_full = pen.base_width / zoc;
+    let pts = &stroke.points;
+    if pts.len() < 2 {
+        draw_paintbrush_round(scene, transform, stroke, params);
+        return;
+    }
+    let avg_pressure = (pts.iter().map(|p| p.pressure as f64).sum::<f64>()
+        / pts.len() as f64)
+        .max(0.2);
+    let total_width = canvas_width_full * avg_pressure * params.fan_spread_mult;
+    let count = params.fan_count.max(2);
+    let tine_w = (canvas_width_full * 0.18).max(0.4);
+    let brush = Brush::Solid(solid_color(pen.color, pen.opacity as f64 * params.core_alpha));
+
+    for i in 0..count {
+        let t = if count == 1 {
+            0.5
+        } else {
+            i as f64 / (count - 1) as f64
+        };
+        let offset = (t - 0.5) * total_width;
+        let mut path = BezPath::new();
+        for (idx, p) in pts.iter().enumerate() {
+            // Rough tangent at this point, used to offset perpendicular.
+            let (tx, ty) = if idx == 0 {
+                let p1 = &pts[1];
+                (p1.x - p.x, p1.y - p.y)
+            } else if idx == pts.len() - 1 {
+                let p0 = &pts[idx - 1];
+                (p.x - p0.x, p.y - p0.y)
+            } else {
+                let p0 = &pts[idx - 1];
+                let p1 = &pts[idx + 1];
+                (p1.x - p0.x, p1.y - p0.y)
+            };
+            let tlen = (tx * tx + ty * ty).sqrt().max(1e-6);
+            let nx = -ty / tlen;
+            let ny = tx / tlen;
+            let ox = p.x + nx * offset;
+            let oy = p.y + ny * offset;
+            if idx == 0 {
+                path.move_to((ox, oy));
+            } else {
+                path.line_to((ox, oy));
+            }
+        }
+        let mut style = KStroke::new(tine_w);
         style.start_cap = Cap::Round;
         style.end_cap = Cap::Round;
         style.join = Join::Round;
@@ -1449,18 +1881,50 @@ fn draw_spray(scene: &mut Scene, transform: Affine, stroke: &Stroke, params: &Sp
     let dot_radius = (radius * params.dot_radius_factor).max(params.min_dot_radius);
     let dots_per_point = params.dots_per_point;
     let brush = solid(pen.color, pen.opacity);
+    let cone_half = params.cone_spread_deg.to_radians();
 
     for (idx, p) in stroke.points.iter().enumerate() {
         let press = (p.pressure.max(0.2) as f64).min(1.0);
         let scatter = radius * press;
+        // Cone direction from stylus tilt — falls back to up (-Y) when
+        // the stylus is upright.
+        let tilt_x = p.tilt_x as f64;
+        let tilt_y = p.tilt_y as f64;
+        let tilt_mag = (tilt_x.hypot(tilt_y)).max(1e-6);
+        let cone_dir = if matches!(params.shape, SprayShape::Cone) && tilt_mag > 0.05 {
+            tilt_y.atan2(tilt_x)
+        } else {
+            -std::f64::consts::FRAC_PI_2
+        };
+
         for k in 0..dots_per_point {
             let seed = (idx as f64) * 7.31 + k as f64 * 1.97 + p.x * 0.013 + p.y * 0.029;
-            let theta = pseudo_noise(seed, seed * 1.3) * std::f64::consts::TAU;
             let r_unit = pseudo_noise(seed * 2.7, seed * 0.8);
             let r = scatter * (r_unit * r_unit);
+            let theta = match params.shape {
+                SprayShape::Cone => {
+                    let local = (pseudo_noise(seed, seed * 1.3) - 0.5) * 2.0 * cone_half;
+                    cone_dir + local
+                }
+                _ => pseudo_noise(seed, seed * 1.3) * std::f64::consts::TAU,
+            };
             let dx = theta.cos() * r;
             let dy = theta.sin() * r;
-            let path = Circle::new((p.x + dx, p.y + dy), dot_radius).to_path(0.05);
+            let cx = p.x + dx;
+            let cy = p.y + dy;
+            let path = match params.shape {
+                SprayShape::Square => {
+                    let half = dot_radius;
+                    let mut sp = BezPath::new();
+                    sp.move_to((cx - half, cy - half));
+                    sp.line_to((cx + half, cy - half));
+                    sp.line_to((cx + half, cy + half));
+                    sp.line_to((cx - half, cy + half));
+                    sp.close_path();
+                    sp
+                }
+                _ => Circle::new((cx, cy), dot_radius).to_path(0.05),
+            };
             scene.fill(Fill::NonZero, transform, &brush, None, &path);
         }
     }
@@ -1491,6 +1955,18 @@ fn draw_calligraphy(
         let p = &pts[0];
         let path = Circle::new((p.x, p.y), max_width * 0.5 * min_ratio).to_path(0.05);
         scene.fill(Fill::NonZero, transform, &brush, None, &path);
+        return;
+    }
+
+    // Round nib short-circuit: constant-width round trace, no
+    // angle/pressure-driven outline polygon.
+    if matches!(params.shape, CalligraphyShape::Round) {
+        let path = build_smooth_path(pts);
+        let mut style = KStroke::new(max_width);
+        style.start_cap = Cap::Round;
+        style.end_cap = Cap::Round;
+        style.join = Join::Round;
+        scene.stroke(&style, transform, &brush, None, &path);
         return;
     }
 
@@ -1525,22 +2001,24 @@ fn draw_calligraphy(
     let mut right: Vec<(f64, f64)> = Vec::with_capacity(n);
     for i in 0..n {
         let (x, y, press) = samples[i];
-        let (tx, ty) = if i == 0 {
-            let (nx, ny, _) = samples[1];
-            (nx - x, ny - y)
-        } else if i == n - 1 {
-            let (px, py, _) = samples[i - 1];
-            (x - px, y - py)
-        } else {
-            let (px, py, _) = samples[i - 1];
-            let (nx, ny, _) = samples[i + 1];
-            (nx - px, ny - py)
-        };
+        let (tx, ty) = sample_tangent(&samples, i);
         let tlen = (tx * tx + ty * ty).sqrt().max(1e-6);
-        let dir = ty.atan2(tx);
-        let rel = (dir - nib_angle).sin().abs();
         let press_clamped = press.max(0.3);
-        let w = max_width * (min_ratio + (1.0 - min_ratio) * rel) * press_clamped * 0.5;
+        // Width formula depends on shape:
+        // - FlatCut: angle-modulated (the current behaviour)
+        // - BrushNib: pressure-only, no angle bias
+        let w = match params.shape {
+            CalligraphyShape::FlatCut | CalligraphyShape::Round => {
+                let dir = ty.atan2(tx);
+                let rel = (dir - nib_angle).sin().abs();
+                max_width * (min_ratio + (1.0 - min_ratio) * rel) * press_clamped * 0.5
+            }
+            CalligraphyShape::BrushNib => {
+                // Soft brush: width tracks pressure with a generous
+                // floor so unloaded touches still show.
+                max_width * (0.4 + 0.6 * press_clamped) * 0.5
+            }
+        };
         let nxn = -ty / tlen;
         let nyn = tx / tlen;
         left.push((x + nxn * w, y + nyn * w));

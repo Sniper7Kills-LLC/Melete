@@ -1147,9 +1147,11 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
             let floor = floor.clone();
             let amp = amp.clone();
             Rc::new(move || {
+                let prev = state.borrow().brush_params.pen;
                 state.borrow_mut().brush_params.pen = PenParams {
                     width_floor: floor.value(),
                     width_pressure_amplitude: amp.value(),
+                    ..prev
                 };
             })
         };
@@ -1205,12 +1207,14 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
             let (cmin, cmax, thr, tband, talpha) =
                 (cmin.clone(), cmax.clone(), thr.clone(), tband.clone(), talpha.clone());
             Rc::new(move || {
+                let prev = state.borrow().brush_params.pencil;
                 state.borrow_mut().brush_params.pencil = PencilParams {
                     core_clamp_min: cmin.value(),
                     core_clamp_max: cmax.value(),
                     tilt_threshold: thr.value(),
                     tilt_band_mult: tband.value(),
                     tilt_alpha_scale: talpha.value(),
+                    ..prev
                 };
             })
         };
@@ -1266,6 +1270,7 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
             let (hw, oh, mh, oa, ma, ca) =
                 (hw.clone(), oh.clone(), mh.clone(), oa.clone(), ma.clone(), ca.clone());
             Rc::new(move || {
+                let prev = state.borrow().brush_params.paintbrush;
                 state.borrow_mut().brush_params.paintbrush = PaintbrushParams {
                     halo_width_mult: hw.value(),
                     outer_halo_mult: oh.value(),
@@ -1273,6 +1278,7 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
                     outer_alpha: oa.value(),
                     mid_alpha: ma.value(),
                     core_alpha: ca.value(),
+                    ..prev
                 };
             })
         };
@@ -1314,10 +1320,12 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
             let state = state.clone();
             let (dpp, drf, mdr) = (dpp.clone(), drf.clone(), mdr.clone());
             Rc::new(move || {
+                let prev = state.borrow().brush_params.spray;
                 state.borrow_mut().brush_params.spray = SprayParams {
                     dots_per_point: dpp.value() as u32,
                     dot_radius_factor: drf.value(),
                     min_dot_radius: mdr.value(),
+                    ..prev
                 };
             })
         };
@@ -1363,11 +1371,13 @@ fn add_brush_param_sections(body: &GtkBox, state: &SharedState) {
             let state = state.clone();
             let (nib, mr, rs, smooth_chk) = (nib.clone(), mr.clone(), rs.clone(), smooth_chk.clone());
             Rc::new(move || {
+                let prev = state.borrow().brush_params.calligraphy;
                 state.borrow_mut().brush_params.calligraphy = CalligraphyParams {
                     nib_angle_deg: nib.value(),
                     min_ratio: mr.value(),
                     resample_step_mult: rs.value(),
                     smooth_outline: smooth_chk.is_active(),
+                    ..prev
                 };
             })
         };
