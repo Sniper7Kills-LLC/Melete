@@ -6,6 +6,7 @@ use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, CheckButton, ColorDialog, ColorDialogButton,
     DrawingArea, Entry, Label, Orientation, ScrolledWindow, Separator, SpinButton, Window,
 };
+use libadwaita as adw;
 use journal_core::{NotebookId, PageTemplate, SectionId, TemplateId};
 // {Notebook,Section}Store methods reached via dyn JournalBackend.
 
@@ -267,45 +268,136 @@ pub fn open_app_settings(
     state: SharedState,
     on_saved: Box<dyn Fn()>,
 ) {
+    use adw::prelude::*;
     use gtk4::{FileDialog, FileFilter};
     use std::path::PathBuf;
 
     let cfg = crate::config::load();
-    let win = modal(parent, "App settings");
-    let body = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(8)
-        .margin_top(16)
-        .margin_bottom(16)
-        .margin_start(16)
-        .margin_end(16)
+    let prefs = adw::PreferencesWindow::builder()
+        .title("App settings")
+        .transient_for(parent)
+        .modal(true)
+        .default_width(560)
+        .default_height(620)
         .build();
 
-    body.append(&Label::new(Some("No-page placeholder")));
+    let on_saved = Rc::new(on_saved);
+    let path_state: Rc<RefCell<Option<PathBuf>>> =
+        Rc::new(RefCell::new(cfg.placeholder_image_path.clone()));
 
-    let path_label = Label::new(
-        cfg.placeholder_image_path
-            .as_ref()
-            .and_then(|p| p.to_str())
-            .or(Some("(no image set)")),
-    );
-    path_label.set_halign(gtk4::Align::Start);
-    path_label.set_wrap(true);
-    body.append(&path_label);
+    // Reusable persist closure. Reads the current widget values, merges
+    // them into a freshly-loaded config, persists, and notifies the caller.
+    let persist: Rc<dyn Fn(&PersistInputs)> = {
+        let state = state.clone();
+        let on_saved = on_saved.clone();
+        Rc::new(move |inputs: &PersistInputs| {
+            let mut new_cfg = crate::config::load();
+            new_cfg.placeholder_image_path = inputs.image_path.clone();
+            new_cfg.placeholder_text = match inputs.text.as_str() {
+                "" => None,
+                t => Some(t.to_string()),
+            };
+            new_cfg.developer_mode = inputs.developer_mode;
+            if let Err(e) = crate::config::save(&new_cfg) {
+                tracing::error!("save config: {e}");
+            }
+            crate::state::reload_placeholder(&state);
+            (on_saved)();
+        })
+    };
 
-    let path_state: Rc<RefCell<Option<PathBuf>>> = Rc::new(RefCell::new(cfg.placeholder_image_path.clone()));
+    let page = adw::PreferencesPage::new();
 
-    let row1 = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).build();
-    let pick_btn = Button::with_label("Choose image…");
+    // ── Empty state ─────────────────────────────────────────────────
+    let empty_group = adw::PreferencesGroup::builder()
+        .title("Empty state")
+        .description("How the canvas reads when no page is selected.")
+        .build();
+
+    let image_row = adw::ActionRow::builder()
+        .title("Splash image")
+        .subtitle(
+            cfg.placeholder_image_path
+                .as_ref()
+                .and_then(|p| p.to_str())
+                .unwrap_or("(no image set)"),
+        )
+        .build();
+    let pick_btn = Button::with_label("Choose…");
+    pick_btn.add_css_class("flat");
+    pick_btn.set_valign(gtk4::Align::Center);
     let clear_btn = Button::with_label("Clear");
-    row1.append(&pick_btn);
-    row1.append(&clear_btn);
-    body.append(&row1);
+    clear_btn.add_css_class("flat");
+    clear_btn.set_valign(gtk4::Align::Center);
+    image_row.add_suffix(&pick_btn);
+    image_row.add_suffix(&clear_btn);
+    empty_group.add(&image_row);
+
+    let text_row = adw::EntryRow::builder()
+        .title("Placeholder text (used if no image)")
+        .text(cfg.placeholder_text.as_deref().unwrap_or(""))
+        .build();
+    empty_group.add(&text_row);
+
+    page.add(&empty_group);
+
+    // ── Drawing ─────────────────────────────────────────────────────
+    let drawing_group = adw::PreferencesGroup::builder()
+        .title("Drawing")
+        .build();
+    let presets_row = adw::ActionRow::builder()
+        .title("Pen presets")
+        .subtitle("Saved width / opacity / color combos for the toolbar")
+        .activatable(true)
+        .build();
+    let presets_arrow = gtk4::Image::from_icon_name("go-next-symbolic");
+    presets_arrow.add_css_class("dim-label");
+    presets_row.add_suffix(&presets_arrow);
+    drawing_group.add(&presets_row);
+    page.add(&drawing_group);
+    {
+        let parent = parent.clone();
+        let state = state.clone();
+        presets_row.connect_activated(move |_| {
+            open_pen_presets_settings(&parent, state.clone());
+        });
+    }
+
+    // ── Developer ────────────────────────────────────────────────────
+    let dev_group = adw::PreferencesGroup::builder()
+        .title("Developer")
+        .build();
+    let dev_row = adw::SwitchRow::builder()
+        .title("Developer mode")
+        .subtitle(
+            "Enables the per-tool Brush Tuner button in the menu and a floating Tool Options \
+             panel that follows the currently-selected tool.",
+        )
+        .active(cfg.developer_mode)
+        .build();
+    dev_group.add(&dev_row);
+    page.add(&dev_group);
+
+    prefs.add(&page);
+
+    // Wire change signals to auto-save (adw convention — no Save/Cancel).
+    let snapshot_inputs = {
+        let path_state = path_state.clone();
+        let text_row = text_row.clone();
+        let dev_row = dev_row.clone();
+        move || PersistInputs {
+            image_path: path_state.borrow().clone(),
+            text: text_row.text().to_string(),
+            developer_mode: dev_row.is_active(),
+        }
+    };
 
     {
         let parent = parent.clone();
         let path_state = path_state.clone();
-        let path_label = path_label.clone();
+        let image_row = image_row.clone();
+        let persist = persist.clone();
+        let snapshot_inputs = snapshot_inputs.clone();
         pick_btn.connect_clicked(move |_| {
             let dialog = FileDialog::builder().title("Pick placeholder image").build();
             let filter = FileFilter::new();
@@ -315,12 +407,15 @@ pub fn open_app_settings(
             store.append(&filter);
             dialog.set_filters(Some(&store));
             let path_state = path_state.clone();
-            let path_label = path_label.clone();
+            let image_row = image_row.clone();
+            let persist = persist.clone();
+            let snapshot_inputs = snapshot_inputs.clone();
             dialog.open(Some(&parent), gtk4::gio::Cancellable::NONE, move |res| {
                 if let Ok(file) = res {
                     if let Some(p) = file.path() {
-                        path_label.set_text(p.to_str().unwrap_or(""));
+                        image_row.set_subtitle(p.to_str().unwrap_or(""));
                         *path_state.borrow_mut() = Some(p);
+                        persist(&snapshot_inputs());
                     }
                 }
             });
@@ -328,105 +423,37 @@ pub fn open_app_settings(
     }
     {
         let path_state = path_state.clone();
-        let path_label = path_label.clone();
+        let image_row = image_row.clone();
+        let persist = persist.clone();
+        let snapshot_inputs = snapshot_inputs.clone();
         clear_btn.connect_clicked(move |_| {
             *path_state.borrow_mut() = None;
-            path_label.set_text("(no image set)");
+            image_row.set_subtitle("(no image set)");
+            persist(&snapshot_inputs());
+        });
+    }
+    {
+        let persist = persist.clone();
+        let snapshot_inputs = snapshot_inputs.clone();
+        text_row.connect_changed(move |_| {
+            persist(&snapshot_inputs());
+        });
+    }
+    {
+        let persist = persist.clone();
+        let snapshot_inputs = snapshot_inputs.clone();
+        dev_row.connect_active_notify(move |_| {
+            persist(&snapshot_inputs());
         });
     }
 
-    body.append(&Label::new(Some("Placeholder text (used if no image)")));
-    let text_entry = Entry::builder()
-        .placeholder_text("Select a page to start drawing")
-        .text(cfg.placeholder_text.as_deref().unwrap_or(""))
-        .build();
-    body.append(&text_entry);
+    prefs.present();
+}
 
-    // ── Pen presets shortcut ─────────────────────────────────────────────
-    let presets_sep = Separator::new(Orientation::Horizontal);
-    body.append(&presets_sep);
-    let presets_row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .build();
-    let presets_lbl = Label::builder()
-        .label("Pen presets")
-        .hexpand(true)
-        .halign(gtk4::Align::Start)
-        .build();
-    let presets_btn = Button::with_label("Manage presets…");
-    presets_row.append(&presets_lbl);
-    presets_row.append(&presets_btn);
-    body.append(&presets_row);
-    {
-        let parent = parent.clone();
-        let state = state.clone();
-        presets_btn.connect_clicked(move |_| {
-            open_pen_presets_settings(&parent, state.clone());
-        });
-    }
-
-    // ── Developer mode ────────────────────────────────────────────────
-    body.append(&Separator::new(Orientation::Horizontal));
-    let dev_row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .build();
-    let dev_lbl = Label::builder()
-        .label("Developer mode")
-        .hexpand(true)
-        .halign(gtk4::Align::Start)
-        .build();
-    let dev_check = CheckButton::new();
-    dev_check.set_active(cfg.developer_mode);
-    dev_row.append(&dev_lbl);
-    dev_row.append(&dev_check);
-    body.append(&dev_row);
-    let dev_help = Label::builder()
-        .label(
-            "Enables the per-tool Brush Tuner button in the menu and a floating Tool Options \
-             panel that follows the currently-selected tool.",
-        )
-        .wrap(true)
-        .xalign(0.0)
-        .build();
-    dev_help.add_css_class("dim-label");
-    body.append(&dev_help);
-
-    let row2 = GtkBox::builder().orientation(Orientation::Horizontal).spacing(8).halign(gtk4::Align::End).build();
-    let cancel = Button::with_label("Cancel");
-    let save = Button::with_label("Save");
-    row2.append(&cancel);
-    row2.append(&save);
-    body.append(&row2);
-
-    {
-        let win = win.clone();
-        cancel.connect_clicked(move |_| win.close());
-    }
-    {
-        let win = win.clone();
-        let state = state.clone();
-        let path_state = path_state.clone();
-        save.connect_clicked(move |_| {
-            let mut new_cfg = crate::config::load();
-            new_cfg.placeholder_image_path = path_state.borrow().clone();
-            new_cfg.placeholder_text = {
-                let t = text_entry.text().to_string();
-                if t.trim().is_empty() { None } else { Some(t) }
-            };
-            new_cfg.developer_mode = dev_check.is_active();
-            if let Err(e) = crate::config::save(&new_cfg) {
-                tracing::error!("save config: {}", e);
-            }
-            crate::state::reload_placeholder(&state);
-            (on_saved)();
-            win.close();
-        });
-    }
-
-    win.set_child(Some(&body));
-    win.present();
+struct PersistInputs {
+    image_path: Option<std::path::PathBuf>,
+    text: String,
+    developer_mode: bool,
 }
 
 // ── Pen presets settings dialog ───────────────────────────────────────────────
