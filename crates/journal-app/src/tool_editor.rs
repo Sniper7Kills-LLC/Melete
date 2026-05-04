@@ -12,15 +12,21 @@
 //! See `docs/brush-engine.md` §4.4.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, CheckButton, DropDown, Entry, Label, ListBox, ListBoxRow,
-    Orientation, Paned, ScrolledWindow, Separator, SpinButton, StringList,
+    ApplicationWindow, Box as GtkBox, Button, CheckButton, DrawingArea, DropDown, Entry, Frame,
+    Label, ListBox, ListBoxRow, Orientation, Paned, ScrolledWindow, Separator, SpinButton,
+    StringList,
 };
+use journal_canvas::background_renderer::BackgroundConfig;
+use journal_canvas::vello_renderer::{BrushParams, OverlayState, VelloRenderer};
+use journal_canvas::ViewportTransform;
 use journal_core::{
-    BlendMode, Brush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode,
+    BlendMode, Brush, BrushLayer, ColorMod, Color as JColor, Geometry, PenSettings, Point, Rect,
+    Stroke, StrokePoint, TipShape, Viewport, WidthMode,
 };
 use uuid::Uuid;
 
@@ -42,6 +48,15 @@ pub fn build_editor_view(
         selected_layer: 0,
         rebuilding: false,
     }));
+
+    // Lazy-initialised Vello renderer for the live preview canvas.
+    // First open of the editor pays the wgpu init cost (~1s); subsequent
+    // repaints reuse it.
+    let preview_renderer: Rc<RefCell<Option<VelloRenderer>>> =
+        Rc::new(RefCell::new(None));
+    let preview_brush: Rc<RefCell<Brush>> = Rc::new(RefCell::new(
+        editor_state.borrow().brush.clone(),
+    ));
 
     let root = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -145,6 +160,21 @@ pub fn build_editor_view(
     paned.set_start_child(Some(&sidebar));
 
     // ── Right panel ─────────────────────────────────────────────────
+    // Vertical layout: preview pinned at top, scrolled form below.
+    let right_root = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+
+    let preview_area = build_preview_area(
+        editor_state.clone(),
+        preview_renderer.clone(),
+        preview_brush.clone(),
+    );
+    right_root.append(&preview_area);
+    right_root.append(&Separator::new(Orientation::Horizontal));
+
     let right = ScrolledWindow::builder()
         .hscrollbar_policy(gtk4::PolicyType::Never)
         .vexpand(true)
@@ -159,7 +189,8 @@ pub fn build_editor_view(
         .margin_end(16)
         .build();
     right.set_child(Some(&right_body));
-    paned.set_end_child(Some(&right));
+    right_root.append(&right);
+    paned.set_end_child(Some(&right_root));
 
     root.append(&paned);
 
@@ -174,6 +205,8 @@ pub fn build_editor_view(
         let right_body = right_body.clone();
         let state_outer = state.clone();
         let rebuild_self = rebuild.clone();
+        let preview_area = preview_area.clone();
+        let preview_brush = preview_brush.clone();
         let do_rebuild: Rc<dyn Fn()> = Rc::new(move || {
             editor_state.borrow_mut().rebuilding = true;
 
@@ -276,6 +309,10 @@ pub fn build_editor_view(
                 lbl.add_css_class("dim-label");
                 right_body.append(&lbl);
             }
+
+            // Refresh preview against the latest brush snapshot.
+            *preview_brush.borrow_mut() = editor_state.borrow().brush.clone();
+            preview_area.queue_draw();
 
             editor_state.borrow_mut().rebuilding = false;
         });
@@ -1093,4 +1130,192 @@ fn prompt_save_as(parent: &ApplicationWindow, on_name: impl Fn(String) + 'static
         });
     }
     win.present();
+}
+
+// ── Live preview ──────────────────────────────────────────────────
+//
+// Mini Vello-rendered S-curve in a 360×100 cell. Shows what the
+// current brush composition draws before the user commits. Renderer
+// is created lazily on first paint (wgpu init is ~1s).
+
+const PREVIEW_W: i32 = 360;
+const PREVIEW_H: i32 = 100;
+
+fn build_preview_area(
+    editor_state: Rc<RefCell<EditorState>>,
+    renderer: Rc<RefCell<Option<VelloRenderer>>>,
+    preview_brush: Rc<RefCell<Brush>>,
+) -> Frame {
+    let frame = Frame::builder()
+        .margin_top(10)
+        .margin_bottom(10)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+    frame.set_label(Some("Preview"));
+    let area = DrawingArea::builder()
+        .content_width(PREVIEW_W)
+        .content_height(PREVIEW_H)
+        .build();
+    {
+        let renderer = renderer.clone();
+        let preview_brush = preview_brush.clone();
+        let editor_state = editor_state.clone();
+        area.set_draw_func(move |_, ctx, w, h| {
+            let dark = editor_state.borrow().rebuilding;
+            let _ = dark;
+            // Background fill — light cream so the preview reads as a
+            // page surface, contrasting with the dark editor chrome.
+            ctx.set_source_rgb(0.96, 0.95, 0.92);
+            let _ = ctx.paint();
+
+            let mut renderer_slot = renderer.borrow_mut();
+            if renderer_slot.is_none() {
+                match VelloRenderer::new() {
+                    Ok(r) => *renderer_slot = Some(r),
+                    Err(e) => {
+                        tracing::warn!("preview vello init: {e:?}");
+                        draw_preview_init_failure(ctx, w, h);
+                        return;
+                    }
+                }
+            }
+            let r = renderer_slot.as_mut().unwrap();
+
+            let brush = preview_brush.borrow().clone();
+            let strokes = vec![preview_stroke(brush, w as f64, h as f64)];
+            let viewport = Viewport {
+                center: Point {
+                    x: w as f64 * 0.5,
+                    y: h as f64 * 0.5,
+                },
+                zoom: 1.0,
+                rotation: 0.0,
+            };
+            let transform = ViewportTransform::new(viewport, w as f64, h as f64);
+            let bg = BackgroundConfig::Blank;
+            let page_rect = Rect {
+                x: 0.0,
+                y: 0.0,
+                width: w as f64,
+                height: h as f64,
+            };
+            let bytes = match r.render_rgba(
+                &transform,
+                &bg,
+                page_rect,
+                &strokes,
+                &HashSet::new(),
+                &OverlayState::default(),
+                &BrushParams::default(),
+                w as u32,
+                h as u32,
+                |_, _, _| {},
+            ) {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("preview render: {e:?}");
+                    return;
+                }
+            };
+            blit_rgba_to_cairo(ctx, &bytes, w as u32, h as u32);
+        });
+    }
+    frame.set_child(Some(&area));
+    frame
+}
+
+/// Synthesize a fixed S-curve stroke using `brush` as the recipe.
+/// Width / pressure ramp 0.3 → 1.0 → 0.5 across the curve so all
+/// pressure-driven WidthModes show a visible taper.
+fn preview_stroke(brush: Brush, w: f64, h: f64) -> Stroke {
+    let n = 48;
+    let mut pts = Vec::with_capacity(n);
+    let pad = 18.0;
+    let usable_w = (w - pad * 2.0).max(20.0);
+    let mid_y = h * 0.5;
+    let amp = (h * 0.32).min(usable_w * 0.18);
+    for i in 0..n {
+        let t = i as f64 / (n - 1) as f64;
+        let x = pad + usable_w * t;
+        // Two-hump S-curve.
+        let y = mid_y - amp * (t * std::f64::consts::TAU).sin();
+        // Pressure: 0.25 → 1.0 → 0.5
+        let pressure = if t < 0.5 {
+            0.25 + 1.5 * t
+        } else {
+            1.0 - 0.5 * (t - 0.5) * 2.0
+        };
+        pts.push(StrokePoint {
+            x,
+            y,
+            pressure: pressure as f32,
+            tilt_x: 0.0,
+            tilt_y: 0.0,
+            timestamp_ms: i as u64,
+        });
+    }
+    Stroke {
+        id: Uuid::nil(),
+        points: pts,
+        pen: PenSettings {
+            color: JColor {
+                r: 30,
+                g: 30,
+                b: 35,
+                a: 255,
+            },
+            base_width: 6.0,
+            opacity: 1.0,
+            blend_mode: BlendMode::Normal,
+            brush_style: journal_core::BrushStyle::Pen,
+        },
+        zoom_at_creation: 1.0,
+        bounding_box: Rect {
+            x: 0.0,
+            y: 0.0,
+            width: w,
+            height: h,
+        },
+        brush_recipe: Some(brush),
+    }
+}
+
+/// Vello produces RGBA8 (R,G,B,A premultiplied). Cairo ARgb32 on
+/// little-endian wants BGRA8 in memory. Swap channels in place into a
+/// scratch buffer and blit via `ImageSurface::create_for_data`.
+fn blit_rgba_to_cairo(ctx: &gtk4::cairo::Context, rgba: &[u8], w: u32, h: u32) {
+    use gtk4::cairo;
+    let mut bgra = vec![0u8; rgba.len()];
+    for px in 0..(rgba.len() / 4) {
+        let i = px * 4;
+        bgra[i] = rgba[i + 2]; // B
+        bgra[i + 1] = rgba[i + 1]; // G
+        bgra[i + 2] = rgba[i]; // R
+        bgra[i + 3] = rgba[i + 3]; // A
+    }
+    let stride = cairo::Format::ARgb32.stride_for_width(w).unwrap_or((w * 4) as i32);
+    let surface = match cairo::ImageSurface::create_for_data(
+        bgra,
+        cairo::Format::ARgb32,
+        w as i32,
+        h as i32,
+        stride,
+    ) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("preview surface: {e}");
+            return;
+        }
+    };
+    let _ = ctx.set_source_surface(&surface, 0.0, 0.0);
+    let _ = ctx.paint();
+}
+
+fn draw_preview_init_failure(ctx: &gtk4::cairo::Context, w: i32, h: i32) {
+    ctx.set_source_rgb(0.6, 0.3, 0.3);
+    ctx.move_to(12.0, h as f64 * 0.55);
+    let _ = ctx.show_text("(GPU preview unavailable)");
+    let _ = ctx;
+    let _ = w;
 }
