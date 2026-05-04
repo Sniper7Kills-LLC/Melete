@@ -217,12 +217,18 @@ pub fn build_editor_view(
         let lib_list = lib_list.clone();
         let layers_list = layers_list.clone();
         let right_body = right_body.clone();
+        let right_scroll = right.clone();
         let state_outer = state.clone();
         let rebuild_self = rebuild.clone();
         let preview_area = preview_area.clone();
         let preview_brush = preview_brush.clone();
         let do_rebuild: Rc<dyn Fn()> = Rc::new(move || {
             editor_state.borrow_mut().rebuilding = true;
+
+            // Snapshot scroll position so the right panel doesn't
+            // jump to the top on every spinbutton/dropdown edit.
+            let scroll_v = right_scroll.vadjustment().value();
+            let scroll_h = right_scroll.hadjustment().value();
 
             // Clear lists.
             while let Some(child) = lib_list.first_child() {
@@ -334,6 +340,18 @@ pub fn build_editor_view(
             // Refresh preview against the latest brush snapshot.
             *preview_brush.borrow_mut() = editor_state.borrow().brush.clone();
             preview_area.queue_draw();
+
+            // Restore scroll position. Defer to idle so GTK has time
+            // to recompute the adjustment's upper bound from the new
+            // child widgets — setting the value before the layout
+            // pass would clamp it back to 0.
+            let scroll = right_scroll.clone();
+            gtk4::glib::idle_add_local_once(move || {
+                let vadj = scroll.vadjustment();
+                vadj.set_value(scroll_v.min(vadj.upper() - vadj.page_size()).max(0.0));
+                let hadj = scroll.hadjustment();
+                hadj.set_value(scroll_h.min(hadj.upper() - hadj.page_size()).max(0.0));
+            });
 
             editor_state.borrow_mut().rebuilding = false;
         });
