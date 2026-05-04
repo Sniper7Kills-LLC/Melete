@@ -1334,6 +1334,23 @@ fn draw_stroke(
     stroke: &Stroke,
     params: &BrushParams,
 ) {
+    // Phase 0: try the composable engine first. Tools with a native
+    // composition route through `draw_brush_into_scene`; the WIP shape
+    // variants (Marker, Carpenter, Fan, …) still fall through to
+    // their legacy `draw_*` fns until Phase 5 rewrites them.
+    if let Some(brush) = crate::built_in_brushes::legacy_brush_for(stroke.pen.brush_style, params) {
+        draw_brush_into_scene(scene, transform, stroke, &brush);
+        return;
+    }
+    draw_stroke_legacy(scene, transform, stroke, params);
+}
+
+fn draw_stroke_legacy(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    params: &BrushParams,
+) {
     match stroke.pen.brush_style {
         BrushStyle::Pen | BrushStyle::Highlighter => {
             draw_smooth(scene, transform, stroke, &params.pen)
@@ -2088,4 +2105,359 @@ fn pseudo_noise(x: f64, y: f64) -> f64 {
     let v = (x * 12.9898 + y * 78.233).sin() * 43758.5453;
     let f = v - v.floor();
     f.abs()
+}
+
+// ---------------------------------------------------------------------------
+// Composable brush engine — Phase 0
+// ---------------------------------------------------------------------------
+//
+// Lowers a `crate::brush::Brush` (ordered list of layers) into Vello
+// scene calls. Reuses the existing path-building helpers
+// (`build_smooth_path`, `resample_path`, `sample_tangent`,
+// `smooth_polyline`) so the visual output matches the legacy per-style
+// `draw_*` functions byte-for-byte for each composition emitted by
+// `built_in_brushes::*`.
+//
+// Coverage Phase 0:
+//   Smooth + (Constant | ClampedConstant | Pressure) + Round/Square
+//   Smooth + TiltBand + Round   (Pencil shading layer)
+//   Outline + (Constant | Pressure | DirectionAngled) + Round
+//   Scatter + Constant + Round
+// Other combinations are no-ops with a `tracing::debug` so users who
+// build them in the Tool Editor see a hint to file a bug. Phase 5
+// fills in the remainder.
+
+use crate::brush::{Brush as RBrush, BrushLayer, ColorMod, Geometry, TipShape, WidthMode};
+
+/// Public entry point. Iterates the brush's layers in order and emits
+/// each one onto the scene.
+pub fn draw_brush_into_scene(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    brush: &RBrush,
+) {
+    for layer in brush.layers.iter().filter(|l| l.enabled) {
+        emit_layer(scene, transform, stroke, layer);
+    }
+}
+
+fn emit_layer(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &BrushLayer) {
+    match &layer.geometry {
+        Geometry::Smooth { .. } => emit_smooth(scene, transform, stroke, layer),
+        Geometry::Outline { resample_step_mm, smooth_outline } => {
+            emit_outline(scene, transform, stroke, layer, *resample_step_mm, *smooth_outline)
+        }
+        Geometry::Scatter { density, spread_mm, falloff, directional_bias_deg } => emit_scatter(
+            scene,
+            transform,
+            stroke,
+            layer,
+            *density,
+            *spread_mm,
+            *falloff,
+            *directional_bias_deg,
+        ),
+        Geometry::DabStamp { step_mult } => {
+            emit_dab_stamp(scene, transform, stroke, layer, *step_mult)
+        }
+    }
+}
+
+/// Compute a peniko `Brush` from the stroke's pen color, the stroke's
+/// opacity, and a layer's `ColorMod`. `hue_shift_deg` is Phase-0
+/// no-op (preserved in the data model for forwards compat).
+fn layer_brush(pen_color: JColor, pen_opacity: f32, mod_color: ColorMod) -> Brush {
+    let alpha_mult = mod_color.alpha_mult.clamp(0.0, 1.0);
+    let combined = (pen_opacity as f64 * alpha_mult).clamp(0.0, 1.0);
+    let alpha_u8 = ((pen_color.a as f64 / 255.0) * combined * 255.0).clamp(0.0, 255.0) as u8;
+    Brush::Solid(Color::from_rgba8(
+        pen_color.r,
+        pen_color.g,
+        pen_color.b,
+        alpha_u8,
+    ))
+}
+
+/// Smooth — single quadratic-through-midpoints stroke. Width comes
+/// from `WidthMode`, cap from `TipShape`.
+fn emit_smooth(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &BrushLayer) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let canvas_w = pen.base_width / zoc;
+    let pts = &stroke.points;
+    if pts.is_empty() {
+        return;
+    }
+    let brush = layer_brush(pen.color, pen.opacity, layer.color);
+    let (start_cap, end_cap, join) = caps_for_tip(layer.tip);
+
+    // Tilt-band is its own emission pattern (per-segment overlays).
+    if let WidthMode::TiltBand { threshold, band_mult, alpha_scale } = layer.width {
+        emit_tilt_band(scene, transform, stroke, threshold, band_mult, alpha_scale);
+        return;
+    }
+
+    // Average pressure across the stroke — used by Pressure mode.
+    let avg_pressure = if pts.is_empty() {
+        0.0
+    } else {
+        (pts.iter().map(|p| p.pressure as f64).sum::<f64>() / pts.len() as f64).max(0.05)
+    };
+
+    let width = match layer.width {
+        WidthMode::Constant { width_mult } => canvas_w * width_mult,
+        WidthMode::ClampedConstant { width_mult, min_mm, max_mm } => {
+            (canvas_w * width_mult).clamp(min_mm, max_mm)
+        }
+        WidthMode::Pressure { floor, amp } => canvas_w * (floor + amp * avg_pressure),
+        WidthMode::DirectionAngled { .. } => {
+            // DirectionAngled only makes sense with Outline geometry;
+            // on Smooth we degrade to a constant base width.
+            canvas_w
+        }
+        WidthMode::TiltBand { .. } => unreachable!("handled above"),
+    };
+
+    if pts.len() == 1 {
+        let p = &pts[0];
+        let r = match layer.width {
+            WidthMode::Pressure { floor, amp } => {
+                canvas_w * (floor + amp * (p.pressure as f64).max(0.05)) * 0.5
+            }
+            _ => width * 0.5,
+        };
+        let path = match layer.tip {
+            TipShape::Square => square_path((p.x, p.y), r),
+            _ => Circle::new((p.x, p.y), r).to_path(0.05),
+        };
+        scene.fill(Fill::NonZero, transform, &brush, None, &path);
+        return;
+    }
+
+    let path = build_smooth_path(pts);
+    let mut style = KStroke::new(width);
+    style.start_cap = start_cap;
+    style.end_cap = end_cap;
+    style.join = join;
+    scene.stroke(&style, transform, &brush, None, &path);
+}
+
+/// Per-segment tilt-band overlay (Pencil shading layer).
+fn emit_tilt_band(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    threshold: f64,
+    band_mult: f64,
+    alpha_scale: f64,
+) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let pts = &stroke.points;
+    if pts.len() < 2 {
+        return;
+    }
+    let core_w = (pen.base_width / zoc).clamp(0.4, 0.9);
+    let inv_half_pi = 2.0 / std::f64::consts::PI;
+    for i in 0..pts.len() - 1 {
+        let a = &pts[i];
+        let b = &pts[i + 1];
+        let mag_a = ((a.tilt_x as f64).hypot(a.tilt_y as f64) * inv_half_pi).clamp(0.0, 1.0);
+        let mag_b = ((b.tilt_x as f64).hypot(b.tilt_y as f64) * inv_half_pi).clamp(0.0, 1.0);
+        let tilt = (mag_a + mag_b) * 0.5;
+        if tilt < threshold {
+            continue;
+        }
+        let avg_press = (((a.pressure + b.pressure) * 0.5) as f64).max(0.15);
+        let band_w = core_w * (1.0 + band_mult * tilt * avg_press);
+        let band_alpha = (pen.opacity as f64) * alpha_scale * tilt;
+        let band_brush = Brush::Solid(solid_color(pen.color, band_alpha));
+        let mut seg = BezPath::new();
+        seg.move_to((a.x, a.y));
+        seg.line_to((b.x, b.y));
+        let mut style = KStroke::new(band_w);
+        style.start_cap = Cap::Round;
+        style.end_cap = Cap::Round;
+        style.join = Join::Round;
+        scene.stroke(&style, transform, &band_brush, None, &seg);
+    }
+}
+
+/// Outline — variable-width filled polygon (offset perpendicular to
+/// the path on both sides, then joined). Width per sample comes from
+/// `WidthMode`; nib angle for `DirectionAngled` follows the stroke's
+/// tangent direction.
+fn emit_outline(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    layer: &BrushLayer,
+    resample_step_mult: f64,
+    smooth_outline: bool,
+) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let max_width = pen.base_width / zoc;
+    let pts = &stroke.points;
+    if pts.is_empty() {
+        return;
+    }
+    let brush = layer_brush(pen.color, pen.opacity, layer.color);
+
+    if pts.len() == 1 {
+        let p = &pts[0];
+        let r = match layer.width {
+            WidthMode::DirectionAngled { min_ratio, .. } => max_width * 0.5 * min_ratio,
+            _ => max_width * 0.5,
+        };
+        let path = Circle::new((p.x, p.y), r).to_path(0.05);
+        scene.fill(Fill::NonZero, transform, &brush, None, &path);
+        return;
+    }
+
+    let max_step = (max_width * resample_step_mult).max(0.25);
+    let samples = resample_path(pts, max_step);
+    if samples.len() < 2 {
+        return;
+    }
+
+    let n = samples.len();
+    let mut left: Vec<(f64, f64)> = Vec::with_capacity(n);
+    let mut right: Vec<(f64, f64)> = Vec::with_capacity(n);
+    for i in 0..n {
+        let (x, y, press) = samples[i];
+        let (tx, ty) = sample_tangent(&samples, i);
+        let tlen = (tx * tx + ty * ty).sqrt().max(1e-6);
+        let press_clamped = press.max(0.3);
+        let w = match layer.width {
+            WidthMode::DirectionAngled { nib_deg, min_ratio } => {
+                let nib_angle = nib_deg.to_radians();
+                let dir = ty.atan2(tx);
+                let rel = (dir - nib_angle).sin().abs();
+                max_width * (min_ratio + (1.0 - min_ratio) * rel) * press_clamped * 0.5
+            }
+            WidthMode::Pressure { floor, amp } => {
+                max_width * (floor + amp * press_clamped) * 0.5
+            }
+            WidthMode::Constant { width_mult } => max_width * width_mult * 0.5,
+            WidthMode::ClampedConstant { width_mult, min_mm, max_mm } => {
+                ((max_width * width_mult) * 0.5).clamp(min_mm * 0.5, max_mm * 0.5)
+            }
+            WidthMode::TiltBand { .. } => max_width * 0.5,
+        };
+        let nxn = -ty / tlen;
+        let nyn = tx / tlen;
+        left.push((x + nxn * w, y + nyn * w));
+        right.push((x - nxn * w, y - nyn * w));
+    }
+    let mut path = BezPath::new();
+    path.move_to(left[0]);
+    if smooth_outline {
+        smooth_polyline(&mut path, &left[1..]);
+        if let Some(&last_left) = left.last() {
+            let first_right = right[right.len() - 1];
+            let mid = (
+                (last_left.0 + first_right.0) * 0.5,
+                (last_left.1 + first_right.1) * 0.5,
+            );
+            path.quad_to(last_left, mid);
+        }
+        let right_rev: Vec<(f64, f64)> = right.iter().rev().copied().collect();
+        smooth_polyline(&mut path, &right_rev);
+    } else {
+        for &p in left.iter().skip(1) {
+            path.line_to(p);
+        }
+        for &p in right.iter().rev() {
+            path.line_to(p);
+        }
+    }
+    path.close_path();
+    scene.fill(Fill::NonZero, transform, &brush, None, &path);
+}
+
+/// Scatter — N tip stamps per input point at randomized offsets.
+/// `spread_mm == 0.0` means "use the stroke's base radius"; non-zero
+/// values override.
+fn emit_scatter(
+    scene: &mut Scene,
+    transform: Affine,
+    stroke: &Stroke,
+    layer: &BrushLayer,
+    density: u32,
+    spread_mm: f64,
+    falloff: f64,
+    directional_bias_deg: Option<f64>,
+) {
+    let pen = stroke.pen;
+    let zoc = stroke.zoom_at_creation.max(1e-6);
+    let radius = pen.base_width / zoc * 0.5;
+    let scatter_radius = if spread_mm > 0.0 { spread_mm } else { radius };
+    let dot_factor = match layer.width {
+        WidthMode::Constant { width_mult } => width_mult,
+        WidthMode::Pressure { floor, amp } => floor + amp * 0.5,
+        _ => 0.06,
+    };
+    // Match legacy SprayParams::min_dot_radius default.
+    let dot_radius = (radius * dot_factor).max(0.35);
+    let brush = layer_brush(pen.color, pen.opacity, layer.color);
+    let cone_half = directional_bias_deg.unwrap_or(0.0).to_radians();
+
+    for (idx, p) in stroke.points.iter().enumerate() {
+        let press = (p.pressure.max(0.2) as f64).min(1.0);
+        let scatter = scatter_radius * press;
+        for k in 0..density {
+            let seed = (idx as f64) * 7.31 + k as f64 * 1.97 + p.x * 0.013 + p.y * 0.029;
+            let r_unit = pseudo_noise(seed * 2.7, seed * 0.8);
+            let r = scatter * r_unit.powf(falloff.max(1e-3));
+            let theta = if directional_bias_deg.is_some() && cone_half > 0.0 {
+                let local = (pseudo_noise(seed, seed * 1.3) - 0.5) * 2.0 * cone_half;
+                -std::f64::consts::FRAC_PI_2 + local
+            } else {
+                pseudo_noise(seed, seed * 1.3) * std::f64::consts::TAU
+            };
+            let cx = p.x + theta.cos() * r;
+            let cy = p.y + theta.sin() * r;
+            let path = match layer.tip {
+                TipShape::Square => square_path((cx, cy), dot_radius),
+                _ => Circle::new((cx, cy), dot_radius).to_path(0.05),
+            };
+            scene.fill(Fill::NonZero, transform, &brush, None, &path);
+        }
+    }
+}
+
+/// DabStamp — Phase-0 no-op. Reserved for future tip-stamp brushes
+/// (texture brushes, custom-tip dabs); none of the built-ins use it.
+fn emit_dab_stamp(
+    _scene: &mut Scene,
+    _transform: Affine,
+    _stroke: &Stroke,
+    _layer: &BrushLayer,
+    _step_mult: f64,
+) {
+    tracing::debug!("DabStamp geometry not yet implemented (Phase 5)");
+}
+
+fn caps_for_tip(tip: TipShape) -> (Cap, Cap, Join) {
+    match tip {
+        TipShape::Round => (Cap::Round, Cap::Round, Join::Round),
+        TipShape::Square => (Cap::Square, Cap::Square, Join::Miter),
+        // FlatNib / Diamond / StarN don't have GPU-stroke caps; the
+        // render fn for those will eventually use DabStamp instead.
+        // Phase 0: degrade to round.
+        _ => (Cap::Round, Cap::Round, Join::Round),
+    }
+}
+
+fn square_path(center: (f64, f64), half: f64) -> BezPath {
+    let (cx, cy) = center;
+    let mut p = BezPath::new();
+    p.move_to((cx - half, cy - half));
+    p.line_to((cx + half, cy - half));
+    p.line_to((cx + half, cy + half));
+    p.line_to((cx - half, cy + half));
+    p.close_path();
+    p
 }

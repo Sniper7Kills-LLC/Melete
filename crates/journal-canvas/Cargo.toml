@@ -21,3 +21,6 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 default = ["pdf"]
 pdf = ["dep:poppler-rs"]
 vello = ["dep:vello", "dep:parley", "dep:pollster", "dep:image"]
+
+[dev-dependencies]
+toml = { workspace = true }
