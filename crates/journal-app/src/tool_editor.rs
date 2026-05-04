@@ -135,15 +135,22 @@ pub fn build_editor_view(
     let dup_btn = Button::with_label("Duplicate");
     let rename_btn = Button::with_label("Rename");
     let delete_btn = Button::with_label("Delete");
-    let lib_btn_row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(6)
+    // 2x2 grid keeps the sidebar compact when the editor is narrow —
+    // a single row of four buttons overflows on the Framework 12.
+    let lib_btn_grid = gtk4::Grid::builder()
+        .row_spacing(6)
+        .column_spacing(6)
+        .column_homogeneous(true)
         .build();
-    lib_btn_row.append(&new_btn);
-    lib_btn_row.append(&dup_btn);
-    lib_btn_row.append(&rename_btn);
-    lib_btn_row.append(&delete_btn);
-    sidebar.append(&lib_btn_row);
+    new_btn.set_hexpand(true);
+    dup_btn.set_hexpand(true);
+    rename_btn.set_hexpand(true);
+    delete_btn.set_hexpand(true);
+    lib_btn_grid.attach(&new_btn, 0, 0, 1, 1);
+    lib_btn_grid.attach(&dup_btn, 1, 0, 1, 1);
+    lib_btn_grid.attach(&rename_btn, 0, 1, 1, 1);
+    lib_btn_grid.attach(&delete_btn, 1, 1, 1, 1);
+    sidebar.append(&lib_btn_grid);
 
     sidebar.append(&Separator::new(Orientation::Horizontal));
 
