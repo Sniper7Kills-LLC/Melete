@@ -15,11 +15,12 @@ const A4_W_PT: f64 = 595.28;
 const A4_H_PT: f64 = 841.89;
 
 pub fn export_page_to_pdf(state: &SharedState, path: &Path) -> anyhow::Result<()> {
-    let (page_id, background, page_rect, backend, dark_mode) = {
+    let (page_id, background, page_rect, backend) = {
         let s = state.borrow();
         let page_id = s.current_page_id.ok_or_else(|| anyhow::anyhow!("no page selected"))?;
-        (page_id, s.background.clone(), s.page_rect, s.backend.clone(), s.dark_mode)
+        (page_id, s.background.clone(), s.page_rect, s.backend.clone())
     };
+    let dark_mode = crate::is_dark_mode();
 
     let strokes = backend.borrow_mut().list_strokes_for_page(page_id)
         .map_err(|e| anyhow::anyhow!("failed to load strokes: {}", e))?;
@@ -64,10 +65,11 @@ pub fn export_notebook_to_pdf(
     notebook_id: NotebookId,
     path: &Path,
 ) -> anyhow::Result<()> {
-    let (backend, templates, dark_mode) = {
+    let (backend, templates) = {
         let s = state.borrow();
-        (s.backend.clone(), s.templates.clone(), s.dark_mode)
+        (s.backend.clone(), s.templates.clone())
     };
+    let dark_mode = crate::is_dark_mode();
 
     let path_str = path.to_string_lossy();
     let surface = PdfSurface::new(A4_W_PT, A4_H_PT, path_str.as_ref())

@@ -811,7 +811,7 @@ fn build_page_thumbnail(ctx: &SidebarCtx, page: &Page) -> GtkDrawingArea {
     {
         let state = state.clone();
         thumb_area.set_draw_func(move |_area, ctx_cairo, _w, _h| {
-            let dark_mode = state.borrow().dark_mode;
+            let dark_mode = crate::is_dark_mode();
             let template = template_id.and_then(|tid| {
                 state.borrow().templates.borrow().get(tid).cloned()
             });

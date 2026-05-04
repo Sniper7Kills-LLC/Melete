@@ -577,7 +577,7 @@ fn build_ui(app: &adw::Application) -> Result<()> {
 
     let canvas = app_win.borrow().canvas.clone();
     shortcuts::attach_keyboard_shortcuts(&window, state.clone(), canvas.clone());
-    bind_system_dark_mode(state.clone(), canvas);
+    bind_system_dark_mode(state.clone(), canvas, &window);
 
     window.present();
 
@@ -590,25 +590,58 @@ fn build_ui(app: &adw::Application) -> Result<()> {
     Ok(())
 }
 
-fn bind_system_dark_mode(state: state::SharedState, canvas: gtk4::DrawingArea) {
+fn bind_system_dark_mode(
+    state: state::SharedState,
+    canvas: gtk4::DrawingArea,
+    root: &ApplicationWindow,
+) {
     let style_manager = adw::StyleManager::default();
     // Follow the system color scheme; do not force light or dark.
     style_manager.set_color_scheme(adw::ColorScheme::Default);
 
+    // Audit §10: every render path now reads `is_dark_mode()` directly
+    // from `adw::StyleManager`, so this hook only has to invalidate
+    // caches, swap a `dark`/`light` class on the root window for CSS
+    // chrome, and request a repaint when the scheme changes — it no
+    // longer mirrors into `state.dark_mode`.
+    let _ = state;
+    let root_wk = root.clone();
     let apply = {
-        let state = state.clone();
         let canvas = canvas.clone();
-        let style_manager = style_manager.clone();
+        let root = root_wk.clone();
+        let sm = style_manager.clone();
         move || {
-            let dark = style_manager.is_dark();
-            state.borrow_mut().dark_mode = dark;
+            let dark = sm.is_dark();
+            if dark {
+                root.add_css_class("dark");
+                root.remove_css_class("light");
+            } else {
+                root.add_css_class("light");
+                root.remove_css_class("dark");
+            }
             canvas.queue_draw();
         }
     };
     apply();
     style_manager.connect_dark_notify(move |sm| {
         let dark = sm.is_dark();
-        state.borrow_mut().dark_mode = dark;
+        if dark {
+            root_wk.add_css_class("dark");
+            root_wk.remove_css_class("light");
+        } else {
+            root_wk.add_css_class("light");
+            root_wk.remove_css_class("dark");
+        }
         canvas.queue_draw();
     });
+}
+
+/// Single source of truth for dark mode. Every renderer in the app
+/// crate reads through this helper instead of plumbing a
+/// `dark_mode: bool` through the call graph; the `journal-canvas` and
+/// `journal-widgets` crates can't depend on libadwaita so they keep
+/// the bool param at their leaf signatures, and callers in the app
+/// crate fill it from here.
+pub fn is_dark_mode() -> bool {
+    adw::StyleManager::default().is_dark()
 }

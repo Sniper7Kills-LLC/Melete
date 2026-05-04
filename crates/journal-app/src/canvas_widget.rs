@@ -27,6 +27,7 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
             // bg, widgets, strokes, selection handles, lasso, page bounds,
             // and the brush cursor. The DrawingArea is left transparent so
             // input still routes through it.
+            let dark_mode = crate::is_dark_mode();
             #[cfg(feature = "vello")]
             if crate::vello_glarea::enabled() {
                 if s.current_page_id.is_none() {
@@ -34,7 +35,7 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
                         ctx,
                         w as f64,
                         h as f64,
-                        s.dark_mode,
+                        dark_mode,
                         s.placeholder_image.as_ref(),
                         &s.placeholder_text,
                     );
@@ -47,14 +48,13 @@ pub fn build_canvas(state: SharedState) -> DrawingArea {
                     ctx,
                     w as f64,
                     h as f64,
-                    s.dark_mode,
+                    dark_mode,
                     s.placeholder_image.as_ref(),
                     &s.placeholder_text,
                 );
                 return;
             }
 
-            let dark_mode = s.dark_mode;
             let selected_ids = s.selected_stroke_ids.clone();
             let lasso_points = s.lasso_points.clone();
             let widgets: Vec<journal_core::TemplateWidget> = s

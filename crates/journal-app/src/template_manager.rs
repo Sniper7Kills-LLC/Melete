@@ -754,7 +754,7 @@ fn build_row(
         .margin_end(6)
         .build();
 
-    let preview = build_template_preview(t.clone(), state.borrow().dark_mode);
+    let preview = build_template_preview(t.clone(), crate::is_dark_mode());
     row.append(&preview);
 
     let text_col = GtkBox::builder()

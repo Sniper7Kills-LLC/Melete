@@ -118,7 +118,6 @@ pub struct CanvasState {
     pub selection_resize_bbox_orig: Option<journal_core::Rect>,
     pub selection_resize_cumulative: (f64, f64),
     pub selection_resize_anchor: (f64, f64),
-    pub dark_mode: bool,
     pub thumbnail_cache: HashMap<PageId, cairo::ImageSurface>,
 
     /// Per-app stroke clipboard for copy/paste between pages.
@@ -250,7 +249,6 @@ pub fn new_shared_state(
         selection_resize_bbox_orig: None,
         selection_resize_cumulative: (1.0, 1.0),
         selection_resize_anchor: (0.0, 0.0),
-        dark_mode: false,
         thumbnail_cache: HashMap::new(),
         stroke_clipboard: Vec::new(),
         placeholder_image: None,

@@ -130,7 +130,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
             let placeholder_info = {
                 let s = state.borrow();
                 if s.current_page_id.is_none() {
-                    Some((s.dark_mode, s.placeholder_text.clone()))
+                    Some((crate::is_dark_mode(), s.placeholder_text.clone()))
                 } else {
                     None
                 }
@@ -236,7 +236,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     cursor_color: s.pen.color,
                     cursor_opacity: s.pen.opacity,
                     show_page_bounds: s.show_page_bounds,
-                    dark_mode: s.dark_mode,
+                    dark_mode: crate::is_dark_mode(),
                     cursor_shape,
                     cursor_tip,
                 };
@@ -589,7 +589,7 @@ fn state_fingerprint(s: &crate::state::CanvasState) -> u64 {
     sw.to_bits().hash(&mut h);
     sh.to_bits().hash(&mut h);
     s.bg_scale.to_bits().hash(&mut h);
-    s.dark_mode.hash(&mut h);
+    crate::is_dark_mode().hash(&mut h);
     s.selected_stroke_ids.len().hash(&mut h);
     for id in &s.selected_stroke_ids {
         id.as_u128().hash(&mut h);
