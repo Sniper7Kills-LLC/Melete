@@ -2176,18 +2176,70 @@ fn emit_layer(scene: &mut Scene, transform: Affine, stroke: &Stroke, layer: &Bru
 }
 
 /// Compute a peniko `Brush` from the stroke's pen color, the stroke's
-/// opacity, and a layer's `ColorMod`. `hue_shift_deg` is Phase-0
-/// no-op (preserved in the data model for forwards compat).
+/// opacity, and a layer's `ColorMod` (per-layer alpha and hue shift).
 fn layer_brush(pen_color: JColor, pen_opacity: f32, mod_color: ColorMod) -> Brush {
     let alpha_mult = mod_color.alpha_mult.clamp(0.0, 1.0);
     let combined = (pen_opacity as f64 * alpha_mult).clamp(0.0, 1.0);
     let alpha_u8 = ((pen_color.a as f64 / 255.0) * combined * 255.0).clamp(0.0, 255.0) as u8;
-    Brush::Solid(Color::from_rgba8(
-        pen_color.r,
-        pen_color.g,
-        pen_color.b,
-        alpha_u8,
-    ))
+
+    let (r, g, b) = if mod_color.hue_shift_deg.abs() > 0.05 {
+        rotate_hue(pen_color.r, pen_color.g, pen_color.b, mod_color.hue_shift_deg)
+    } else {
+        (pen_color.r, pen_color.g, pen_color.b)
+    };
+    Brush::Solid(Color::from_rgba8(r, g, b, alpha_u8))
+}
+
+/// Rotate an RGB color around HSL hue by `deg`. Saturation +
+/// lightness preserved. Achromatic colors (saturation == 0) are
+/// returned unchanged — hue is undefined for grays.
+fn rotate_hue(r: u8, g: u8, b: u8, deg: f64) -> (u8, u8, u8) {
+    let r_f = r as f64 / 255.0;
+    let g_f = g as f64 / 255.0;
+    let b_f = b as f64 / 255.0;
+    let max = r_f.max(g_f).max(b_f);
+    let min = r_f.min(g_f).min(b_f);
+    let l = (max + min) * 0.5;
+    let d = max - min;
+    if d.abs() < 1e-6 {
+        return (r, g, b);
+    }
+    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let mut h = if max == r_f {
+        ((g_f - b_f) / d) + if g_f < b_f { 6.0 } else { 0.0 }
+    } else if max == g_f {
+        ((b_f - r_f) / d) + 2.0
+    } else {
+        ((r_f - g_f) / d) + 4.0
+    };
+    h *= 60.0;
+    h = (h + deg).rem_euclid(360.0);
+    let (r2, g2, b2) = hsl_to_rgb(h / 360.0, s, l);
+    ((r2 * 255.0).clamp(0.0, 255.0) as u8,
+     (g2 * 255.0).clamp(0.0, 255.0) as u8,
+     (b2 * 255.0).clamp(0.0, 255.0) as u8)
+}
+
+fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
+    if s.abs() < 1e-6 {
+        return (l, l, l);
+    }
+    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let p = 2.0 * l - q;
+    (
+        hue_to_rgb(p, q, h + 1.0 / 3.0),
+        hue_to_rgb(p, q, h),
+        hue_to_rgb(p, q, h - 1.0 / 3.0),
+    )
+}
+
+fn hue_to_rgb(p: f64, q: f64, mut t: f64) -> f64 {
+    if t < 0.0 { t += 1.0; }
+    if t > 1.0 { t -= 1.0; }
+    if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
+    if t < 1.0 / 2.0 { return q; }
+    if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+    p
 }
 
 /// Smooth — single quadratic-through-midpoints stroke. Width comes

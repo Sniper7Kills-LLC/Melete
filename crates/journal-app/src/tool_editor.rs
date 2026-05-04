@@ -153,13 +153,19 @@ pub fn build_editor_view(
     sidebar.append(&layers_scroll);
 
     let add_layer_btn = Button::with_label("+ Layer");
-    let remove_layer_btn = Button::with_label("Remove layer");
+    let remove_layer_btn = Button::with_label("Remove");
+    let move_up_btn = Button::from_icon_name("go-up-symbolic");
+    move_up_btn.set_tooltip_text(Some("Move layer up"));
+    let move_down_btn = Button::from_icon_name("go-down-symbolic");
+    move_down_btn.set_tooltip_text(Some("Move layer down"));
     let layer_btn_row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(6)
         .build();
     layer_btn_row.append(&add_layer_btn);
     layer_btn_row.append(&remove_layer_btn);
+    layer_btn_row.append(&move_up_btn);
+    layer_btn_row.append(&move_down_btn);
     sidebar.append(&layer_btn_row);
 
     paned.set_start_child(Some(&sidebar));
@@ -413,6 +419,45 @@ pub fn build_editor_view(
             let idx = s.selected_layer.min(s.brush.layers.len() - 1);
             s.brush.layers.remove(idx);
             s.selected_layer = idx.saturating_sub(1).max(0).min(s.brush.layers.len() - 1);
+            drop(s);
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+
+    // Move layer up — swap selected with previous. Layers render
+    // first→last, so "up" in the sidebar is "drawn earlier".
+    {
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        move_up_btn.connect_clicked(move |_| {
+            let mut s = editor_state.borrow_mut();
+            let idx = s.selected_layer;
+            if idx == 0 {
+                return;
+            }
+            s.brush.layers.swap(idx, idx - 1);
+            s.selected_layer = idx - 1;
+            drop(s);
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+
+    // Move layer down — swap selected with next.
+    {
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        move_down_btn.connect_clicked(move |_| {
+            let mut s = editor_state.borrow_mut();
+            let idx = s.selected_layer;
+            if idx + 1 >= s.brush.layers.len() {
+                return;
+            }
+            s.brush.layers.swap(idx, idx + 1);
+            s.selected_layer = idx + 1;
             drop(s);
             if let Some(f) = rebuild.borrow().as_ref().cloned() {
                 f();
@@ -724,7 +769,7 @@ fn build_layer_settings(
         });
     }
 
-    // Color — alpha multiplier.
+    // Color — alpha multiplier + hue shift (degrees, -180..180).
     let alpha = SpinButton::with_range(0.0, 2.0, 0.05);
     alpha.set_digits(2);
     alpha.set_value(layer.color.alpha_mult);
@@ -735,6 +780,23 @@ fn build_layer_settings(
         alpha.connect_value_changed(move |s| {
             if let Some(l) = editor_state.borrow_mut().brush.layers.get_mut(layer_idx) {
                 l.color.alpha_mult = s.value();
+            }
+            if let Some(f) = rebuild.borrow().as_ref().cloned() {
+                f();
+            }
+        });
+    }
+
+    let hue = SpinButton::with_range(-180.0, 180.0, 1.0);
+    hue.set_digits(1);
+    hue.set_value(layer.color.hue_shift_deg);
+    parent.append(&row("Hue shift°", hue.upcast_ref()));
+    {
+        let editor_state = editor_state.clone();
+        let rebuild = rebuild.clone();
+        hue.connect_value_changed(move |s| {
+            if let Some(l) = editor_state.borrow_mut().brush.layers.get_mut(layer_idx) {
+                l.color.hue_shift_deg = s.value();
             }
             if let Some(f) = rebuild.borrow().as_ref().cloned() {
                 f();
