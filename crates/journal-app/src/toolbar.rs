@@ -774,6 +774,69 @@ fn build_color_slots(state: SharedState, slots: &[[u8; 4]]) -> GtkBox {
     // dismiss it on stroke start without owning a reference per-slot.
     let active_picker: Rc<RefCell<Option<Popover>>> = Rc::new(RefCell::new(None));
 
+    // Self-referential rebuild closure — DnD drop handlers call this to
+    // re-read `config.color_slots` after a reorder and repopulate the
+    // row. The cell pattern lets the closure look up its own Rc so it
+    // can hand the same Rc back to `populate_slot_row` for the freshly
+    // built slots' drop handlers.
+    let rebuild_cell: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+    let rebuild: Rc<dyn Fn()> = {
+        let row = row.clone();
+        let state = state.clone();
+        let ap = active_picker.clone();
+        let cell = rebuild_cell.clone();
+        Rc::new(move || {
+            let cfg = crate::config::load();
+            let slots = cfg.color_slots.clone();
+            let self_rc = match cell.borrow().clone() {
+                Some(r) => r,
+                None => return,
+            };
+            populate_slot_row(&row, &state, &slots, &ap, &self_rc);
+        })
+    };
+    *rebuild_cell.borrow_mut() = Some(rebuild.clone());
+
+    populate_slot_row(&row, &state, slots, &active_picker, &rebuild);
+
+    // Tick callback: dismiss the open picker the moment the user starts
+    // drawing, since they've decided "use the color I just picked, don't
+    // keep editing the slot."
+    {
+        let state = state.clone();
+        let active_picker = active_picker.clone();
+        let was_drawing: Rc<Cell<bool>> = Rc::new(Cell::new(false));
+        row.add_tick_callback(move |_, _| {
+            let drawing = state.borrow().pointer_drawing;
+            if drawing && !was_drawing.get() {
+                if let Some(p) = active_picker.borrow_mut().take() {
+                    p.popdown();
+                }
+            }
+            was_drawing.set(drawing);
+            gtk4::glib::ControlFlow::Continue
+        });
+    }
+
+    row
+}
+
+/// Re-build every slot widget into `row` based on `slots`. Called on
+/// initial build and whenever a DnD reorder mutates `config.color_slots`.
+/// Closures capture `idx` from the iteration; the `rebuild` Rc is what
+/// the drop handler calls to repopulate this row after writing the new
+/// order to config.
+fn populate_slot_row(
+    row: &GtkBox,
+    state: &SharedState,
+    slots: &[[u8; 4]],
+    active_picker: &Rc<RefCell<Option<Popover>>>,
+    rebuild: &Rc<dyn Fn()>,
+) {
+    while let Some(c) = row.first_child() {
+        row.remove(&c);
+    }
+
     for (idx, raw) in slots.iter().enumerate() {
         let slot_color: Rc<Cell<[u8; 4]>> = Rc::new(Cell::new(*raw));
 
@@ -1001,27 +1064,69 @@ fn build_color_slots(state: SharedState, slots: &[[u8; 4]]) -> GtkBox {
             btn.add_controller(long);
         }
 
+        // Drag-and-drop reorder. Source content is `slot:{idx}`; drop
+        // target accepts `slot:{N}` and rewrites `config.color_slots`
+        // by removing source idx and inserting before target idx.
+        // Cross-toolbar drops are silently ignored (wrong content).
+        {
+            let drag = gtk4::DragSource::new();
+            drag.set_actions(gtk4::gdk::DragAction::MOVE);
+            let key = format!("slot:{}", idx);
+            drag.connect_prepare(move |_, _, _| {
+                Some(gtk4::gdk::ContentProvider::for_value(&key.to_value()))
+            });
+            btn.add_controller(drag);
+        }
+        {
+            let drop = gtk4::DropTarget::new(
+                gtk4::glib::types::Type::STRING,
+                gtk4::gdk::DragAction::MOVE,
+            );
+            let rebuild_for_drop = rebuild.clone();
+            let dst_idx = idx;
+            let btn_css = btn.clone();
+            drop.connect_enter(move |_, _, _| {
+                btn_css.add_css_class("drag-target");
+                gtk4::gdk::DragAction::MOVE
+            });
+            let btn_css_leave = btn.clone();
+            drop.connect_leave(move |_| {
+                btn_css_leave.remove_css_class("drag-target");
+            });
+            drop.connect_drop(move |_, val, _, _| {
+                let s = match val.get::<String>() {
+                    Ok(s) => s,
+                    Err(_) => return false,
+                };
+                let Some(src_str) = s.strip_prefix("slot:") else {
+                    return false;
+                };
+                let Ok(src_idx) = src_str.parse::<usize>() else {
+                    return false;
+                };
+                if src_idx == dst_idx {
+                    return false;
+                }
+                let mut cfg = crate::config::load();
+                if src_idx >= cfg.color_slots.len() || dst_idx > cfg.color_slots.len() {
+                    return false;
+                }
+                let moved = cfg.color_slots.remove(src_idx);
+                let mut insert_at = dst_idx;
+                if src_idx < dst_idx {
+                    insert_at -= 1;
+                }
+                cfg.color_slots.insert(insert_at, moved);
+                if let Err(e) = crate::config::save(&cfg) {
+                    tracing::warn!("Failed to save reordered color slots: {e}");
+                    return false;
+                }
+                (rebuild_for_drop)();
+                true
+            });
+            btn.add_controller(drop);
+        }
+
         row.append(&btn);
     }
-
-    // Tick callback: dismiss the open picker the moment the user starts
-    // drawing, since they've decided "use the color I just picked, don't
-    // keep editing the slot."
-    {
-        let state = state.clone();
-        let active_picker = active_picker.clone();
-        let was_drawing: Rc<Cell<bool>> = Rc::new(Cell::new(false));
-        row.add_tick_callback(move |_, _| {
-            let drawing = state.borrow().pointer_drawing;
-            if drawing && !was_drawing.get() {
-                if let Some(p) = active_picker.borrow_mut().take() {
-                    p.popdown();
-                }
-            }
-            was_drawing.set(drawing);
-            gtk4::glib::ControlFlow::Continue
-        });
-    }
-
-    row
 }
