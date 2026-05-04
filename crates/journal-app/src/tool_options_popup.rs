@@ -9,7 +9,7 @@
 //! frame-clock tick callback and rebuilds its content whenever the user
 //! switches tools.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gtk4::prelude::*;
@@ -70,6 +70,7 @@ pub fn build_tool_options_panel(
     parent: &gtk4::ApplicationWindow,
     state: SharedState,
     dock_slot: GtkBox,
+    tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>>,
 ) -> Rc<ToolOptionsPanel> {
     let win = Window::builder()
         .transient_for(parent)
@@ -130,18 +131,19 @@ pub fn build_tool_options_panel(
     }
 
     let initial_tool = state.borrow().tool;
-    rebuild_for_tool(&body, &state, initial_tool);
+    rebuild_for_tool(&body, &state, initial_tool, tools_open.clone());
 
     let last_tool: Rc<Cell<Tool>> = Rc::new(Cell::new(initial_tool));
     {
         let body = body.clone();
         let state = state.clone();
         let last_tool = last_tool.clone();
+        let tools_open = tools_open.clone();
         outer.add_tick_callback(move |_, _| {
             let cur = state.borrow().tool;
             if std::mem::discriminant(&cur) != std::mem::discriminant(&last_tool.get()) {
                 last_tool.set(cur);
-                rebuild_for_tool(&body, &state, cur);
+                rebuild_for_tool(&body, &state, cur, tools_open.clone());
             }
             gtk4::glib::ControlFlow::Continue
         });
@@ -266,11 +268,21 @@ pub fn build_tool_options_window(
     state: SharedState,
 ) -> Window {
     let dock_slot = GtkBox::builder().orientation(Orientation::Vertical).build();
-    let panel = build_tool_options_panel(parent, state, dock_slot);
+    // Stub closure cell — back-compat callers don't have a Tool
+    // Editor opener. The "Open in Tool Editor" button no-ops in
+    // this entry point.
+    let tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>> =
+        Rc::new(RefCell::new(None));
+    let panel = build_tool_options_panel(parent, state, dock_slot, tools_open);
     panel.window.clone()
 }
 
-fn rebuild_for_tool(body: &GtkBox, state: &SharedState, tool: Tool) {
+fn rebuild_for_tool(
+    body: &GtkBox,
+    state: &SharedState,
+    tool: Tool,
+    tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>>,
+) {
     while let Some(c) = body.first_child() {
         body.remove(&c);
     }
@@ -291,6 +303,12 @@ fn rebuild_for_tool(body: &GtkBox, state: &SharedState, tool: Tool) {
         .xalign(0.0)
         .build();
     body.append(&header);
+
+    // Composable-brush summary + "Open in Tool Editor" link. Sits at
+    // the top of the popup so dev-mode users can always reach the
+    // full editor regardless of which tool is active. See
+    // docs/brush-engine.md §Phase-4 / §4.5.
+    add_brush_recipe_section(body, state, tool, tools_open);
 
     add_preset_picker(body, state, tool);
     add_tool_settings_section(body, state, tool);
@@ -328,6 +346,119 @@ fn rebuild_for_tool(body: &GtkBox, state: &SharedState, tool: Tool) {
         switch_row.append(&b);
     }
     body.append(&switch_row);
+}
+
+/// Compact composable-brush summary for the dev-mode popup. Shows
+/// the active tool's brush recipe (built-in or assigned custom) +
+/// per-layer one-liners + a button that opens the full Tool Editor
+/// seeded with that brush. Edits are not made here — the popup is a
+/// while-drawing surface, the full editor is for designing.
+fn add_brush_recipe_section(
+    body: &GtkBox,
+    state: &SharedState,
+    tool: Tool,
+    tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>>,
+) {
+    use journal_core::{Geometry, TipShape, WidthMode};
+
+    let recipe: Option<journal_core::Brush> = {
+        let s = state.borrow();
+        let key = tool_key(tool).unwrap_or("pen");
+        s.tool_brushes
+            .get(key)
+            .cloned()
+            .or_else(|| s.active_brush_recipe.clone())
+            .or_else(|| {
+                // Fall back to the built-in for the tool's BrushStyle
+                // so the popup always has something to display.
+                use journal_canvas::built_in_brushes as bi;
+                Some(match tool {
+                    Tool::Pen => bi::pen(0.6, 0.4),
+                    Tool::Pencil => bi::pencil(0.4, 0.9, 0.12, 8.0, 0.22),
+                    Tool::Highlighter => bi::highlighter(0.6, 0.4),
+                    Tool::Paintbrush => bi::paintbrush(1.6, 1.4, 0.95, 0.07, 0.20, 0.95),
+                    Tool::SprayCan => bi::spray(36, 0.06, 0.35),
+                    Tool::Calligraphy => bi::calligraphy(45.0, 0.18, 0.5, true),
+                    _ => return None,
+                })
+            })
+    };
+
+    let title = Label::builder()
+        .label("Brush recipe")
+        .xalign(0.0)
+        .build();
+    title.add_css_class("dim-label");
+    body.append(&title);
+
+    let name = recipe
+        .as_ref()
+        .map(|b| b.name.clone())
+        .unwrap_or_else(|| "(none)".to_string());
+    let name_lbl = Label::builder()
+        .label(&format!("<b>{}</b>", glib_escape(&name)))
+        .use_markup(true)
+        .xalign(0.0)
+        .build();
+    body.append(&name_lbl);
+
+    if let Some(brush) = recipe.as_ref() {
+        for (i, layer) in brush.layers.iter().enumerate() {
+            let geo = match &layer.geometry {
+                Geometry::Smooth { .. } => "Smooth",
+                Geometry::Outline { .. } => "Outline",
+                Geometry::Scatter { .. } => "Scatter",
+                Geometry::DabStamp { .. } => "DabStamp",
+                Geometry::FanOffset { .. } => "FanOffset",
+            };
+            let w = match &layer.width {
+                WidthMode::Constant { .. } => "Const",
+                WidthMode::ClampedConstant { .. } => "Clamped",
+                WidthMode::Pressure { .. } => "Pressure",
+                WidthMode::DirectionAngled { .. } => "Angled",
+                WidthMode::TiltBand { .. } => "TiltBand",
+            };
+            let tip = match &layer.tip {
+                TipShape::Round => "Round",
+                TipShape::Square => "Square",
+                TipShape::FlatNib { .. } => "FlatNib",
+                TipShape::Diamond => "Diamond",
+                TipShape::StarN { .. } => "Star",
+                TipShape::Custom { .. } => "Custom",
+            };
+            let mark = if layer.enabled { "•" } else { "○" };
+            let row = Label::builder()
+                .label(&format!(
+                    "{} L{} — {} · {} · {}",
+                    mark, i + 1, geo, w, tip
+                ))
+                .xalign(0.0)
+                .build();
+            row.add_css_class("dim-label");
+            body.append(&row);
+        }
+    }
+
+    let edit_btn = Button::with_label("Open in Tool Editor…");
+    {
+        let recipe_for = recipe.clone();
+        let tools_open = tools_open.clone();
+        edit_btn.connect_clicked(move |_| {
+            if let Some(f) = tools_open.borrow().as_ref().cloned() {
+                f(recipe_for.clone());
+            }
+        });
+    }
+    body.append(&edit_btn);
+
+    body.append(&Separator::new(Orientation::Horizontal));
+}
+
+/// Minimal Pango markup escape — the recipe `name` flows from a
+/// user-controlled brush field, so escape `<>&` to avoid markup
+/// injection in the popup label.
+fn glib_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 fn add_preset_picker(body: &GtkBox, state: &SharedState, tool: Tool) {

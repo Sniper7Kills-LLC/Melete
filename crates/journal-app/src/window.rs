@@ -261,6 +261,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
             parent,
             state.clone(),
             tool_dock_slot.clone(),
+            tools_open.clone(),
         );
         *tool_panel.borrow_mut() = Some(panel);
     }
