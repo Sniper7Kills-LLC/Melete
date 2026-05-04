@@ -170,6 +170,15 @@ pub struct CanvasState {
     /// the Tool Editor saves. Built-in brushes are NOT in this list —
     /// the editor merges built-ins + this library at display time.
     pub brush_library: Vec<journal_core::Brush>,
+
+    /// Per-tool assigned brush (full Brush, not just an id, since
+    /// built-in compositions are constructed on demand and don't
+    /// live anywhere persistent). Switching to a tool with an
+    /// assignment loads the brush into `active_brush_recipe`;
+    /// switching to one without snaps back to the legacy adapter.
+    /// In-memory only for now — persistence lands with the
+    /// per-tool brush picker UI in a follow-up commit.
+    pub tool_brushes: std::collections::HashMap<String, journal_core::Brush>,
 }
 
 pub type SharedState = Rc<RefCell<CanvasState>>;
@@ -256,6 +265,7 @@ pub fn new_shared_state(
         tool_palettes: std::collections::HashMap::new(),
         active_brush_recipe: None,
         brush_library: crate::brush_library::load(),
+        tool_brushes: std::collections::HashMap::new(),
     }))
 }
 
@@ -511,14 +521,12 @@ pub fn set_tool(state: &SharedState, tool: Tool) {
     let mut s = state.borrow_mut();
     let prev_tool = s.tool;
     s.tool = tool;
-    // Custom brush_recipe is a one-shot override for the *current*
-    // drawing session. Switching tool snaps back to that tool's
-    // built-in composition, so the user has to consciously re-enter
-    // the editor to apply a custom brush to a different tool. Within
-    // a single tool, the override survives until they Cancel out of
-    // the editor or pick a different built-in.
+    // Each tool has an optional per-slot brush assignment. Switching
+    // to a tool loads its assigned brush (or `None` → legacy adapter).
     if prev_tool != tool {
-        s.active_brush_recipe = None;
+        let assigned = crate::tool_settings::tool_key(tool)
+            .and_then(|k| s.tool_brushes.get(k).cloned());
+        s.active_brush_recipe = assigned;
     }
     if let Some(key) = crate::tool_settings::tool_key(tool) {
         // Sync flat snapshot to the active preset for this tool, in

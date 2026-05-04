@@ -501,14 +501,21 @@ pub fn build_editor_view(
         });
     }
 
-    // Use this brush — set active recipe, return.
+    // Use this brush — set active recipe, also persist to the
+    // current tool's slot so switching back to that tool re-applies.
     {
         let editor_state = editor_state.clone();
         let state_outer = state.clone();
         let on_done = on_done.clone();
         done_btn.connect_clicked(move |_| {
             let brush = editor_state.borrow().brush.clone();
-            state_outer.borrow_mut().active_brush_recipe = Some(brush);
+            let mut s = state_outer.borrow_mut();
+            s.active_brush_recipe = Some(brush.clone());
+            let tool = s.tool;
+            if let Some(key) = crate::tool_settings::tool_key(tool) {
+                s.tool_brushes.insert(key.to_string(), brush);
+            }
+            drop(s);
             (on_done)();
         });
     }
