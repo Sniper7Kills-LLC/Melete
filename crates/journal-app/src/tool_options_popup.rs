@@ -15,7 +15,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use gtk4::{
     Box as GtkBox, Button, CheckButton, DropDown, Label, Orientation, ScrolledWindow, Separator,
-    SpinButton, StringList, Window,
+    SpinButton, Stack, StackTransitionType, StringList, Window,
 };
 use journal_canvas::vello_renderer::{
     BrushParams, CalligraphyParams, CalligraphyShape, PaintbrushParams, PaintbrushShape, PenParams,
@@ -34,15 +34,6 @@ const BLEND_MODES: &[(&str, BlendMode)] = &[
     ("Darken", BlendMode::Darken),
     ("Lighten", BlendMode::Lighten),
     ("Erase", BlendMode::Erase),
-];
-
-const BRUSH_STYLES: &[(&str, BrushStyle)] = &[
-    ("Pen", BrushStyle::Pen),
-    ("Pencil", BrushStyle::Pencil),
-    ("Highlighter", BrushStyle::Highlighter),
-    ("Paintbrush", BrushStyle::Paintbrush),
-    ("Spray Can", BrushStyle::SprayCan),
-    ("Calligraphy", BrushStyle::Calligraphy),
 ];
 
 fn blend_index(b: BlendMode) -> u32 {
@@ -117,6 +108,34 @@ pub fn build_tool_options_panel(
         .margin_start(12)
         .margin_end(12)
         .build();
+
+    // Three-zone layout so tool switches don't destroy widgets that are
+    // identical across tools (audit §2): the brush-style internals are
+    // editor-equivalent for every tool that maps to the same BrushStyle,
+    // so they live in a Stack built once at panel creation. The dynamic
+    // top/bottom zones still get cleared and rebuilt per tool, but the
+    // expensive grids of spinners stay alive.
+    let top_dyn = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(10)
+        .build();
+    let internals_stack = Stack::builder()
+        .transition_type(StackTransitionType::Crossfade)
+        .transition_duration(140)
+        .hhomogeneous(true)
+        .vhomogeneous(false)
+        .build();
+    let bottom_dyn = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(10)
+        .build();
+
+    body.append(&top_dyn);
+    body.append(&internals_stack);
+    body.append(&bottom_dyn);
+
+    populate_internals_stack(&internals_stack, &state);
+
     scroll.set_child(Some(&body));
     outer.append(&scroll);
 
@@ -131,11 +150,22 @@ pub fn build_tool_options_panel(
     }
 
     let initial_tool = state.borrow().tool;
-    rebuild_for_tool(&body, &state, initial_tool, tools_open.clone());
+    rebuild_for_tool(
+        &top_dyn,
+        &bottom_dyn,
+        &internals_stack,
+        &scroll,
+        &state,
+        initial_tool,
+        tools_open.clone(),
+    );
 
     let last_tool: Rc<Cell<Tool>> = Rc::new(Cell::new(initial_tool));
     {
-        let body = body.clone();
+        let top_dyn = top_dyn.clone();
+        let bottom_dyn = bottom_dyn.clone();
+        let internals_stack = internals_stack.clone();
+        let scroll = scroll.clone();
         let state = state.clone();
         let last_tool = last_tool.clone();
         let tools_open = tools_open.clone();
@@ -143,7 +173,15 @@ pub fn build_tool_options_panel(
             let cur = state.borrow().tool;
             if std::mem::discriminant(&cur) != std::mem::discriminant(&last_tool.get()) {
                 last_tool.set(cur);
-                rebuild_for_tool(&body, &state, cur, tools_open.clone());
+                rebuild_for_tool(
+                    &top_dyn,
+                    &bottom_dyn,
+                    &internals_stack,
+                    &scroll,
+                    &state,
+                    cur,
+                    tools_open.clone(),
+                );
             }
             gtk4::glib::ControlFlow::Continue
         });
@@ -278,22 +316,34 @@ pub fn build_tool_options_window(
 }
 
 fn rebuild_for_tool(
-    body: &GtkBox,
+    top: &GtkBox,
+    bottom: &GtkBox,
+    internals_stack: &Stack,
+    scroll: &ScrolledWindow,
     state: &SharedState,
     tool: Tool,
     tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>>,
 ) {
-    while let Some(c) = body.first_child() {
-        body.remove(&c);
+    // Snapshot scroll position so a tool change doesn't kick the user
+    // back to the top of the popup (audit §2). Restored on the next
+    // idle tick once the dynamic zones have re-laid out.
+    let scroll_y = scroll.vadjustment().value();
+
+    while let Some(c) = top.first_child() {
+        top.remove(&c);
+    }
+    while let Some(c) = bottom.first_child() {
+        bottom.remove(&c);
     }
 
     let Some(_key) = tool_key(tool) else {
+        internals_stack.set_visible(false);
         let lbl = Label::builder()
             .label("This tool has no editable options.")
             .wrap(true)
             .xalign(0.0)
             .build();
-        body.append(&lbl);
+        top.append(&lbl);
         return;
     };
 
@@ -302,27 +352,41 @@ fn rebuild_for_tool(
         .use_markup(true)
         .xalign(0.0)
         .build();
-    body.append(&header);
+    top.append(&header);
 
     // Composable-brush summary + "Open in Tool Editor" link. Sits at
     // the top of the popup so dev-mode users can always reach the
     // full editor regardless of which tool is active. See
     // docs/brush-engine.md §Phase-4 / §4.5.
-    add_brush_recipe_section(body, state, tool, tools_open);
+    add_brush_recipe_section(top, state, tool, tools_open);
 
-    add_preset_picker(body, state, tool);
-    add_tool_settings_section(body, state, tool);
+    add_preset_picker(top, state, tool);
+    add_tool_settings_section(top, state, tool);
 
-    body.append(&Separator::new(Orientation::Horizontal));
-    add_palette_section(body, state, tool);
+    top.append(&Separator::new(Orientation::Horizontal));
+    add_palette_section(top, state, tool);
 
-    body.append(&Separator::new(Orientation::Horizontal));
-    add_brush_internal_section(body, state, tool);
+    top.append(&Separator::new(Orientation::Horizontal));
+
+    // Brush internals: lazily populate the becoming-active page from
+    // current state, then crossfade to it. Inactive pages stay alive
+    // but empty — populated next time their style is selected. Audit
+    // §2: avoids the body-wide rebuild flash on every tool switch.
+    let style = state
+        .borrow()
+        .tool_settings
+        .get(tool_key(tool).unwrap_or(""))
+        .map(|s| s.brush_style)
+        .unwrap_or(default_settings_for(tool).brush_style);
+    repopulate_internals_page(internals_stack, state, style);
+    internals_stack.set_visible(true);
+    internals_stack.set_visible_child_name(brush_style_stack_name(style));
+
+    bottom.append(&Separator::new(Orientation::Horizontal));
 
     // Quick "jump to tool list" links so the panel stays useful when the
     // user has many tools open and wants to switch without going back to
     // the toolbar (panel is itself a separate window).
-    body.append(&Separator::new(Orientation::Horizontal));
     let switch_row = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(4)
@@ -345,7 +409,90 @@ fn rebuild_for_tool(
         });
         switch_row.append(&b);
     }
-    body.append(&switch_row);
+    bottom.append(&switch_row);
+
+    // Restore scroll position after layout settles.
+    {
+        let scroll = scroll.clone();
+        gtk4::glib::idle_add_local_once(move || {
+            let adj = scroll.vadjustment();
+            let clamped = scroll_y.clamp(adj.lower(), (adj.upper() - adj.page_size()).max(adj.lower()));
+            adj.set_value(clamped);
+        });
+    }
+}
+
+fn brush_style_stack_name(style: BrushStyle) -> &'static str {
+    match style {
+        BrushStyle::Pen => "pen",
+        BrushStyle::Pencil => "pencil",
+        BrushStyle::Highlighter => "highlighter",
+        BrushStyle::Paintbrush => "paintbrush",
+        BrushStyle::SprayCan => "spray",
+        BrushStyle::Calligraphy => "calligraphy",
+    }
+}
+
+/// Add an empty container page for each brush style to `stack`. Pages
+/// are populated lazily by `repopulate_active_internals_page` whenever a
+/// tool switch makes that page visible — this keeps the Stack
+/// crossfade transition (so the pop-rebuild flash audited in §2 is
+/// hidden) without the stale-widget/state desync that comes with
+/// permanently caching every spinner.
+fn populate_internals_stack(stack: &Stack, _state: &SharedState) {
+    for name in ["pen", "highlighter", "pencil", "paintbrush", "spray", "calligraphy"] {
+        let page = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(8)
+            .build();
+        stack.add_named(&page, Some(name));
+    }
+}
+
+fn repopulate_internals_page(stack: &Stack, state: &SharedState, style: BrushStyle) {
+    let name = brush_style_stack_name(style);
+    let Some(page_widget) = stack.child_by_name(name) else {
+        return;
+    };
+    let page: GtkBox = match page_widget.downcast::<GtkBox>() {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+    while let Some(c) = page.first_child() {
+        page.remove(&c);
+    }
+
+    let title = match style {
+        BrushStyle::Pen => "Pen",
+        BrushStyle::Highlighter => "Highlighter",
+        BrushStyle::Pencil => "Pencil",
+        BrushStyle::Paintbrush => "Paintbrush",
+        BrushStyle::SprayCan => "Spray Can",
+        BrushStyle::Calligraphy => "Calligraphy",
+    };
+    let header = Label::builder()
+        .label(&format!("<b>{} internals</b>", title))
+        .use_markup(true)
+        .xalign(0.0)
+        .build();
+    page.append(&header);
+    page.append(
+        &Label::builder()
+            .label(
+                "Shared globally per brush style — editing these affects every stroke that \
+                 uses this style.",
+            )
+            .wrap(true)
+            .xalign(0.0)
+            .build(),
+    );
+    match style {
+        BrushStyle::Pen | BrushStyle::Highlighter => append_pen_internals(&page, state),
+        BrushStyle::Pencil => append_pencil_internals(&page, state),
+        BrushStyle::Paintbrush => append_paintbrush_internals(&page, state),
+        BrushStyle::SprayCan => append_spray_internals(&page, state),
+        BrushStyle::Calligraphy => append_calligraphy_internals(&page, state),
+    }
 }
 
 /// Compact composable-brush summary for the dev-mode popup. Shows
@@ -933,47 +1080,6 @@ fn add_palette_section(body: &GtkBox, state: &SharedState, tool: Tool) {
             btn.add_controller(gesture);
         }
         btn
-    }
-}
-
-fn add_brush_internal_section(body: &GtkBox, state: &SharedState, tool: Tool) {
-    // Show the internal tuning matching whatever brush_style this tool
-    // currently uses. Keep this function in sync with the per-brush
-    // sections in `settings_dialogs::add_brush_param_sections` — they
-    // edit the same `state.brush_params`.
-    let style = state
-        .borrow()
-        .tool_settings
-        .get(tool_key(tool).unwrap_or(""))
-        .map(|s| s.brush_style)
-        .unwrap_or(default_settings_for(tool).brush_style);
-
-    let header = Label::builder()
-        .label(&format!(
-            "<b>{} internals</b>",
-            BRUSH_STYLES.iter().find(|(_, s)| *s == style).map(|(n, _)| *n).unwrap_or("")
-        ))
-        .use_markup(true)
-        .xalign(0.0)
-        .build();
-    body.append(&header);
-    body.append(
-        &Label::builder()
-            .label(
-                "Shared globally per brush style — editing these affects every stroke that \
-                 uses this style.",
-            )
-            .wrap(true)
-            .xalign(0.0)
-            .build(),
-    );
-
-    match style {
-        BrushStyle::Pen | BrushStyle::Highlighter => append_pen_internals(body, state),
-        BrushStyle::Pencil => append_pencil_internals(body, state),
-        BrushStyle::Paintbrush => append_paintbrush_internals(body, state),
-        BrushStyle::SprayCan => append_spray_internals(body, state),
-        BrushStyle::Calligraphy => append_calligraphy_internals(body, state),
     }
 }
 
