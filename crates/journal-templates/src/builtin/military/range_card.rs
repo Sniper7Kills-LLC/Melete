@@ -108,30 +108,32 @@ pub fn builtin_military_range_card() -> PageTemplate {
     widgets.push(text(mw(t, 61), n_x - 2.0, n_top - 5.0, 8.0, 4.0, "N", 4.0));
 
     // ── Range arcs + sector limit lines ─────────────────────────────────
-    // DA 5517-style range card: concentric arcs at three range bands
-    // fanning out from the weapon position, plus sector-limit lines
-    // running from WP through the LL / RL labels at the sketch corners.
-    // Math convention: 0deg = +x, 90deg = +y, sweep CCW. The widget
-    // renderer flips Y at draw time so the arcs read "up" on screen.
+    // DA 5517-style range card: concentric half-circle arcs at three
+    // range bands fanning out from the weapon position, plus sector-
+    // limit lines running horizontally from WP to the LL / RL labels at
+    // the bottom corners of the sketch box. Math convention: 0deg = +x,
+    // 90deg = +y, sweep CCW. The widget renderer flips Y at draw time
+    // so the arcs read "up" on screen.
     let max_radius = (sketch_h - 8.0).min(sketch_w * 0.5 - 4.0);
     let r1 = max_radius * 0.34;
     let r2 = max_radius * 0.67;
     let r3 = max_radius * 0.95;
-    // 90-deg fan opening upward — start at 45deg right-up, sweep 90deg
-    // CCW through 90deg straight-up to 135deg left-up.
+    // Full half-circle (180deg) opening upward — start at 0deg (+x,
+    // right) and sweep 180deg CCW through 90deg (up) to 180deg (-x).
     for (i, radius) in [r1, r2, r3].iter().enumerate() {
         widgets.push(arc(
             mw(t, (90 + i) as u16),
             wp_x,
             wp_y,
             *radius,
-            45.0,
-            90.0,
+            0.0,
+            180.0,
             0.25,
         ));
     }
 
-    // Range labels along the upper-right diagonal.
+    // Range labels along the upper-right diagonal so they don't crowd
+    // the magnetic-N marker on the right edge.
     let cos45 = std::f64::consts::FRAC_1_SQRT_2;
     let label_dx = cos45;
     let label_dy = -cos45;
@@ -144,20 +146,19 @@ pub fn builtin_military_range_card() -> PageTemplate {
         widgets.push(text(mw(t, (93 + i) as u16), lx, ly, 14.0, 3.5, name, 2.8));
     }
 
-    // Sector-limit lines: from WP along the 45/135deg fan edges to the
-    // LL / RL label corners.
-    let limit_len = max_radius;
-    let ll_end_x = wp_x - limit_len * cos45;
-    let ll_end_y = wp_y - limit_len * cos45;
-    let rl_end_x = wp_x + limit_len * cos45;
-    let rl_end_y = wp_y - limit_len * cos45;
-    widgets.push(segment(mw(t, 96), wp_x, wp_y, ll_end_x, ll_end_y, 0.3));
-    widgets.push(segment(mw(t, 97), wp_x, wp_y, rl_end_x, rl_end_y, 0.3));
+    // Sector-limit lines: now horizontal at WP level, extending from
+    // the weapon position to the left and right edges of the sketch
+    // box (the diameter endpoints of the half-circles above).
+    let ll_end_x = margin + 1.0;
+    let rl_end_x = margin + sketch_w - 1.0;
+    let limit_y = wp_y;
+    widgets.push(segment(mw(t, 96), wp_x, wp_y, ll_end_x, limit_y, 0.3));
+    widgets.push(segment(mw(t, 97), wp_x, wp_y, rl_end_x, limit_y, 0.3));
 
     widgets.push(text(
         mw(t, 98),
-        ll_end_x - 6.0,
-        ll_end_y - 4.0,
+        ll_end_x + 1.0,
+        limit_y - 5.0,
         14.0,
         4.0,
         "LL",
@@ -165,8 +166,8 @@ pub fn builtin_military_range_card() -> PageTemplate {
     ));
     widgets.push(text(
         mw(t, 99),
-        rl_end_x + 1.0,
-        rl_end_y - 4.0,
+        rl_end_x - 12.0,
+        limit_y - 5.0,
         12.0,
         4.0,
         "RL",
