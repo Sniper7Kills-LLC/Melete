@@ -10,7 +10,7 @@ use journal_core::{
     WidgetStyle,
 };
 
-use crate::builtin::{hline, mw, text, vline, US_LETTER_LANDSCAPE};
+use crate::builtin::{mw, text, US_LETTER_LANDSCAPE};
 
 pub const BUILTIN_MILITARY_PACE_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000018");
 
@@ -57,45 +57,73 @@ pub fn builtin_military_pace() -> PageTemplate {
     let row_h = (body_h - header_h) / rows.len() as f64;
 
     // ── Table grid ──────────────────────────────────────────────────────
-    // Heavy outer frame so the table reads as a discrete unit.
-    widgets.push(TemplateWidget {
-        id: mw(t, 30),
-        kind: WidgetKind::Rectangle,
-        rect: WidgetRect {
-            x: margin,
-            y: body_top,
-            width: table_w,
-            height: body_h,
-        },
-        style: WidgetStyle {
-            stroke_width_mm: 0.6,
-            ..WidgetStyle::default()
-        },
-    });
-    // Header band underline (heavier than row dividers).
-    widgets.push(hline(mw(t, 31), margin, body_top + header_h, table_w, 0.6));
-    // Heavy divider between label column and the data columns.
-    widgets.push(vline(
-        mw(t, 39),
-        margin + label_col_w,
-        body_top,
-        body_h,
-        0.5,
-    ));
-    // Vertical dividers between data columns.
-    for i in 1..cols.len() {
-        widgets.push(vline(
-            mw(t, (40 + i) as u16),
-            margin + label_col_w + col_w * i as f64,
-            body_top,
-            body_h,
-            0.4,
-        ));
+    // Build the table out of one rect per cell — guarantees every
+    // cell has its own visible border instead of relying on shared
+    // hairlines that can get lost at typical zoom levels. Header row
+    // and label column rects use a heavier stroke than the data
+    // cells so the structure reads at a glance.
+    let header_style = WidgetStyle {
+        stroke_width_mm: 0.6,
+        ..WidgetStyle::default()
+    };
+    let cell_style = WidgetStyle {
+        stroke_width_mm: 0.4,
+        ..WidgetStyle::default()
+    };
+    let mut cell_id: u16 = 200;
+
+    // Header-row rects (one per column, including the label column).
+    let total_cols = 1 + cols.len();
+    for c in 0..total_cols {
+        let cx = if c == 0 {
+            margin
+        } else {
+            margin + label_col_w + col_w * (c - 1) as f64
+        };
+        let cw = if c == 0 { label_col_w } else { col_w };
+        widgets.push(TemplateWidget {
+            id: mw(t, cell_id),
+            kind: WidgetKind::Rectangle,
+            rect: WidgetRect {
+                x: cx,
+                y: body_top,
+                width: cw,
+                height: header_h,
+            },
+            style: header_style.clone(),
+        });
+        cell_id += 1;
     }
-    // Horizontal dividers between data rows.
-    for r in 1..rows.len() {
+    // Data-row rects.
+    for r in 0..rows.len() {
         let y = body_top + header_h + row_h * r as f64;
-        widgets.push(hline(mw(t, (60 + r) as u16), margin, y, table_w, 0.4));
+        for c in 0..total_cols {
+            let cx = if c == 0 {
+                margin
+            } else {
+                margin + label_col_w + col_w * (c - 1) as f64
+            };
+            let cw = if c == 0 { label_col_w } else { col_w };
+            // Label-column data cells use the heavier style so the
+            // entire left column reads as a header.
+            let style = if c == 0 {
+                header_style.clone()
+            } else {
+                cell_style.clone()
+            };
+            widgets.push(TemplateWidget {
+                id: mw(t, cell_id),
+                kind: WidgetKind::Rectangle,
+                rect: WidgetRect {
+                    x: cx,
+                    y,
+                    width: cw,
+                    height: row_h,
+                },
+                style,
+            });
+            cell_id += 1;
+        }
     }
 
     // Column headers (Type / Primary / Alternate / Contingency / Emergency).
