@@ -71,7 +71,7 @@ pub fn builtin_military_gotwa() -> PageTemplate {
                 margin,
                 y + row_h - 0.4,
                 page_w - margin * 2.0,
-                0.15,
+                0.3,
             ));
         }
     }

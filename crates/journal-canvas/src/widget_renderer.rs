@@ -300,6 +300,21 @@ fn draw_widget(
             };
             draw_tally(ctx, transform, r, style, label, n);
         }
+        WidgetKind::RangeArcs {
+            rings,
+            interval_m,
+            sweep_deg,
+        } => {
+            let (rings, interval_m, sweep_deg) = match override_ {
+                Some(WidgetOverride::RangeArcs {
+                    rings,
+                    interval_m,
+                    sweep_deg,
+                }) => (*rings, *interval_m, *sweep_deg),
+                _ => (*rings, *interval_m, *sweep_deg),
+            };
+            draw_range_arcs(ctx, transform, r, style, rings, interval_m, sweep_deg);
+        }
     }
 }
 
@@ -960,6 +975,60 @@ fn draw_tally(
         let cy = r.y + r.height * 0.5;
         ctx.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
         let _ = ctx.stroke();
+    }
+}
+
+fn draw_range_arcs(
+    ctx: &cairo::Context,
+    transform: &ViewportTransform,
+    r: &WidgetRect,
+    style: &WidgetStyle,
+    rings: u32,
+    interval_m: u32,
+    sweep_deg: f64,
+) {
+    let _ = transform;
+    let rings = rings.max(1);
+    let sweep = if sweep_deg <= 0.0 { 180.0 } else { sweep_deg };
+    let wp_x = r.x + r.width * 0.5;
+    let wp_y = r.y + r.height;
+    let max_radius = r.height.min(r.width * 0.5).max(1.0);
+
+    set_color(ctx, style.stroke_color);
+    let lw = style.stroke_width_mm.max(0.25);
+    ctx.set_line_width(lw);
+
+    // Sector-limit lines.
+    let half_sweep_rad = (sweep * 0.5).to_radians();
+    let limit_dx = max_radius * half_sweep_rad.cos();
+    let limit_dy = -max_radius * half_sweep_rad.sin();
+    ctx.move_to(wp_x, wp_y);
+    ctx.line_to(wp_x - limit_dx, wp_y + limit_dy);
+    let _ = ctx.stroke();
+    ctx.move_to(wp_x, wp_y);
+    ctx.line_to(wp_x + limit_dx, wp_y + limit_dy);
+    let _ = ctx.stroke();
+
+    let start_deg = 90.0 + sweep * 0.5;
+    for ring in 1..=rings {
+        let radius = max_radius * (ring as f64 / rings as f64);
+        let a0 = -start_deg.to_radians();
+        let a1 = -(start_deg - sweep).to_radians();
+        ctx.save().ok();
+        ctx.translate(wp_x, wp_y);
+        ctx.scale(radius, radius);
+        ctx.arc_negative(0.0, 0.0, 1.0, a0, a1);
+        ctx.restore().ok();
+        let _ = ctx.stroke();
+
+        let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+        let lx = wp_x + radius * cos45 + 1.0;
+        let ly = wp_y - radius * cos45 - 1.5;
+        let label = format!("{}m", interval_m * ring);
+        let fs = (max_radius * 0.05).clamp(2.5, 5.0);
+        ctx.set_font_size(fs);
+        ctx.move_to(lx, ly + fs);
+        let _ = ctx.show_text(&label);
     }
 }
 

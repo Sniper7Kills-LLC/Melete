@@ -1891,6 +1891,7 @@ fn kind_label(k: &WidgetKind) -> &'static str {
         WidgetKind::WeeklyCompass => "Weekly Compass",
         WidgetKind::HabitTracker { .. } => "Habit Tracker",
         WidgetKind::Tally { .. } => "Tally",
+        WidgetKind::RangeArcs { .. } => "Range Arcs",
     }
 }
 

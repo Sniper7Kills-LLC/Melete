@@ -152,6 +152,16 @@ pub enum WidgetKind {
         label: String,
         count: u32,
     },
+    /// Concentric range-arc fan from the bottom-center of the widget's
+    /// rect (the "weapon position" for a fighting-position sector
+    /// sketch). Renders `rings` half-circle arcs at evenly spaced
+    /// radii out to the rect's height, with a label every ring at
+    /// `interval_m * ring_index` meters.
+    RangeArcs {
+        rings: u32,
+        interval_m: u32,
+        sweep_deg: f64,
+    },
 }
 
 /// A widget placed on a template canvas.

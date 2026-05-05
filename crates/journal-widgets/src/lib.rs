@@ -452,6 +452,21 @@ impl WidgetRenderer {
                 };
                 self.draw_tally(scene, transform, r, style, label, count);
             }
+            WidgetKind::RangeArcs {
+                rings,
+                interval_m,
+                sweep_deg,
+            } => {
+                let (rings, interval_m, sweep_deg) = match override_ {
+                    Some(WidgetOverride::RangeArcs {
+                        rings,
+                        interval_m,
+                        sweep_deg,
+                    }) => (*rings, *interval_m, *sweep_deg),
+                    _ => (*rings, *interval_m, *sweep_deg),
+                };
+                self.draw_range_arcs(scene, transform, r, style, rings, interval_m, sweep_deg);
+            }
         }
     }
 
@@ -1008,6 +1023,87 @@ impl WidgetRenderer {
             let cy = r.y + r.height * 0.5;
             let path = Ellipse::new((cx, cy), (radius, radius), 0.0).to_path(0.05);
             scene.stroke(&stroke_style_thin, transform, &brush, None, &path);
+        }
+    }
+
+    fn draw_range_arcs(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        rings: u32,
+        interval_m: u32,
+        sweep_deg: f64,
+    ) {
+        let rings = rings.max(1);
+        let sweep = if sweep_deg <= 0.0 { 180.0 } else { sweep_deg };
+        // Weapon position at the bottom-center of the rect; arcs fan
+        // upward to the rect top edge. The radius of the outermost
+        // ring is the rect's height (so widget rect height controls
+        // how big the fan reaches).
+        let wp_x = r.x + r.width * 0.5;
+        let wp_y = r.y + r.height;
+        let max_radius = r.height.min(r.width * 0.5).max(1.0);
+        let stroke_style_arc = stroke_style(style.stroke_width_mm.max(0.25));
+        let brush = solid(style.stroke_color);
+        // Center the sweep on the +Y axis (90deg in math convention).
+        let start_deg = 90.0 + sweep * 0.5;
+
+        // Sector-limit lines along the diameter endpoints.
+        let limit_y = wp_y;
+        let half_sweep_rad = (sweep * 0.5).to_radians();
+        let limit_dx = max_radius * half_sweep_rad.cos();
+        let limit_dy = -max_radius * half_sweep_rad.sin();
+        let mut limits = BezPath::new();
+        limits.move_to((wp_x, wp_y));
+        limits.line_to((wp_x - limit_dx, limit_y + limit_dy));
+        limits.move_to((wp_x, wp_y));
+        limits.line_to((wp_x + limit_dx, limit_y + limit_dy));
+        scene.stroke(
+            &stroke_style(style.stroke_width_mm.max(0.3)),
+            transform,
+            &brush,
+            None,
+            &limits,
+        );
+
+        for ring in 1..=rings {
+            let radius = max_radius * (ring as f64 / rings as f64);
+            let mut path = BezPath::new();
+            let steps = (sweep.abs() as usize).max(8);
+            for i in 0..=steps {
+                let frac = i as f64 / steps as f64;
+                let theta = (-(start_deg - sweep * frac)).to_radians();
+                let x = wp_x + radius * theta.cos();
+                let y = wp_y + radius * theta.sin();
+                if i == 0 {
+                    path.move_to((x, y));
+                } else {
+                    path.line_to((x, y));
+                }
+            }
+            scene.stroke(&stroke_style_arc, transform, &brush, None, &path);
+
+            // Distance label along the upper-right diagonal of the arc.
+            let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+            let lx = wp_x + radius * cos45 + 1.0;
+            let ly = wp_y - radius * cos45 - 1.5;
+            let label = format!("{}m", interval_m * ring);
+            let fs = (max_radius * 0.05).clamp(2.5, 5.0) as f32;
+            draw_text_runs(
+                scene,
+                &mut self.font_ctx,
+                &mut self.layout_ctx,
+                transform,
+                &label,
+                fs,
+                lx,
+                ly,
+                14.0,
+                style.stroke_color,
+                Alignment::Start,
+            );
         }
     }
 

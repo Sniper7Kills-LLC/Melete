@@ -248,6 +248,7 @@ pub(crate) fn lined_paper_widgets(t: u8) -> Vec<TemplateWidget> {
     widgets
 }
 
+#[allow(dead_code)]
 pub(crate) fn segment(
     id: Uuid,
     x1: f64,
@@ -271,6 +272,7 @@ pub(crate) fn segment(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn arc(
     id: Uuid,
     cx: f64,

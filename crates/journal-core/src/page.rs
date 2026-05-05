@@ -65,6 +65,11 @@ pub enum WidgetOverride {
         label: String,
         count: u32,
     },
+    RangeArcs {
+        rings: u32,
+        interval_m: u32,
+        sweep_deg: f64,
+    },
 }
 
 /// A single page within a notebook section.

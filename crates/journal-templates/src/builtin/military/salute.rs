@@ -73,7 +73,7 @@ pub fn builtin_military_salute() -> PageTemplate {
                 margin + 25.0,
                 y + row_h - 0.4,
                 page_w - margin * 2.0 - 27.0,
-                0.15,
+                0.3,
             ));
         }
     }

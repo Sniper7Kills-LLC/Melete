@@ -12,7 +12,7 @@ use journal_core::{
     WidgetStyle,
 };
 
-use crate::builtin::{arc, hline, lines_region, mw, rect, segment, text, vline, US_LETTER};
+use crate::builtin::{hline, lines_region, mw, rect, text, vline, US_LETTER};
 
 pub const BUILTIN_MILITARY_RANGE_CARD_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000013");
 
@@ -107,67 +107,37 @@ pub fn builtin_military_range_card() -> PageTemplate {
     widgets.push(vline(mw(t, 60), n_x, n_top, 14.0, 0.4));
     widgets.push(text(mw(t, 61), n_x - 2.0, n_top - 5.0, 8.0, 4.0, "N", 4.0));
 
-    // ── Range arcs + sector limit lines ─────────────────────────────────
-    // DA 5517-style range card: concentric half-circle arcs at three
-    // range bands fanning out from the weapon position, plus sector-
-    // limit lines running horizontally from WP to the LL / RL labels at
-    // the bottom corners of the sketch box. Math convention: 0deg = +x,
-    // 90deg = +y, sweep CCW. The widget renderer flips Y at draw time
-    // so the arcs read "up" on screen.
-    let max_radius = (sketch_h - 8.0).min(sketch_w * 0.5 - 4.0);
-    let r1 = max_radius * 0.34;
-    let r2 = max_radius * 0.67;
-    let r3 = max_radius * 0.95;
-    // Full half-circle (180deg) opening upward — start at 0deg (+x,
-    // right) and sweep 180deg CCW through 90deg (up) to 180deg (-x).
-    for (i, radius) in [r1, r2, r3].iter().enumerate() {
-        widgets.push(arc(
-            mw(t, (90 + i) as u16),
-            wp_x,
-            wp_y,
-            *radius,
-            0.0,
-            180.0,
-            0.25,
-        ));
-    }
+    // ── Range arcs ──────────────────────────────────────────────────────
+    // Single `RangeArcs` widget that draws every concentric half-circle
+    // and the sector-limit lines from one widget. Per-page overrides
+    // (`WidgetOverride::RangeArcs`) let users change ring count and
+    // interval without editing the template.
+    let arc_h = sketch_h - 8.0;
+    let arc_w = (arc_h * 2.0).min(sketch_w - 4.0);
+    let arc_x = wp_x - arc_w * 0.5;
+    let arc_y = wp_y - arc_h;
+    widgets.push(TemplateWidget {
+        id: mw(t, 90),
+        kind: WidgetKind::RangeArcs {
+            rings: 3,
+            interval_m: 100,
+            sweep_deg: 180.0,
+        },
+        rect: WidgetRect {
+            x: arc_x,
+            y: arc_y,
+            width: arc_w,
+            height: arc_h,
+        },
+        style: WidgetStyle::default(),
+    });
 
-    // Range labels along the upper-right diagonal so they don't crowd
-    // the magnetic-N marker on the right edge.
-    let cos45 = std::f64::consts::FRAC_1_SQRT_2;
-    let label_dx = cos45;
-    let label_dy = -cos45;
-    for (i, (radius, name)) in [(r1, "100m"), (r2, "200m"), (r3, "300m")]
-        .iter()
-        .enumerate()
-    {
-        let lx = wp_x + radius * label_dx + 1.0;
-        let ly = wp_y + radius * label_dy - 1.5;
-        widgets.push(text(mw(t, (93 + i) as u16), lx, ly, 14.0, 3.5, name, 2.8));
-    }
-
-    // Sector-limit lines: now horizontal at WP level, extending from
-    // the weapon position to the left and right edges of the sketch
-    // box (the diameter endpoints of the half-circles above).
-    let ll_end_x = margin + 1.0;
-    let rl_end_x = margin + sketch_w - 1.0;
-    let limit_y = wp_y;
-    widgets.push(segment(mw(t, 96), wp_x, wp_y, ll_end_x, limit_y, 0.3));
-    widgets.push(segment(mw(t, 97), wp_x, wp_y, rl_end_x, limit_y, 0.3));
-
-    widgets.push(text(
-        mw(t, 98),
-        ll_end_x + 1.0,
-        limit_y - 5.0,
-        14.0,
-        4.0,
-        "LL",
-        3.0,
-    ));
+    // LL / RL labels at the diameter endpoints of the half-circle.
+    widgets.push(text(mw(t, 98), arc_x + 1.0, wp_y - 5.0, 14.0, 4.0, "LL", 3.0));
     widgets.push(text(
         mw(t, 99),
-        rl_end_x - 12.0,
-        limit_y - 5.0,
+        arc_x + arc_w - 13.0,
+        wp_y - 5.0,
         12.0,
         4.0,
         "RL",
@@ -194,7 +164,7 @@ pub fn builtin_military_range_card() -> PageTemplate {
             sketch_w * cols[i] - 3.0,
             row_h - 2.0,
             h,
-            3.5,
+            4.0,
         ));
     }
     for r in 1..=6 {
@@ -209,14 +179,40 @@ pub fn builtin_military_range_card() -> PageTemplate {
             4.0,
         ));
     }
-    widgets.push(rect(mw(t, 100), margin, trp_y, sketch_w, trp_h));
+    // Outer table border at slightly heavier stroke so the table reads
+    // as a grid, not a single box. Inner dividers bumped from 0.2mm to
+    // 0.3mm for the same reason — the prior 0.2mm hairlines disappear
+    // at typical zoom levels and the table looks empty.
+    widgets.push(TemplateWidget {
+        id: mw(t, 100),
+        kind: WidgetKind::Rectangle,
+        rect: WidgetRect {
+            x: margin,
+            y: trp_y,
+            width: sketch_w,
+            height: trp_h,
+        },
+        style: WidgetStyle {
+            stroke_width_mm: 0.5,
+            ..WidgetStyle::default()
+        },
+    });
     for (i, x) in col_x.iter().enumerate().take(col_x.len() - 1).skip(1) {
-        widgets.push(vline(mw(t, (110 + i) as u16), *x, trp_y, trp_h, 0.2));
+        widgets.push(vline(mw(t, (110 + i) as u16), *x, trp_y, trp_h, 0.3));
     }
     for r in 1..trp_rows {
         let y = trp_y + row_h * r as f64;
-        widgets.push(hline(mw(t, (120 + r) as u16), margin, y, sketch_w, 0.2));
+        widgets.push(hline(mw(t, (120 + r) as u16), margin, y, sketch_w, 0.3));
     }
+    // Header row gets a heavier divider so the column titles read as a
+    // header band, not a regular data row.
+    widgets.push(hline(
+        mw(t, 130),
+        margin,
+        trp_y + row_h,
+        sketch_w,
+        0.5,
+    ));
 
     let rem_y = trp_y + trp_h + 6.0;
     let rem_h = page_h - rem_y - margin;
