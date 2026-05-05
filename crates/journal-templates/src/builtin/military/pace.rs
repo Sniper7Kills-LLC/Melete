@@ -7,7 +7,7 @@ use uuid::{uuid, Uuid};
 
 use journal_core::{BackgroundType, PageTemplate, TemplateId, TemplateWidget, TilingMode};
 
-use crate::builtin::{hline, mw, rect, text, vline, US_LETTER_LANDSCAPE};
+use crate::builtin::{hline, lines_region, mw, rect, text, vline, US_LETTER_LANDSCAPE};
 
 pub const BUILTIN_MILITARY_PACE_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000018");
 
@@ -99,6 +99,35 @@ pub fn builtin_military_pace() -> PageTemplate {
             rlabel,
             3.2,
         ));
+
+        // Per-cell write-on rules so each PACE cell isn't an empty
+        // box. The Notes row gets a `lines_region` (multiple ruled
+        // lines for free-text); every other row gets a single
+        // bottom-thirds hairline as a target for short entries.
+        let is_notes = rlabel.starts_with("Notes");
+        for c in 0..cols.len() {
+            let cell_x = margin + label_col_w + col_w * c as f64;
+            let cell_w = col_w;
+            if is_notes {
+                widgets.push(lines_region(
+                    mw(t, (140 + r * 4 + c) as u16),
+                    cell_x + 2.0,
+                    y + 4.0,
+                    cell_w - 4.0,
+                    row_h - 5.0,
+                    5.5,
+                ));
+            } else {
+                let line_y = y + row_h - 2.0;
+                widgets.push(hline(
+                    mw(t, (140 + r * 4 + c) as u16),
+                    cell_x + 2.0,
+                    line_y,
+                    cell_w - 4.0,
+                    0.2,
+                ));
+            }
+        }
     }
 
     PageTemplate {
