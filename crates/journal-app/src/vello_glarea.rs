@@ -396,25 +396,19 @@ pub fn build(state: SharedState) -> Option<GLArea> {
         let area_weak = area.downgrade();
         const PAGE_FADE_MS_TICK: f32 = 180.0;
         area.add_tick_callback(move |_, _| {
-            let active = {
-                let mut s = state.borrow_mut();
-                match s.page_transition_started_at {
-                    Some(start) => {
-                        let elapsed = start.elapsed().as_secs_f32() * 1000.0;
-                        if elapsed >= PAGE_FADE_MS_TICK {
-                            s.page_transition_started_at = None;
-                            true // request one final repaint at fade=1.0
-                        } else {
-                            true
-                        }
-                    }
-                    None => false,
-                }
+            // Cheap immutable borrow first — only escalate to a mut borrow
+            // when there's actually a transition to clear, so the tick
+            // doesn't contend with input-handler borrows on every frame.
+            let start_opt = state.borrow().page_transition_started_at;
+            let Some(start) = start_opt else {
+                return gtk4::glib::ControlFlow::Continue;
             };
-            if active {
-                if let Some(a) = area_weak.upgrade() {
-                    a.queue_render();
-                }
+            let elapsed = start.elapsed().as_secs_f32() * 1000.0;
+            if elapsed >= PAGE_FADE_MS_TICK {
+                state.borrow_mut().page_transition_started_at = None;
+            }
+            if let Some(a) = area_weak.upgrade() {
+                a.queue_render();
             }
             gtk4::glib::ControlFlow::Continue
         });
