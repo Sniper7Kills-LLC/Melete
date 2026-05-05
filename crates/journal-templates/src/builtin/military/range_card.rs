@@ -135,20 +135,13 @@ pub fn builtin_military_range_card() -> PageTemplate {
     let cos45 = std::f64::consts::FRAC_1_SQRT_2;
     let label_dx = cos45;
     let label_dy = -cos45;
-    for (i, (radius, name)) in
-        [(r1, "100m"), (r2, "200m"), (r3, "300m")].iter().enumerate()
+    for (i, (radius, name)) in [(r1, "100m"), (r2, "200m"), (r3, "300m")]
+        .iter()
+        .enumerate()
     {
         let lx = wp_x + radius * label_dx + 1.0;
         let ly = wp_y + radius * label_dy - 1.5;
-        widgets.push(text(
-            mw(t, (93 + i) as u16),
-            lx,
-            ly,
-            14.0,
-            3.5,
-            name,
-            2.8,
-        ));
+        widgets.push(text(mw(t, (93 + i) as u16), lx, ly, 14.0, 3.5, name, 2.8));
     }
 
     // Sector-limit lines: from WP along the 45/135deg fan edges to the

@@ -143,7 +143,11 @@ fn draw_widget(
             ctx.restore().ok();
             apply_fill_then_stroke(ctx, style, transform);
         }
-        WidgetKind::Arc { start_deg, sweep_deg, thickness_mm } => {
+        WidgetKind::Arc {
+            start_deg,
+            sweep_deg,
+            thickness_mm,
+        } => {
             let cx = r.x + r.width * 0.5;
             let cy = r.y + r.height * 0.5;
             let rx = r.width * 0.5;
@@ -277,9 +281,7 @@ fn draw_widget(
         }
         WidgetKind::HabitTracker { habits, days } => {
             let (habits, n_days) = match override_ {
-                Some(WidgetOverride::HabitTracker { habits, days }) => {
-                    (habits.as_slice(), *days)
-                }
+                Some(WidgetOverride::HabitTracker { habits, days }) => (habits.as_slice(), *days),
                 _ => (habits.as_slice(), *days),
             };
             let highlight_col = match render_ctx.date {
@@ -593,7 +595,13 @@ fn draw_timeline_stub(
             ctx.move_to(r.x, ny);
             ctx.line_to(r.x + r.width, ny);
             let _ = ctx.stroke();
-            ctx.arc(r.x + label_w, ny, slot_h.max(1.0) * 0.18, 0.0, std::f64::consts::TAU);
+            ctx.arc(
+                r.x + label_w,
+                ny,
+                slot_h.max(1.0) * 0.18,
+                0.0,
+                std::f64::consts::TAU,
+            );
             let _ = ctx.fill();
             ctx.restore().ok();
             set_color(ctx, style.stroke_color);
@@ -834,7 +842,13 @@ fn draw_daily_appointments(
             ctx.move_to(r.x, ny);
             ctx.line_to(r.x + r.width, ny);
             let _ = ctx.stroke();
-            ctx.arc(r.x + label_col_w, ny, row_h.max(1.0) * 0.18, 0.0, std::f64::consts::TAU);
+            ctx.arc(
+                r.x + label_col_w,
+                ny,
+                row_h.max(1.0) * 0.18,
+                0.0,
+                std::f64::consts::TAU,
+            );
             let _ = ctx.fill();
             ctx.restore().ok();
             set_color(ctx, style.stroke_color);

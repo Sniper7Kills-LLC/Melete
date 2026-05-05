@@ -68,13 +68,7 @@ pub fn builtin_military_pace() -> PageTemplate {
     }
     // Outer table border + header underline.
     widgets.push(rect(mw(t, 30), margin, body_top, table_w, body_h));
-    widgets.push(hline(
-        mw(t, 31),
-        margin,
-        body_top + header_h,
-        table_w,
-        0.3,
-    ));
+    widgets.push(hline(mw(t, 31), margin, body_top + header_h, table_w, 0.3));
     // Vertical dividers — one between label column and first data column,
     // plus three between the data columns.
     widgets.push(vline(
@@ -95,13 +89,7 @@ pub fn builtin_military_pace() -> PageTemplate {
     }
     for (r, rlabel) in rows.iter().enumerate() {
         let y = body_top + header_h + row_h * r as f64;
-        widgets.push(hline(
-            mw(t, (60 + r) as u16),
-            margin,
-            y,
-            table_w,
-            0.2,
-        ));
+        widgets.push(hline(mw(t, (60 + r) as u16), margin, y, table_w, 0.2));
         widgets.push(text(
             mw(t, (70 + r) as u16),
             margin + 2.0,

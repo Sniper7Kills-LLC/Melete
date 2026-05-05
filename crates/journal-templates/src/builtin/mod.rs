@@ -237,7 +237,12 @@ pub(crate) fn lined_paper_widgets(t: u8) -> Vec<TemplateWidget> {
     let center_y = page_h * 0.5;
     let spacing = 107.95_f64;
     for (i, dy) in [-spacing, 0.0, spacing].iter().enumerate() {
-        widgets.push(dot(mw(t, (10 + i) as u16), hole_x, center_y + dy, hole_radius));
+        widgets.push(dot(
+            mw(t, (10 + i) as u16),
+            hole_x,
+            center_y + dy,
+            hole_radius,
+        ));
     }
 
     widgets

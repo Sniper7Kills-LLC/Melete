@@ -277,7 +277,11 @@ impl WidgetRenderer {
                 let path = Ellipse::new((cx, cy), (rx, ry), 0.0).to_path(0.05);
                 fill_then_stroke(scene, transform, style, &path);
             }
-            WidgetKind::Arc { start_deg, sweep_deg, thickness_mm } => {
+            WidgetKind::Arc {
+                start_deg,
+                sweep_deg,
+                thickness_mm,
+            } => {
                 let cx = r.x + r.width * 0.5;
                 let cy = r.y + r.height * 0.5;
                 let rx = r.width * 0.5;
@@ -651,13 +655,7 @@ impl WidgetRenderer {
                 line.move_to((r.x, ny));
                 line.line_to((r.x + r.width, ny));
                 let now_stroke = stroke_style(style.stroke_width_mm.max(0.5));
-                scene.stroke(
-                    &now_stroke,
-                    transform,
-                    &Brush::Solid(amber),
-                    None,
-                    &line,
-                );
+                scene.stroke(&now_stroke, transform, &Brush::Solid(amber), None, &line);
                 let dot = Circle::new((r.x + label_w, ny), (row_h * 0.18).clamp(0.6, 1.4));
                 scene.fill(
                     Fill::NonZero,
@@ -858,13 +856,7 @@ impl WidgetRenderer {
                 line.move_to((r.x, ny));
                 line.line_to((r.x + r.width, ny));
                 let now_stroke = stroke_style(style.stroke_width_mm.max(0.5));
-                scene.stroke(
-                    &now_stroke,
-                    transform,
-                    &Brush::Solid(amber),
-                    None,
-                    &line,
-                );
+                scene.stroke(&now_stroke, transform, &Brush::Solid(amber), None, &line);
                 let dot = Circle::new((r.x + label_w, ny), (row_h * 0.18).clamp(0.6, 1.4));
                 scene.fill(
                     Fill::NonZero,
@@ -906,13 +898,7 @@ impl WidgetRenderer {
                 let amber = vello::peniko::Color::from_rgba8(214, 168, 58, 60);
                 let cx = r.x + label_col_w + col_w * (col - 1) as f64;
                 let cell = KRect::new(cx, r.y, cx + col_w, r.y + r.height);
-                scene.fill(
-                    Fill::NonZero,
-                    transform,
-                    &Brush::Solid(amber),
-                    None,
-                    &cell,
-                );
+                scene.fill(Fill::NonZero, transform, &Brush::Solid(amber), None, &cell);
             }
         }
 

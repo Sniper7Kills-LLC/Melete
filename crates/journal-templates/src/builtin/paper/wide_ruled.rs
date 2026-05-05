@@ -13,10 +13,9 @@ pub fn builtin_wide_ruled() -> PageTemplate {
     PageTemplate {
         id: TemplateId(BUILTIN_WIDE_RULED_ID),
         name: "Wide Ruled Paper".into(),
-        description:
-            "Wide-ruled notebook paper (8.7mm lines) with red margin, header strip, and \
+        description: "Wide-ruled notebook paper (8.7mm lines) with red margin, header strip, and \
              3-hole-punch indicator dots."
-                .into(),
+            .into(),
         background: BackgroundType::Lines { spacing: 8.7 },
         size_mm: US_LETTER,
         tiling: TilingMode::None,
