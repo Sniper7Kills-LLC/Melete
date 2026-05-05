@@ -456,16 +456,27 @@ impl WidgetRenderer {
                 rings,
                 interval_m,
                 sweep_deg,
+                sector_deg,
             } => {
-                let (rings, interval_m, sweep_deg) = match override_ {
+                let (rings, interval_m, sweep_deg, sector_deg) = match override_ {
                     Some(WidgetOverride::RangeArcs {
                         rings,
                         interval_m,
                         sweep_deg,
-                    }) => (*rings, *interval_m, *sweep_deg),
-                    _ => (*rings, *interval_m, *sweep_deg),
+                        sector_deg,
+                    }) => (*rings, *interval_m, *sweep_deg, *sector_deg),
+                    _ => (*rings, *interval_m, *sweep_deg, *sector_deg),
                 };
-                self.draw_range_arcs(scene, transform, r, style, rings, interval_m, sweep_deg);
+                self.draw_range_arcs(
+                    scene,
+                    transform,
+                    r,
+                    style,
+                    rings,
+                    interval_m,
+                    sweep_deg,
+                    sector_deg,
+                );
             }
         }
     }
@@ -1035,6 +1046,7 @@ impl WidgetRenderer {
         rings: u32,
         interval_m: u32,
         sweep_deg: f64,
+        sector_deg: f64,
     ) {
         let rings = rings.max(1);
         let sweep = if sweep_deg <= 0.0 { 180.0 } else { sweep_deg };
@@ -1050,18 +1062,42 @@ impl WidgetRenderer {
         // Center the sweep on the +Y axis (90deg in math convention).
         let start_deg = 90.0 + sweep * 0.5;
 
-        // Sector-limit lines along the diameter endpoints.
-        let limit_y = wp_y;
+        // "My sector" V — fighting-position sector of fire. Drawn at
+        // a heavier weight than the range arcs so it reads as the
+        // primary geometry. Default 90deg if the field is zero or
+        // negative (older templates / overrides).
+        let sector = if sector_deg <= 0.0 { 90.0 } else { sector_deg };
+        let half_sector_rad = (sector * 0.5).to_radians();
+        // Sector edges go from WP at +/- half-sector around vertical.
+        // dy negative because Y is screen-down in canvas coords.
+        let sector_dx = max_radius * half_sector_rad.sin();
+        let sector_dy = -max_radius * half_sector_rad.cos();
+        let amber = vello::peniko::Color::from_rgba8(214, 168, 58, 235);
+        let sector_brush = vello::peniko::Brush::Solid(amber);
+        let mut sector_v = BezPath::new();
+        sector_v.move_to((wp_x - sector_dx, wp_y + sector_dy));
+        sector_v.line_to((wp_x, wp_y));
+        sector_v.line_to((wp_x + sector_dx, wp_y + sector_dy));
+        scene.stroke(
+            &stroke_style(style.stroke_width_mm.max(0.6)),
+            transform,
+            &sector_brush,
+            None,
+            &sector_v,
+        );
+
+        // Sector-limit lines (full sweep extents) drawn lighter so the
+        // V remains the dominant marker.
         let half_sweep_rad = (sweep * 0.5).to_radians();
         let limit_dx = max_radius * half_sweep_rad.cos();
         let limit_dy = -max_radius * half_sweep_rad.sin();
         let mut limits = BezPath::new();
         limits.move_to((wp_x, wp_y));
-        limits.line_to((wp_x - limit_dx, limit_y + limit_dy));
+        limits.line_to((wp_x - limit_dx, wp_y + limit_dy));
         limits.move_to((wp_x, wp_y));
-        limits.line_to((wp_x + limit_dx, limit_y + limit_dy));
+        limits.line_to((wp_x + limit_dx, wp_y + limit_dy));
         scene.stroke(
-            &stroke_style(style.stroke_width_mm.max(0.3)),
+            &stroke_style(style.stroke_width_mm.max(0.25)),
             transform,
             &brush,
             None,

@@ -8,7 +8,7 @@ use uuid::{uuid, Uuid};
 
 use journal_core::{BackgroundType, PageTemplate, TemplateId, TemplateWidget, TilingMode};
 
-use crate::builtin::{checklist, hline, mw, text, US_LETTER};
+use crate::builtin::{checklist, hline, mw, rect, text, US_LETTER};
 
 pub const BUILTIN_MILITARY_PCC_PCI_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000019");
 
@@ -131,19 +131,49 @@ pub fn builtin_military_pcc_pci() -> PageTemplate {
         let row = i % rows_per_col;
         let x = margin + (col_w + 4.0) * col as f64;
         let y = body_top + col_block_h * row as f64;
-        widgets.push(text(mw(t, 10 + idx), x, y + 0.5, col_w, 5.0, heading, 4.0));
+        // Outer box around the section so each block reads as its own
+        // panel rather than blending into the surrounding whitespace.
+        widgets.push(rect(
+            mw(t, 70 + idx),
+            x,
+            y,
+            col_w,
+            col_block_h - 2.0,
+        ));
         idx += 1;
-        widgets.push(hline(mw(t, 30 + idx), x, y + 5.0, col_w, 0.25));
+        widgets.push(text(
+            mw(t, 10 + idx),
+            x + 1.5,
+            y + 0.5,
+            col_w - 3.0,
+            5.0,
+            heading,
+            4.0,
+        ));
         idx += 1;
+        // Heavier divider under the section heading.
+        widgets.push(hline(mw(t, 30 + idx), x, y + 5.5, col_w, 0.4));
+        idx += 1;
+        let items_top = y + 6.5;
+        let items_h = col_block_h - 8.5;
         widgets.push(checklist(
             mw(t, 50 + idx),
-            x + 1.0,
-            y + 6.0,
-            col_w - 1.0,
-            col_block_h - 7.0,
+            x + 1.5,
+            items_top,
+            col_w - 3.0,
+            items_h,
             items,
         ));
         idx += 1;
+        // Per-item write-on rules — one horizontal hairline between
+        // each checklist row inside the section so users can capture
+        // notes / serials next to each line item.
+        let row_h = items_h / items.len().max(1) as f64;
+        for ri in 1..items.len() {
+            let yy = items_top + row_h * ri as f64;
+            widgets.push(hline(mw(t, 90 + idx), x + 1.0, yy, col_w - 2.0, 0.2));
+            idx += 1;
+        }
     }
 
     PageTemplate {

@@ -154,13 +154,17 @@ pub enum WidgetKind {
     },
     /// Concentric range-arc fan from the bottom-center of the widget's
     /// rect (the "weapon position" for a fighting-position sector
-    /// sketch). Renders `rings` half-circle arcs at evenly spaced
-    /// radii out to the rect's height, with a label every ring at
-    /// `interval_m * ring_index` meters.
+    /// sketch). Renders `rings` arcs at evenly spaced radii out to the
+    /// rect's height, with a label every ring at
+    /// `interval_m * ring_index` meters. `sweep_deg` is how wide the
+    /// arcs themselves extend (180 = half-circle, 90 = quarter, etc).
+    /// `sector_deg` is the narrower "my sector" V drawn over the arcs
+    /// from WP — typical fighting-position sector of fire is 60 deg.
     RangeArcs {
         rings: u32,
         interval_m: u32,
         sweep_deg: f64,
+        sector_deg: f64,
     },
 }
 

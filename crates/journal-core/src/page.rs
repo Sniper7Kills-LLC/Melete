@@ -69,6 +69,7 @@ pub enum WidgetOverride {
         rings: u32,
         interval_m: u32,
         sweep_deg: f64,
+        sector_deg: f64,
     },
 }
 

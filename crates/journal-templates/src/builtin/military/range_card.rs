@@ -122,6 +122,7 @@ pub fn builtin_military_range_card() -> PageTemplate {
             rings: 3,
             interval_m: 100,
             sweep_deg: 180.0,
+            sector_deg: 90.0,
         },
         rect: WidgetRect {
             x: arc_x,

@@ -304,16 +304,27 @@ fn draw_widget(
             rings,
             interval_m,
             sweep_deg,
+            sector_deg,
         } => {
-            let (rings, interval_m, sweep_deg) = match override_ {
+            let (rings, interval_m, sweep_deg, sector_deg) = match override_ {
                 Some(WidgetOverride::RangeArcs {
                     rings,
                     interval_m,
                     sweep_deg,
-                }) => (*rings, *interval_m, *sweep_deg),
-                _ => (*rings, *interval_m, *sweep_deg),
+                    sector_deg,
+                }) => (*rings, *interval_m, *sweep_deg, *sector_deg),
+                _ => (*rings, *interval_m, *sweep_deg, *sector_deg),
             };
-            draw_range_arcs(ctx, transform, r, style, rings, interval_m, sweep_deg);
+            draw_range_arcs(
+                ctx,
+                transform,
+                r,
+                style,
+                rings,
+                interval_m,
+                sweep_deg,
+                sector_deg,
+            );
         }
     }
 }
@@ -986,19 +997,36 @@ fn draw_range_arcs(
     rings: u32,
     interval_m: u32,
     sweep_deg: f64,
+    sector_deg: f64,
 ) {
     let _ = transform;
     let rings = rings.max(1);
     let sweep = if sweep_deg <= 0.0 { 180.0 } else { sweep_deg };
+    let sector = if sector_deg <= 0.0 { 90.0 } else { sector_deg };
     let wp_x = r.x + r.width * 0.5;
     let wp_y = r.y + r.height;
     let max_radius = r.height.min(r.width * 0.5).max(1.0);
 
-    set_color(ctx, style.stroke_color);
     let lw = style.stroke_width_mm.max(0.25);
+
+    // "My sector" V — heavier amber stroke, drawn first so the arc
+    // crossings sit on top.
+    let half_sector_rad = (sector * 0.5).to_radians();
+    let sector_dx = max_radius * half_sector_rad.sin();
+    let sector_dy = -max_radius * half_sector_rad.cos();
+    ctx.save().ok();
+    ctx.set_source_rgba(0.839, 0.659, 0.227, 0.92);
+    ctx.set_line_width(lw.max(0.6));
+    ctx.move_to(wp_x - sector_dx, wp_y + sector_dy);
+    ctx.line_to(wp_x, wp_y);
+    ctx.line_to(wp_x + sector_dx, wp_y + sector_dy);
+    let _ = ctx.stroke();
+    ctx.restore().ok();
+
+    set_color(ctx, style.stroke_color);
     ctx.set_line_width(lw);
 
-    // Sector-limit lines.
+    // Sector-limit (full sweep) lines along the diameter endpoints.
     let half_sweep_rad = (sweep * 0.5).to_radians();
     let limit_dx = max_radius * half_sweep_rad.cos();
     let limit_dy = -max_radius * half_sweep_rad.sin();
