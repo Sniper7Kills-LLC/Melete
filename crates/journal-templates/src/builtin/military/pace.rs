@@ -5,9 +5,12 @@
 
 use uuid::{uuid, Uuid};
 
-use journal_core::{BackgroundType, PageTemplate, TemplateId, TemplateWidget, TilingMode};
+use journal_core::{
+    BackgroundType, PageTemplate, TemplateId, TemplateWidget, TilingMode, WidgetKind, WidgetRect,
+    WidgetStyle,
+};
 
-use crate::builtin::{hline, lines_region, mw, rect, text, vline, US_LETTER_LANDSCAPE};
+use crate::builtin::{hline, mw, text, vline, US_LETTER_LANDSCAPE};
 
 pub const BUILTIN_MILITARY_PACE_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000018");
 
@@ -53,7 +56,58 @@ pub fn builtin_military_pace() -> PageTemplate {
     let header_h = 9.0_f64;
     let row_h = (body_h - header_h) / rows.len() as f64;
 
-    // Column headers (Primary / Alternate / Contingency / Emergency).
+    // ── Table grid ──────────────────────────────────────────────────────
+    // Heavy outer frame so the table reads as a discrete unit.
+    widgets.push(TemplateWidget {
+        id: mw(t, 30),
+        kind: WidgetKind::Rectangle,
+        rect: WidgetRect {
+            x: margin,
+            y: body_top,
+            width: table_w,
+            height: body_h,
+        },
+        style: WidgetStyle {
+            stroke_width_mm: 0.6,
+            ..WidgetStyle::default()
+        },
+    });
+    // Header band underline (heavier than row dividers).
+    widgets.push(hline(mw(t, 31), margin, body_top + header_h, table_w, 0.6));
+    // Heavy divider between label column and the data columns.
+    widgets.push(vline(
+        mw(t, 39),
+        margin + label_col_w,
+        body_top,
+        body_h,
+        0.5,
+    ));
+    // Vertical dividers between data columns.
+    for i in 1..cols.len() {
+        widgets.push(vline(
+            mw(t, (40 + i) as u16),
+            margin + label_col_w + col_w * i as f64,
+            body_top,
+            body_h,
+            0.4,
+        ));
+    }
+    // Horizontal dividers between data rows.
+    for r in 1..rows.len() {
+        let y = body_top + header_h + row_h * r as f64;
+        widgets.push(hline(mw(t, (60 + r) as u16), margin, y, table_w, 0.4));
+    }
+
+    // Column headers (Type / Primary / Alternate / Contingency / Emergency).
+    widgets.push(text(
+        mw(t, 9),
+        margin + 2.0,
+        body_top + 2.0,
+        label_col_w - 4.0,
+        header_h - 4.0,
+        "Type",
+        4.5,
+    ));
     for (i, h) in cols.iter().enumerate() {
         let x = margin + label_col_w + col_w * i as f64;
         widgets.push(text(
@@ -66,30 +120,9 @@ pub fn builtin_military_pace() -> PageTemplate {
             4.5,
         ));
     }
-    // Outer table border + header underline.
-    widgets.push(rect(mw(t, 30), margin, body_top, table_w, body_h));
-    widgets.push(hline(mw(t, 31), margin, body_top + header_h, table_w, 0.3));
-    // Vertical dividers — one between label column and first data column,
-    // plus three between the data columns.
-    widgets.push(vline(
-        mw(t, 39),
-        margin + label_col_w,
-        body_top,
-        body_h,
-        0.3,
-    ));
-    for i in 1..cols.len() {
-        widgets.push(vline(
-            mw(t, (40 + i) as u16),
-            margin + label_col_w + col_w * i as f64,
-            body_top,
-            body_h,
-            0.25,
-        ));
-    }
+    // Row labels in the leftmost column.
     for (r, rlabel) in rows.iter().enumerate() {
         let y = body_top + header_h + row_h * r as f64;
-        widgets.push(hline(mw(t, (60 + r) as u16), margin, y, table_w, 0.3));
         widgets.push(text(
             mw(t, (70 + r) as u16),
             margin + 2.0,
@@ -97,37 +130,8 @@ pub fn builtin_military_pace() -> PageTemplate {
             label_col_w - 4.0,
             row_h - 3.0,
             rlabel,
-            3.2,
+            3.6,
         ));
-
-        // Per-cell write-on rules so each PACE cell isn't an empty
-        // box. The Notes row gets a `lines_region` (multiple ruled
-        // lines for free-text); every other row gets a single
-        // bottom-thirds hairline as a target for short entries.
-        let is_notes = rlabel.starts_with("Notes");
-        for c in 0..cols.len() {
-            let cell_x = margin + label_col_w + col_w * c as f64;
-            let cell_w = col_w;
-            if is_notes {
-                widgets.push(lines_region(
-                    mw(t, (140 + r * 4 + c) as u16),
-                    cell_x + 2.0,
-                    y + 4.0,
-                    cell_w - 4.0,
-                    row_h - 5.0,
-                    5.5,
-                ));
-            } else {
-                let line_y = y + row_h - 2.0;
-                widgets.push(hline(
-                    mw(t, (140 + r * 4 + c) as u16),
-                    cell_x + 2.0,
-                    line_y,
-                    cell_w - 4.0,
-                    0.2,
-                ));
-            }
-        }
     }
 
     PageTemplate {
