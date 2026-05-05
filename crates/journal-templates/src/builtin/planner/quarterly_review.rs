@@ -1,4 +1,4 @@
-//! Quarterly Review — month strips + wins/lessons/next list.
+//! Quarterly Review  -  month strips + wins/lessons/next list.
 
 use uuid::{uuid, Uuid};
 
@@ -20,7 +20,7 @@ pub fn builtin_quarterly_review() -> PageTemplate {
     let header = TemplateWidget {
         id: Uuid::parse_str("a000000a-0001-0000-0000-000000000000").unwrap(),
         kind: WidgetKind::TextBlock {
-            text: "Quarterly Review — {year}".into(),
+            text: "Quarterly Review  -  {year}".into(),
             font_size_mm: 10.0,
         },
         rect: WidgetRect {
@@ -45,7 +45,7 @@ pub fn builtin_quarterly_review() -> PageTemplate {
         widgets.push(TemplateWidget {
             id: Uuid::parse_str(&format!("a000000a-1{:03}-0000-0000-000000000000", i)).unwrap(),
             kind: WidgetKind::TextBlock {
-                text: format!("Month {} — wins, decisions, blockers", i + 1),
+                text: format!("Month {}  -  wins, decisions, blockers", i + 1),
                 font_size_mm: 4.0,
             },
             rect: WidgetRect {
@@ -72,7 +72,7 @@ pub fn builtin_quarterly_review() -> PageTemplate {
     widgets.push(TemplateWidget {
         id: Uuid::parse_str("a000000a-0002-0000-0000-000000000000").unwrap(),
         kind: WidgetKind::TextBlock {
-            text: "Wins · Lessons · Next quarter".into(),
+            text: "Wins / Lessons / Next quarter".into(),
             font_size_mm: 4.5,
         },
         rect: WidgetRect {

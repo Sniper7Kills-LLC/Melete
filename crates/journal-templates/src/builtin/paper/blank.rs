@@ -1,4 +1,4 @@
-//! Blank page — no background pattern, no widgets.
+//! Blank page  -  no background pattern, no widgets.
 
 use uuid::{uuid, Uuid};
 

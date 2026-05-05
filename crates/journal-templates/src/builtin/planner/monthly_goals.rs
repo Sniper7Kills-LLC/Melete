@@ -1,4 +1,4 @@
-//! Monthly Goals — calendar, top-12 goals, reflection space.
+//! Monthly Goals  -  calendar, top-12 goals, reflection space.
 
 use uuid::{uuid, Uuid};
 

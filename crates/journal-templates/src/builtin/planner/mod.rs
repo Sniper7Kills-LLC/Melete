@@ -1,4 +1,4 @@
-//! Generic planner page templates — daily / monthly goals / quarterly
+//! Generic planner page templates  -  daily / monthly goals / quarterly
 //! review. Brand-specific planner layouts (Full Focus, Franklin) live in
 //! sibling folders.
 

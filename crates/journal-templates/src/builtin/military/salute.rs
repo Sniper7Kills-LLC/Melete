@@ -1,4 +1,4 @@
-//! SALUTE Report Card — A5 portrait, three stacked sighting blocks.
+//! SALUTE Report Card  -  A5 portrait, three stacked sighting blocks.
 //!
 //! Spot-report card useful as a tear-off for patrols. Each block: Size,
 //! Activity, Location, Unit, Time, Equipment.
@@ -23,7 +23,7 @@ pub fn builtin_military_salute() -> PageTemplate {
         margin,
         page_w - margin * 2.0,
         8.0,
-        "SALUTE REPORT  (Size · Activity · Location · Unit · Time · Equipment)",
+        "SALUTE REPORT  (Size / Activity / Location / Unit / Time / Equipment)",
         4.0,
     ));
 
@@ -31,12 +31,12 @@ pub fn builtin_military_salute() -> PageTemplate {
     let body_h = page_h - body_top - margin;
     let block_h = body_h / 3.0;
     let labels: [&str; 6] = [
-        "S — Size",
-        "A — Activity",
-        "L — Location (grid)",
-        "U — Unit / dress / markings",
-        "T — Time (DTG observed)",
-        "E — Equipment",
+        "S  -  Size",
+        "A  -  Activity",
+        "L  -  Location (grid)",
+        "U  -  Unit / dress / markings",
+        "T  -  Time (DTG observed)",
+        "E  -  Equipment",
     ];
     for b in 0..3 {
         let block_y = body_top + block_h * b as f64;

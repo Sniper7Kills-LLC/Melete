@@ -1,4 +1,4 @@
-//! Franklin Planner-style page templates — daily and weekly spreads.
+//! Franklin Planner-style page templates  -  daily and weekly spreads.
 
 pub mod franklin_daily;
 pub mod franklin_weekly;

@@ -1,4 +1,4 @@
-//! Franklin Weekly — weekly compass on the left, day-by-day notes on
+//! Franklin Weekly  -  weekly compass on the left, day-by-day notes on
 //! the right.
 
 use uuid::{uuid, Uuid};
@@ -21,7 +21,7 @@ pub fn builtin_franklin_weekly() -> PageTemplate {
     let header = TemplateWidget {
         id: Uuid::parse_str("a0000008-0001-0000-0000-000000000000").unwrap(),
         kind: WidgetKind::TextBlock {
-            text: "Week {week} — {month_name} {year}".into(),
+            text: "Week {week}  -  {month_name} {year}".into(),
             font_size_mm: 7.0,
         },
         rect: WidgetRect {

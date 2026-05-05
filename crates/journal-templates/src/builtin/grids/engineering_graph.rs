@@ -1,4 +1,4 @@
-//! Engineering graph paper — 5.08mm grid (5 squares per inch).
+//! Engineering graph paper  -  5.08mm grid (5 squares per inch).
 
 use uuid::{uuid, Uuid};
 

@@ -1,4 +1,4 @@
-//! Wide-ruled notebook paper — 8.7mm lines + red margin + header strip.
+//! Wide-ruled notebook paper  -  8.7mm lines + red margin + header strip.
 
 use uuid::{uuid, Uuid};
 

@@ -1,4 +1,4 @@
-//! Grid-pattern page templates — dotted, square, isometric, hex,
+//! Grid-pattern page templates  -  dotted, square, isometric, hex,
 //! engineering graph.
 
 pub mod dotted;

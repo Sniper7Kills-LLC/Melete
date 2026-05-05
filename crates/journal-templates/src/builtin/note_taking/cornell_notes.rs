@@ -1,4 +1,4 @@
-//! Cornell Notes — cue column, note area, summary band.
+//! Cornell Notes  -  cue column, note area, summary band.
 
 use uuid::{uuid, Uuid};
 

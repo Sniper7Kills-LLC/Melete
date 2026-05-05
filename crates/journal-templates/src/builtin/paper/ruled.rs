@@ -1,4 +1,4 @@
-//! Ruled-line page — horizontal lines at 7mm spacing.
+//! Ruled-line page  -  horizontal lines at 7mm spacing.
 
 use uuid::{uuid, Uuid};
 

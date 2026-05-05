@@ -1,4 +1,4 @@
-//! 9-Line UXO / IED Report — A5 portrait.
+//! 9-Line UXO / IED Report  -  A5 portrait.
 //!
 //! Unexploded-ordnance / IED report: DTG, reporting unit, freq, location,
 //! type / quantity / configuration, NBC, resources threatened, mission
@@ -40,7 +40,7 @@ pub fn builtin_military_uxo() -> PageTemplate {
         "6. NBC contamination (Y/N + agent):",
         "7. Resources threatened (people / equipment / facility):",
         "8. Impact on mission:",
-        "9. Recommended priority — A immediate · B indirect · C minor · D no threat / Protective measures:",
+        "9. Recommended priority  -  A immediate / B indirect / C minor / D no threat / Protective measures:",
     ];
     for (i, label) in lines.iter().enumerate() {
         let y = body_top + row_h * i as f64;
@@ -75,7 +75,7 @@ pub fn builtin_military_uxo() -> PageTemplate {
     PageTemplate {
         id: TemplateId(BUILTIN_MILITARY_UXO_ID),
         name: "9-Line UXO / IED".into(),
-        description: "Standard 9-line unexploded-ordnance / IED report — DTG, unit, freq, location, type, NBC, resources, mission impact, recommended priority.".into(),
+        description: "Standard 9-line unexploded-ordnance / IED report  -  DTG, unit, freq, location, type, NBC, resources, mission impact, recommended priority.".into(),
         background: BackgroundType::Blank,
         size_mm: A5,
         tiling: TilingMode::None,

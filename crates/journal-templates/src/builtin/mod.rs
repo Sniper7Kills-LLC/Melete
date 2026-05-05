@@ -59,7 +59,7 @@ pub(crate) const US_LETTER: (f64, f64) = (215.9, 279.4);
 pub(crate) const US_LETTER_LANDSCAPE: (f64, f64) = (US_LETTER.1, US_LETTER.0);
 
 // ---------------------------------------------------------------------------
-// Widget shorthand helpers (used by military forms — kept generic so any
+// Widget shorthand helpers (used by military forms  -  kept generic so any
 // future template file can borrow them).
 // ---------------------------------------------------------------------------
 
@@ -170,6 +170,78 @@ pub(crate) fn lines_region(
     }
 }
 
+/// Free-orientation line segment between two arbitrary points. Encodes
+/// (x1, y1) -> (x2, y2) into the underlying `Line` widget by allowing
+/// negative `height` on the bounding rect so the diagonal can run in
+/// any of the four quadrants. The widget renderer's TL->BR
+/// `move_to(x,y) -> line_to(x+w, y+h)` shape draws the segment
+/// correctly with signed deltas.
+pub(crate) fn segment(
+    id: Uuid,
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+    thickness: f64,
+) -> TemplateWidget {
+    TemplateWidget {
+        id,
+        kind: WidgetKind::Line {
+            thickness_mm: thickness,
+        },
+        rect: WidgetRect {
+            x: x1,
+            y: y1,
+            width: x2 - x1,
+            height: y2 - y1,
+        },
+        style: WidgetStyle::default(),
+    }
+}
+
+pub(crate) fn arc(
+    id: Uuid,
+    cx: f64,
+    cy: f64,
+    radius: f64,
+    start_deg: f64,
+    sweep_deg: f64,
+    thickness: f64,
+) -> TemplateWidget {
+    TemplateWidget {
+        id,
+        kind: WidgetKind::Arc {
+            start_deg,
+            sweep_deg,
+            thickness_mm: thickness,
+        },
+        rect: WidgetRect {
+            x: cx - radius,
+            y: cy - radius,
+            width: radius * 2.0,
+            height: radius * 2.0,
+        },
+        style: WidgetStyle::default(),
+    }
+}
+
+pub(crate) fn dot(id: Uuid, cx: f64, cy: f64, radius: f64) -> TemplateWidget {
+    let mut style = WidgetStyle::default();
+    style.fill_color = Some(style.stroke_color);
+    style.stroke_width_mm = 0.0;
+    TemplateWidget {
+        id,
+        kind: WidgetKind::Ellipse,
+        rect: WidgetRect {
+            x: cx - radius,
+            y: cy - radius,
+            width: radius * 2.0,
+            height: radius * 2.0,
+        },
+        style,
+    }
+}
+
 pub(crate) fn checklist(
     id: Uuid,
     x: f64,
@@ -194,7 +266,7 @@ pub(crate) fn checklist(
 }
 
 // ---------------------------------------------------------------------------
-// Template registry — every built-in PageTemplate in display order.
+// Template registry  -  every built-in PageTemplate in display order.
 // ---------------------------------------------------------------------------
 
 pub fn builtin_templates() -> Vec<PageTemplate> {

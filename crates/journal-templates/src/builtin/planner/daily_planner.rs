@@ -1,4 +1,4 @@
-//! Daily Planner — placeholder ruled page for general daily use.
+//! Daily Planner  -  placeholder ruled page for general daily use.
 
 use uuid::{uuid, Uuid};
 
@@ -12,7 +12,7 @@ pub fn builtin_daily_planner() -> PageTemplate {
     PageTemplate {
         id: TemplateId(BUILTIN_DAILY_PLANNER_ID),
         name: "Daily Planner".into(),
-        description: "Daily planner placeholder — ruled lines at 8mm spacing.".into(),
+        description: "Daily planner placeholder  -  ruled lines at 8mm spacing.".into(),
         background: BackgroundType::Lines { spacing: 8.0 },
         size_mm: US_LETTER,
         tiling: TilingMode::None,

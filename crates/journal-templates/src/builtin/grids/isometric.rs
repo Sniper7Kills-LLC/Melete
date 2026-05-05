@@ -1,4 +1,4 @@
-//! Isometric grid paper — equilateral triangle lattice, 15mm side length.
+//! Isometric grid paper  -  equilateral triangle lattice, 15mm side length.
 
 use uuid::{uuid, Uuid};
 

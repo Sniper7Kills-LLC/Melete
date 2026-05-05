@@ -1,4 +1,4 @@
-//! Hex grid paper — pointy-top hexes, 18mm centre spacing.
+//! Hex grid paper  -  pointy-top hexes, 18mm centre spacing.
 
 use uuid::{uuid, Uuid};
 

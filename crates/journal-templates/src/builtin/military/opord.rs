@@ -1,4 +1,4 @@
-//! 5-Paragraph OPORD — US Letter portrait.
+//! 5-Paragraph OPORD  -  US Letter portrait.
 //!
 //! Operations-order skeleton: Situation, Mission, Execution, Sustainment,
 //! Command & Signal. Each block has a heading row and a ruled fill area.

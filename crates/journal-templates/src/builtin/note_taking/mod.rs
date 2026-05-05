@@ -1,4 +1,4 @@
-//! Note-taking page templates — Cornell notes, music staff.
+//! Note-taking page templates  -  Cornell notes, music staff.
 
 pub mod cornell_notes;
 pub mod music_staff;

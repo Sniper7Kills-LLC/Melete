@@ -1,4 +1,4 @@
-//! Franklin Daily — date header, A/B/C priority list, hourly schedule
+//! Franklin Daily  -  date header, A/B/C priority list, hourly schedule
 //! on US Letter.
 
 use uuid::{uuid, Uuid};

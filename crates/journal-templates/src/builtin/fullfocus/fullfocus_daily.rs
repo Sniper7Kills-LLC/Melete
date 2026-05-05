@@ -1,9 +1,9 @@
-//! Full Focus Daily — Big Three priorities, hourly schedule, AAR
+//! Full Focus Daily  -  Big Three priorities, hourly schedule, AAR
 //! checklist on US Letter.
 //!
-//! Layout (within 215.9 × 279.4 mm):
+//! Layout (within 215.9 x 279.4 mm):
 //!   - BigThree: top ~30% of page (full width)
-//!   - DailyAppointments 7–19: bottom-left ~60% width
+//!   - DailyAppointments 7-19: bottom-left ~60% width
 //!   - Checklist: bottom-right column
 
 use uuid::{uuid, Uuid};

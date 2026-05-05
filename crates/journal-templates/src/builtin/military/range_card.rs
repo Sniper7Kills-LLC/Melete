@@ -1,4 +1,4 @@
-//! Range Card — US Letter portrait.
+//! Range Card  -  US Letter portrait.
 //!
 //! Fighting-position sector sketch. Title, info row, sketch box with
 //! weapon-position dot + magnetic-N marker + sector-limit labels, TRP
@@ -12,7 +12,7 @@ use journal_core::{
     WidgetStyle,
 };
 
-use crate::builtin::{hline, lines_region, mw, rect, text, vline, US_LETTER};
+use crate::builtin::{arc, hline, lines_region, mw, rect, segment, text, vline, US_LETTER};
 
 pub const BUILTIN_MILITARY_RANGE_CARD_ID: Uuid = uuid!("00000000-0000-0000-0000-000000000013");
 
@@ -107,19 +107,73 @@ pub fn builtin_military_range_card() -> PageTemplate {
     widgets.push(vline(mw(t, 60), n_x, n_top, 14.0, 0.4));
     widgets.push(text(mw(t, 61), n_x - 2.0, n_top - 5.0, 8.0, 4.0, "N", 4.0));
 
+    // ── Range arcs + sector limit lines ─────────────────────────────────
+    // DA 5517-style range card: concentric arcs at three range bands
+    // fanning out from the weapon position, plus sector-limit lines
+    // running from WP through the LL / RL labels at the sketch corners.
+    // Math convention: 0deg = +x, 90deg = +y, sweep CCW. The widget
+    // renderer flips Y at draw time so the arcs read "up" on screen.
+    let max_radius = (sketch_h - 8.0).min(sketch_w * 0.5 - 4.0);
+    let r1 = max_radius * 0.34;
+    let r2 = max_radius * 0.67;
+    let r3 = max_radius * 0.95;
+    // 90-deg fan opening upward — start at 45deg right-up, sweep 90deg
+    // CCW through 90deg straight-up to 135deg left-up.
+    for (i, radius) in [r1, r2, r3].iter().enumerate() {
+        widgets.push(arc(
+            mw(t, (90 + i) as u16),
+            wp_x,
+            wp_y,
+            *radius,
+            45.0,
+            90.0,
+            0.25,
+        ));
+    }
+
+    // Range labels along the upper-right diagonal.
+    let cos45 = std::f64::consts::FRAC_1_SQRT_2;
+    let label_dx = cos45;
+    let label_dy = -cos45;
+    for (i, (radius, name)) in
+        [(r1, "100m"), (r2, "200m"), (r3, "300m")].iter().enumerate()
+    {
+        let lx = wp_x + radius * label_dx + 1.0;
+        let ly = wp_y + radius * label_dy - 1.5;
+        widgets.push(text(
+            mw(t, (93 + i) as u16),
+            lx,
+            ly,
+            14.0,
+            3.5,
+            name,
+            2.8,
+        ));
+    }
+
+    // Sector-limit lines: from WP along the 45/135deg fan edges to the
+    // LL / RL label corners.
+    let limit_len = max_radius;
+    let ll_end_x = wp_x - limit_len * cos45;
+    let ll_end_y = wp_y - limit_len * cos45;
+    let rl_end_x = wp_x + limit_len * cos45;
+    let rl_end_y = wp_y - limit_len * cos45;
+    widgets.push(segment(mw(t, 96), wp_x, wp_y, ll_end_x, ll_end_y, 0.3));
+    widgets.push(segment(mw(t, 97), wp_x, wp_y, rl_end_x, rl_end_y, 0.3));
+
     widgets.push(text(
-        mw(t, 62),
-        margin + 4.0,
-        sketch_y + sketch_h - 12.0,
+        mw(t, 98),
+        ll_end_x - 6.0,
+        ll_end_y - 4.0,
         14.0,
         4.0,
         "LL",
         3.0,
     ));
     widgets.push(text(
-        mw(t, 63),
-        margin + sketch_w - 14.0,
-        sketch_y + sketch_h - 12.0,
+        mw(t, 99),
+        rl_end_x + 1.0,
+        rl_end_y - 4.0,
         12.0,
         4.0,
         "RL",

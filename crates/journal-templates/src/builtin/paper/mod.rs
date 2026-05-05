@@ -1,4 +1,4 @@
-//! Paper-style page templates — blank, ruled, wide-ruled, college-ruled.
+//! Paper-style page templates  -  blank, ruled, wide-ruled, college-ruled.
 
 pub mod blank;
 pub mod college_ruled;

@@ -260,6 +260,32 @@ impl WidgetRenderer {
                 let path = Ellipse::new((cx, cy), (rx, ry), 0.0).to_path(0.05);
                 fill_then_stroke(scene, transform, style, &path);
             }
+            WidgetKind::Arc { start_deg, sweep_deg, thickness_mm } => {
+                let cx = r.x + r.width * 0.5;
+                let cy = r.y + r.height * 0.5;
+                let rx = r.width * 0.5;
+                let ry = r.height * 0.5;
+                // Walk the arc as a polyline at ~1deg per segment so
+                // non-uniform rx/ry (range arcs are usually circular but
+                // ellipses sit on rectangular bounds) come out smooth.
+                let mut path = BezPath::new();
+                let steps = (sweep_deg.abs() as usize).max(8);
+                for i in 0..=steps {
+                    let t = i as f64 / steps as f64;
+                    // Math convention -> Vello Y-down: negate angle.
+                    let theta = (-(start_deg + sweep_deg * t)).to_radians();
+                    let x = cx + rx * theta.cos();
+                    let y = cy + ry * theta.sin();
+                    if i == 0 {
+                        path.move_to((x, y));
+                    } else {
+                        path.line_to((x, y));
+                    }
+                }
+                let style_stroke = stroke_style(*thickness_mm);
+                let brush = solid(style.stroke_color);
+                scene.stroke(&style_stroke, transform, &brush, None, &path);
+            }
             WidgetKind::Line { thickness_mm } => {
                 let thickness = match override_ {
                     Some(WidgetOverride::Line { thickness_mm }) => *thickness_mm,

@@ -1,4 +1,4 @@
-//! GOTWA Brief Card — A6 pocket card.
+//! GOTWA Brief Card  -  A6 pocket card.
 //!
 //! Leader's leave-behind brief. Going / Others / Time / What if I don't
 //! return / Actions on enemy contact.
@@ -32,7 +32,7 @@ pub fn builtin_military_gotwa() -> PageTemplate {
         margin + 7.5,
         page_w - margin * 2.0,
         4.0,
-        "Leader leave-behind brief — leave a copy with the second-in-charge.",
+        "Leader leave-behind brief  -  leave a copy with the second-in-charge.",
         2.7,
     ));
 
@@ -40,11 +40,11 @@ pub fn builtin_military_gotwa() -> PageTemplate {
     let body_h = page_h - body_top - margin;
     let row_h = body_h / 5.0;
     let labels: [&str; 5] = [
-        "G — where I am Going",
-        "O — Others I'm taking with me",
-        "T — Time I'll be gone (return NLT)",
-        "W — What if I don't return (escalation / next leader)",
-        "A — Actions on enemy contact",
+        "G  -  where I am Going",
+        "O  -  Others I'm taking with me",
+        "T  -  Time I'll be gone (return NLT)",
+        "W  -  What if I don't return (escalation / next leader)",
+        "A  -  Actions on enemy contact",
     ];
     for (i, label) in labels.iter().enumerate() {
         let y = body_top + row_h * i as f64;
@@ -79,7 +79,7 @@ pub fn builtin_military_gotwa() -> PageTemplate {
     PageTemplate {
         id: TemplateId(BUILTIN_MILITARY_GOTWA_ID),
         name: "GOTWA Brief".into(),
-        description: "Pocket-card leader's leave-behind brief — Going, Others, Time, What-if-I-don't-return, Actions on contact.".into(),
+        description: "Pocket-card leader's leave-behind brief  -  Going, Others, Time, What-if-I-don't-return, Actions on contact.".into(),
         background: BackgroundType::Blank,
         size_mm: A6,
         tiling: TilingMode::None,

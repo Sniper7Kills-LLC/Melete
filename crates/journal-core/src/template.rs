@@ -92,6 +92,17 @@ pub enum WidgetKind {
     },
     Rectangle,
     Ellipse,
+    /// Arc of an ellipse — used by templates that need a partial
+    /// circle / sector marker (range arcs on a fighting-position
+    /// sector sketch, dial markers, etc). The widget's `rect` defines
+    /// the arc's bounding box; `start_deg` and `sweep_deg` measure
+    /// from the +X axis with positive sweep going counter-clockwise
+    /// (math convention). 0/360 sweeps render as a full ellipse.
+    Arc {
+        start_deg: f64,
+        sweep_deg: f64,
+        thickness_mm: f64,
+    },
     Line {
         thickness_mm: f64,
     },

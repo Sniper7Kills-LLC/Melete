@@ -1,7 +1,7 @@
 //! Military page templates.
 //!
 //! One file per form. Shared widget-construction helpers and paper-size
-//! constants live in `crate::builtin` — each form module pulls them in
+//! constants live in `crate::builtin`  -  each form module pulls them in
 //! via `use crate::builtin::{...}`.
 
 pub mod gotwa;

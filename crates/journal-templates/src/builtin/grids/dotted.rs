@@ -1,4 +1,4 @@
-//! Dotted-grid page — light dot pattern at 8mm spacing.
+//! Dotted-grid page  -  light dot pattern at 8mm spacing.
 
 use uuid::{uuid, Uuid};
 

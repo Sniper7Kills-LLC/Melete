@@ -129,6 +129,27 @@ fn draw_widget(
             ctx.restore().ok();
             apply_fill_then_stroke(ctx, style, transform);
         }
+        WidgetKind::Arc { start_deg, sweep_deg, thickness_mm } => {
+            let cx = r.x + r.width * 0.5;
+            let cy = r.y + r.height * 0.5;
+            let rx = r.width * 0.5;
+            let ry = r.height * 0.5;
+            // Math convention: positive Y is "up", positive sweep is CCW.
+            // Cairo's Y axis points down, so negate the angles to keep
+            // the arc reading the same way the user wrote it.
+            let a0 = -start_deg.to_radians();
+            let a1 = -(start_deg + sweep_deg).to_radians();
+            ctx.save().ok();
+            ctx.translate(cx, cy);
+            ctx.scale(rx, ry);
+            // Cairo's arc_negative goes "clockwise on screen" which is
+            // CCW in math space after the Y flip above.
+            ctx.arc_negative(0.0, 0.0, 1.0, a0, a1);
+            ctx.restore().ok();
+            set_color(ctx, style.stroke_color);
+            ctx.set_line_width(*thickness_mm);
+            let _ = ctx.stroke();
+        }
         WidgetKind::Line { thickness_mm } => {
             let thickness = match override_ {
                 Some(WidgetOverride::Line { thickness_mm }) => *thickness_mm,

@@ -1,4 +1,4 @@
-//! PACE Communications Plan — US Letter landscape.
+//! PACE Communications Plan  -  US Letter landscape.
 //!
 //! Four columns (Primary / Alternate / Contingency / Emergency) over six
 //! rows (Net, Frequency, Call sign, Authentication, Encryption, Notes).
@@ -109,7 +109,7 @@ pub fn builtin_military_pace() -> PageTemplate {
     PageTemplate {
         id: TemplateId(BUILTIN_MILITARY_PACE_ID),
         name: "PACE Plan".into(),
-        description: "Communications plan — Primary / Alternate / Contingency / Emergency columns over Net, Frequency, Call sign, Authentication, Encryption, and Notes rows.".into(),
+        description: "Communications plan  -  Primary / Alternate / Contingency / Emergency columns over Net, Frequency, Call sign, Authentication, Encryption, and Notes rows.".into(),
         background: BackgroundType::Blank,
         size_mm: US_LETTER_LANDSCAPE,
         tiling: TilingMode::None,

@@ -1,4 +1,4 @@
-//! Square grid page — 10mm tiling grid.
+//! Square grid page  -  10mm tiling grid.
 
 use uuid::{uuid, Uuid};
 

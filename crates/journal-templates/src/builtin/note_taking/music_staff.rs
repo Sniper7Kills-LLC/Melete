@@ -1,4 +1,4 @@
-//! Music staff paper — twelve 5-line staves stacked down the page.
+//! Music staff paper  -  twelve 5-line staves stacked down the page.
 
 use uuid::{uuid, Uuid};
 

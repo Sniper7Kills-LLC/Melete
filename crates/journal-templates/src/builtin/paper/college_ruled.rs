@@ -1,4 +1,4 @@
-//! College-ruled notebook paper — 7.1mm lines + red margin + header strip.
+//! College-ruled notebook paper  -  7.1mm lines + red margin + header strip.
 
 use uuid::{uuid, Uuid};
 

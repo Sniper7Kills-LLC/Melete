@@ -1877,6 +1877,7 @@ fn kind_label(k: &WidgetKind) -> &'static str {
         WidgetKind::TextBlock { .. } => "Text Block",
         WidgetKind::Rectangle => "Rectangle",
         WidgetKind::Ellipse => "Ellipse",
+        WidgetKind::Arc { .. } => "Arc",
         WidgetKind::Line { .. } => "Line",
         WidgetKind::GridRegion { .. } => "Grid Region",
         WidgetKind::LinesRegion { .. } => "Lines Region",

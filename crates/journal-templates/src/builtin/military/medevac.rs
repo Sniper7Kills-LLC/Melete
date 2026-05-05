@@ -1,4 +1,4 @@
-//! 9-Line MEDEVAC Request — A5 portrait.
+//! 9-Line MEDEVAC Request  -  A5 portrait.
 //!
 //! Standard medical evacuation request: location, frequency, patient
 //! precedence, special equipment, patients by type, security at PZ,
@@ -34,12 +34,12 @@ pub fn builtin_military_medevac() -> PageTemplate {
     let lines: [&str; 9] = [
         "1. Location of pickup (grid):",
         "2. Frequency / call sign:",
-        "3. Patient precedence — A urgent · B urgent-surgical · C priority · D routine · E convenience:",
-        "4. Special equipment — A none · B hoist · C extraction · D ventilator:",
-        "5. Patients by type — L# litter · A# ambulatory:",
-        "6. Security at PZ — N none · P possible · E enemy · X escort required:",
-        "7. Method of marking — A panels · B pyro · C smoke · D none · E other:",
-        "8. Patient nationality / status — A US mil · B US civ · C non-US mil · D non-US civ · E EPW:",
+        "3. Patient precedence  -  A urgent / B urgent-surgical / C priority / D routine / E convenience:",
+        "4. Special equipment  -  A none / B hoist / C extraction / D ventilator:",
+        "5. Patients by type  -  L# litter / A# ambulatory:",
+        "6. Security at PZ  -  N none / P possible / E enemy / X escort required:",
+        "7. Method of marking  -  A panels / B pyro / C smoke / D none / E other:",
+        "8. Patient nationality / status  -  A US mil / B US civ / C non-US mil / D non-US civ / E EPW:",
         "9. NBC contamination (N/B/C) / terrain description:",
     ];
     for (i, label) in lines.iter().enumerate() {
@@ -75,7 +75,7 @@ pub fn builtin_military_medevac() -> PageTemplate {
     PageTemplate {
         id: TemplateId(BUILTIN_MILITARY_MEDEVAC_ID),
         name: "9-Line MEDEVAC".into(),
-        description: "Standard 9-line medical evacuation request — location, frequency, patient precedence, special equipment, patients by type, security at PZ, method of marking, nationality, NBC.".into(),
+        description: "Standard 9-line medical evacuation request  -  location, frequency, patient precedence, special equipment, patients by type, security at PZ, method of marking, nationality, NBC.".into(),
         background: BackgroundType::Blank,
         size_mm: A5,
         tiling: TilingMode::None,

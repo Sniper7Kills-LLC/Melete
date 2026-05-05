@@ -1,4 +1,4 @@
-//! Pre-Combat Check / Pre-Combat Inspection — US Letter portrait.
+//! Pre-Combat Check / Pre-Combat Inspection  -  US Letter portrait.
 //!
 //! Two-column checklist of eight categories: weapons, ammo / pyro,
 //! optics / lasers, radios / comms, medical, water / sustainment,
@@ -45,7 +45,7 @@ pub fn builtin_military_pcc_pci() -> PageTemplate {
         (
             "Weapons",
             &[
-                "Rifle / SBR — clean, function check",
+                "Rifle / SBR  -  clean, function check",
                 "Optic / iron sights zeroed",
                 "Magazines (count and serviceable)",
                 "Sling tight, attached, serviceable",
@@ -95,7 +95,7 @@ pub fn builtin_military_pcc_pci() -> PageTemplate {
         (
             "Water / Sustainment",
             &[
-                "Hydration (≥3 L) full",
+                "Hydration (>=3 L) full",
                 "Snivel kit (snacks, electrolytes)",
                 "Per-mission MREs / chow",
                 "Mission duration food count verified",
@@ -104,7 +104,7 @@ pub fn builtin_military_pcc_pci() -> PageTemplate {
         (
             "Personal Kit",
             &[
-                "Plate carrier — plates serial verified",
+                "Plate carrier  -  plates serial verified",
                 "Helmet retention adjusted",
                 "Knee / elbow pads",
                 "Eye-pro + ear-pro",
@@ -149,7 +149,7 @@ pub fn builtin_military_pcc_pci() -> PageTemplate {
     PageTemplate {
         id: TemplateId(BUILTIN_MILITARY_PCC_PCI_ID),
         name: "PCC / PCI Checklist".into(),
-        description: "Pre-combat check / inspection sheet — 8 sections (weapons, ammo / pyro, optics / lasers, radios, medical, sustainment, personal kit, mission items) with checkbox rows.".into(),
+        description: "Pre-combat check / inspection sheet  -  8 sections (weapons, ammo / pyro, optics / lasers, radios, medical, sustainment, personal kit, mission items) with checkbox rows.".into(),
         background: BackgroundType::Blank,
         size_mm: US_LETTER,
         tiling: TilingMode::None,
