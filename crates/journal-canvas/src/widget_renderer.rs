@@ -29,6 +29,20 @@ fn resolve_date(ctx: &WidgetRenderContext) -> chrono::NaiveDate {
         .unwrap_or_else(|| chrono::Local::now().date_naive())
 }
 
+/// `Some(minutes-since-midnight)` when the bound page-date matches
+/// today; `None` otherwise. Used by Timeline / DailyAppointments to
+/// draw a "now" marker only on today's planner page.
+fn now_marker_for_date(ctx: &WidgetRenderContext) -> Option<u32> {
+    let bound = ctx.date?;
+    let now = chrono::Local::now();
+    if bound != now.date_naive() {
+        return None;
+    }
+    use chrono::Timelike;
+    let t = now.time();
+    Some(t.hour() * 60 + t.minute())
+}
+
 fn set_color(ctx: &cairo::Context, c: Color) {
     ctx.set_source_rgba(
         c.r as f64 / 255.0,
@@ -224,7 +238,8 @@ fn draw_widget(
                 }) => (*start_hour, *end_hour, *slot_minutes),
                 _ => (*start_hour, *end_hour, *slot_minutes),
             };
-            draw_timeline_stub(ctx, transform, r, style, s, e, m);
+            let now = now_marker_for_date(render_ctx);
+            draw_timeline_stub(ctx, transform, r, style, s, e, m, now);
         }
         WidgetKind::Checklist { items } => {
             let items = match override_ {
@@ -254,7 +269,8 @@ fn draw_widget(
                 }) => (*start_hour, *end_hour),
                 _ => (*start_hour, *end_hour),
             };
-            draw_daily_appointments(ctx, transform, r, style, s, e);
+            let now = now_marker_for_date(render_ctx);
+            draw_daily_appointments(ctx, transform, r, style, s, e, now);
         }
         WidgetKind::WeeklyCompass => {
             draw_weekly_compass(ctx, transform, r, style);
@@ -435,26 +451,23 @@ fn draw_calendar_month(
         let x = r.x + col_w * col as f64 + lw * 2.0 + col_w * 0.06;
         let y = body_top + row_h * row as f64 + num_fs + lw;
         let label = format!("{}", day);
-        // Highlight today's cell with a small filled circle behind the number.
+        // Highlight today's cell with an amber ring around the number.
+        // Matches the Vello renderer's editorial-fieldbook accent.
         if today_in_view && today.day() == day {
             ctx.save().ok();
             let cx = r.x + col_w * (col as f64 + 0.5);
-            let cy = body_top + row_h * (row as f64 + 0.35);
-            let radius = num_fs * 0.85;
-            ctx.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
-            if let Some(fill) = style.fill_color {
-                set_color(ctx, fill);
-            } else {
-                ctx.set_source_rgba(
-                    style.stroke_color.r as f64 / 255.0,
-                    style.stroke_color.g as f64 / 255.0,
-                    style.stroke_color.b as f64 / 255.0,
-                    0.18,
-                );
-            }
-            let _ = ctx.fill();
+            let cy = body_top + row_h * (row as f64 + 0.5);
+            let pad = (col_w.min(row_h) * 0.08).max(0.4);
+            let rx = col_w * 0.5 - pad;
+            let ry = row_h * 0.5 - pad;
+            ctx.translate(cx, cy);
+            ctx.scale(rx, ry);
+            ctx.arc(0.0, 0.0, 1.0, 0.0, std::f64::consts::TAU);
+            ctx.identity_matrix();
+            ctx.set_source_rgba(0.839, 0.659, 0.227, 0.95);
+            ctx.set_line_width(lw.max(0.5));
+            let _ = ctx.stroke();
             ctx.restore().ok();
-            // Re-apply stroke colour for the number text.
             set_color(ctx, style.stroke_color);
             ctx.set_line_width(lw);
         }
@@ -504,6 +517,7 @@ fn draw_timeline_stub(
     start_hour: u8,
     end_hour: u8,
     slot_minutes: u32,
+    now_minutes: Option<u32>,
 ) {
     let _ = transform;
     let lw = style.stroke_width_mm;
@@ -541,6 +555,26 @@ fn draw_timeline_stub(
                 ctx.move_to(r.x + lw * 2.0, text_y);
                 let _ = ctx.show_text(&label);
             }
+        }
+    }
+
+    if let Some(now) = now_minutes {
+        let start_min = (start_hour as u32) * 60;
+        let end_min = (end_hour as u32) * 60;
+        if now >= start_min && now < end_min {
+            let frac = (now - start_min) as f64 / (end_min - start_min) as f64;
+            let ny = r.y + r.height * frac;
+            ctx.save().ok();
+            ctx.set_source_rgba(0.839, 0.659, 0.227, 0.95);
+            ctx.set_line_width(lw.max(0.5));
+            ctx.move_to(r.x, ny);
+            ctx.line_to(r.x + r.width, ny);
+            let _ = ctx.stroke();
+            ctx.arc(r.x + label_w, ny, slot_h.max(1.0) * 0.18, 0.0, std::f64::consts::TAU);
+            let _ = ctx.fill();
+            ctx.restore().ok();
+            set_color(ctx, style.stroke_color);
+            ctx.set_line_width(lw);
         }
     }
 }
@@ -713,6 +747,7 @@ fn draw_daily_appointments(
     style: &WidgetStyle,
     start_hour: u8,
     end_hour: u8,
+    now_minutes: Option<u32>,
 ) {
     let _ = transform;
     let lw = style.stroke_width_mm;
@@ -763,9 +798,29 @@ fn draw_daily_appointments(
             let _ = ctx.stroke();
         }
     }
+
+    if let Some(now) = now_minutes {
+        let start_min = (start_hour as u32) * 60;
+        let end_min = (end_hour as u32) * 60;
+        if now >= start_min && now < end_min {
+            let frac = (now - start_min) as f64 / (end_min - start_min) as f64;
+            let ny = r.y + r.height * frac;
+            ctx.save().ok();
+            ctx.set_source_rgba(0.839, 0.659, 0.227, 0.95);
+            ctx.set_line_width(lw.max(0.5));
+            ctx.move_to(r.x, ny);
+            ctx.line_to(r.x + r.width, ny);
+            let _ = ctx.stroke();
+            ctx.arc(r.x + label_col_w, ny, row_h.max(1.0) * 0.18, 0.0, std::f64::consts::TAU);
+            let _ = ctx.fill();
+            ctx.restore().ok();
+            set_color(ctx, style.stroke_color);
+            ctx.set_line_width(lw);
+        }
+    }
 }
 
-/// Draw a 4×2 grid of role/goal boxes (Franklin Covey Weekly Compass).
+/// Draw a 4x2 grid of role/goal boxes (Franklin Covey Weekly Compass).
 fn draw_weekly_compass(
     ctx: &cairo::Context,
     transform: &ViewportTransform,

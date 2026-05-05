@@ -41,6 +41,23 @@ fn resolve_date(ctx: &WidgetRenderContext) -> chrono::NaiveDate {
         .unwrap_or_else(|| chrono::Local::now().date_naive())
 }
 
+/// Returns `Some(minutes_since_midnight)` when the page the widget is
+/// being rendered onto is bound to today's date — used by Timeline and
+/// DailyAppointments to draw a "now" line. Returns `None` for past or
+/// future-dated pages and for pages with no bound date (templates
+/// previewed in the editor or non-planner pages).
+fn now_marker_for_date(ctx: &WidgetRenderContext) -> Option<u32> {
+    let bound = ctx.date?;
+    let now = chrono::Local::now();
+    let today = now.date_naive();
+    if bound != today {
+        return None;
+    }
+    let t = now.time();
+    use chrono::Timelike;
+    Some(t.hour() * 60 + t.minute())
+}
+
 pub struct WidgetRenderer {
     font_ctx: FontContext,
     layout_ctx: LayoutContext<Brush>,
@@ -365,7 +382,8 @@ impl WidgetRenderer {
                     }) => (*start_hour, *end_hour, *slot_minutes),
                     _ => (*start_hour, *end_hour, *slot_minutes),
                 };
-                self.draw_timeline_stub(scene, transform, r, style, s, e, m);
+                let now_marker = now_marker_for_date(render_ctx);
+                self.draw_timeline_stub(scene, transform, r, style, s, e, m, now_marker);
             }
             WidgetKind::Checklist { items } => {
                 let items = match override_ {
@@ -395,7 +413,8 @@ impl WidgetRenderer {
                     }) => (*start_hour, *end_hour),
                     _ => (*start_hour, *end_hour),
                 };
-                self.draw_daily_appointments(scene, transform, r, style, s, e);
+                let now_marker = now_marker_for_date(render_ctx);
+                self.draw_daily_appointments(scene, transform, r, style, s, e, now_marker);
             }
             WidgetKind::WeeklyCompass => {
                 self.draw_weekly_compass(scene, transform, r, style);
@@ -481,6 +500,14 @@ impl WidgetRenderer {
         }
         scene.stroke(&stroke_style_thin, transform, &brush, None, &grid);
 
+        // "Today" highlight: if the calendar's displayed month matches
+        // the system's current month, ring today's cell in amber so
+        // the user can see "this is today" at a glance. Skipped when
+        // the calendar is bound to a different month via override or
+        // page date.
+        let today = chrono::Local::now().date_naive();
+        let is_current_month = today.year() == year && today.month() == month;
+
         for day in 1..=total_days {
             let idx = first_dow + day - 1;
             let col = idx % 7;
@@ -490,6 +517,25 @@ impl WidgetRenderer {
             }
             let cell_x = r.x + cw * col as f64;
             let cell_y = cells_y + rh * row as f64;
+
+            if is_current_month && day as u32 == today.day() {
+                let amber = vello::peniko::Color::from_rgba8(214, 168, 58, 255);
+                let pad = (cw.min(rh) * 0.08).max(0.4);
+                let cx = cell_x + cw * 0.5;
+                let cy = cell_y + rh * 0.5;
+                let rx = cw * 0.5 - pad;
+                let ry = rh * 0.5 - pad;
+                let ring_path = Ellipse::new((cx, cy), (rx, ry), 0.0).to_path(0.05);
+                let ring_style = stroke_style(style.stroke_width_mm.max(0.5));
+                scene.stroke(
+                    &ring_style,
+                    transform,
+                    &Brush::Solid(amber),
+                    None,
+                    &ring_path,
+                );
+            }
+
             draw_text_runs(
                 scene,
                 &mut self.font_ctx,
@@ -515,6 +561,7 @@ impl WidgetRenderer {
         start_hour: u8,
         end_hour: u8,
         slot_minutes: u32,
+        now_minutes: Option<u32>,
     ) {
         let start_min = (start_hour as u32) * 60;
         let end_min = (end_hour as u32) * 60;
@@ -568,6 +615,35 @@ impl WidgetRenderer {
                 style.stroke_color,
                 Alignment::Start,
             );
+        }
+
+        // "Now" line — only when the bound page-date is today and the
+        // current time falls within the timeline's hour range.
+        if let Some(now) = now_minutes {
+            if now >= start_min && now < end_min {
+                let frac = (now - start_min) as f64 / total_min as f64;
+                let ny = r.y + r.height * frac;
+                let amber = vello::peniko::Color::from_rgba8(214, 168, 58, 255);
+                let mut line = BezPath::new();
+                line.move_to((r.x, ny));
+                line.line_to((r.x + r.width, ny));
+                let now_stroke = stroke_style(style.stroke_width_mm.max(0.5));
+                scene.stroke(
+                    &now_stroke,
+                    transform,
+                    &Brush::Solid(amber),
+                    None,
+                    &line,
+                );
+                let dot = Circle::new((r.x + label_w, ny), (row_h * 0.18).clamp(0.6, 1.4));
+                scene.fill(
+                    Fill::NonZero,
+                    transform,
+                    &Brush::Solid(amber),
+                    None,
+                    &dot.path_elements(0.05).collect::<BezPath>(),
+                );
+            }
         }
     }
 
@@ -695,6 +771,7 @@ impl WidgetRenderer {
         style: &WidgetStyle,
         start_hour: u8,
         end_hour: u8,
+        now_minutes: Option<u32>,
     ) {
         let start = start_hour as i32;
         let end = end_hour as i32;
@@ -717,6 +794,16 @@ impl WidgetRenderer {
         }
         scene.stroke(&stroke_style_thin, transform, &brush, None, &grid);
 
+        // Half-hour ticks — short marks across the writing area, makes
+        // the page actually usable for appointment-time entries.
+        let mut ticks = BezPath::new();
+        for i in 0..(hours as u32) {
+            let half_y = r.y + row_h * (i as f64 + 0.5);
+            ticks.move_to((r.x + label_w, half_y));
+            ticks.line_to((r.x + label_w + r.width * 0.04, half_y));
+        }
+        scene.stroke(&stroke_style_thin, transform, &brush, None, &ticks);
+
         for i in 0..(hours as u32) {
             let label = format!("{}:00", start + i as i32);
             let row_y = r.y + row_h * i as f64;
@@ -733,6 +820,37 @@ impl WidgetRenderer {
                 style.stroke_color,
                 Alignment::Start,
             );
+        }
+
+        // "Now" line — when the page is bound to today and current time
+        // falls inside [start_hour, end_hour].
+        if let Some(now) = now_minutes {
+            let start_min = (start_hour as u32) * 60;
+            let end_min = (end_hour as u32) * 60;
+            if now >= start_min && now < end_min {
+                let frac = (now - start_min) as f64 / (end_min - start_min) as f64;
+                let ny = r.y + r.height * frac;
+                let amber = vello::peniko::Color::from_rgba8(214, 168, 58, 255);
+                let mut line = BezPath::new();
+                line.move_to((r.x, ny));
+                line.line_to((r.x + r.width, ny));
+                let now_stroke = stroke_style(style.stroke_width_mm.max(0.5));
+                scene.stroke(
+                    &now_stroke,
+                    transform,
+                    &Brush::Solid(amber),
+                    None,
+                    &line,
+                );
+                let dot = Circle::new((r.x + label_w, ny), (row_h * 0.18).clamp(0.6, 1.4));
+                scene.fill(
+                    Fill::NonZero,
+                    transform,
+                    &Brush::Solid(amber),
+                    None,
+                    &dot.path_elements(0.05).collect::<BezPath>(),
+                );
+            }
         }
     }
 

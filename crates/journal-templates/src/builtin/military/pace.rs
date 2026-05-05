@@ -39,7 +39,9 @@ pub fn builtin_military_pace() -> PageTemplate {
     let body_top = margin + 18.0;
     let body_h = page_h - body_top - margin;
     let cols = ["Primary", "Alternate", "Contingency", "Emergency"];
-    let col_w = (page_w - margin * 2.0) / 4.0;
+    let label_col_w = 36.0_f64;
+    let table_w = page_w - margin * 2.0;
+    let col_w = (table_w - label_col_w) / 4.0;
     let rows = [
         "Net",
         "Frequency",
@@ -51,8 +53,9 @@ pub fn builtin_military_pace() -> PageTemplate {
     let header_h = 9.0_f64;
     let row_h = (body_h - header_h) / rows.len() as f64;
 
+    // Column headers (Primary / Alternate / Contingency / Emergency).
     for (i, h) in cols.iter().enumerate() {
-        let x = margin + col_w * i as f64;
+        let x = margin + label_col_w + col_w * i as f64;
         widgets.push(text(
             mw(t, (10 + i) as u16),
             x + 2.0,
@@ -63,24 +66,28 @@ pub fn builtin_military_pace() -> PageTemplate {
             4.5,
         ));
     }
-    widgets.push(rect(
-        mw(t, 30),
-        margin,
-        body_top,
-        page_w - margin * 2.0,
-        body_h,
-    ));
+    // Outer table border + header underline.
+    widgets.push(rect(mw(t, 30), margin, body_top, table_w, body_h));
     widgets.push(hline(
         mw(t, 31),
         margin,
         body_top + header_h,
-        page_w - margin * 2.0,
+        table_w,
+        0.3,
+    ));
+    // Vertical dividers — one between label column and first data column,
+    // plus three between the data columns.
+    widgets.push(vline(
+        mw(t, 39),
+        margin + label_col_w,
+        body_top,
+        body_h,
         0.3,
     ));
     for i in 1..cols.len() {
         widgets.push(vline(
             mw(t, (40 + i) as u16),
-            margin + col_w * i as f64,
+            margin + label_col_w + col_w * i as f64,
             body_top,
             body_h,
             0.25,
@@ -92,14 +99,14 @@ pub fn builtin_military_pace() -> PageTemplate {
             mw(t, (60 + r) as u16),
             margin,
             y,
-            page_w - margin * 2.0,
+            table_w,
             0.2,
         ));
         widgets.push(text(
             mw(t, (70 + r) as u16),
             margin + 2.0,
             y + 1.5,
-            col_w - 4.0,
+            label_col_w - 4.0,
             row_h - 3.0,
             rlabel,
             3.2,
