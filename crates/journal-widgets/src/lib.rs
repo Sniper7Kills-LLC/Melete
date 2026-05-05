@@ -419,6 +419,29 @@ impl WidgetRenderer {
             WidgetKind::WeeklyCompass => {
                 self.draw_weekly_compass(scene, transform, r, style);
             }
+            WidgetKind::HabitTracker { habits, days } => {
+                let (habits, days) = match override_ {
+                    Some(WidgetOverride::HabitTracker { habits, days }) => {
+                        (habits.as_slice(), *days)
+                    }
+                    _ => (habits.as_slice(), *days),
+                };
+                let highlight_col = match render_ctx.date {
+                    Some(d) if d == chrono::Local::now().date_naive() => {
+                        use chrono::Datelike;
+                        Some(d.day())
+                    }
+                    _ => None,
+                };
+                self.draw_habit_tracker(scene, transform, r, style, habits, days, highlight_col);
+            }
+            WidgetKind::Tally { label, count } => {
+                let (label, count) = match override_ {
+                    Some(WidgetOverride::Tally { label, count }) => (label.as_str(), *count),
+                    _ => (label.as_str(), *count),
+                };
+                self.draw_tally(scene, transform, r, style, label, count);
+            }
         }
     }
 
@@ -851,6 +874,148 @@ impl WidgetRenderer {
                     &dot.path_elements(0.05).collect::<BezPath>(),
                 );
             }
+        }
+    }
+
+    fn draw_habit_tracker(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        habits: &[String],
+        days: u32,
+        highlight_col: Option<u32>,
+    ) {
+        let days = days.max(1);
+        let row_count = habits.len().max(1);
+        let label_col_w = (r.width * 0.28).clamp(20.0, 60.0);
+        let header_h = (r.height * 0.07).clamp(4.0, 8.0);
+        let body_w = r.width - label_col_w;
+        let body_h = r.height - header_h;
+        let col_w = body_w / days as f64;
+        let row_h = body_h / row_count as f64;
+
+        let stroke_style_thin = stroke_style(style.stroke_width_mm.max(0.18));
+        let brush = solid(style.stroke_color);
+
+        // Today's column highlight — drawn first so the grid lines and
+        // checkboxes stack on top.
+        if let Some(col) = highlight_col {
+            if col >= 1 && col <= days {
+                let amber = vello::peniko::Color::from_rgba8(214, 168, 58, 60);
+                let cx = r.x + label_col_w + col_w * (col - 1) as f64;
+                let cell = KRect::new(cx, r.y, cx + col_w, r.y + r.height);
+                scene.fill(
+                    Fill::NonZero,
+                    transform,
+                    &Brush::Solid(amber),
+                    None,
+                    &cell,
+                );
+            }
+        }
+
+        // Outer border + header underline + label divider.
+        let mut grid = BezPath::new();
+        grid.move_to((r.x, r.y));
+        grid.line_to((r.x + r.width, r.y));
+        grid.line_to((r.x + r.width, r.y + r.height));
+        grid.line_to((r.x, r.y + r.height));
+        grid.line_to((r.x, r.y));
+        grid.move_to((r.x, r.y + header_h));
+        grid.line_to((r.x + r.width, r.y + header_h));
+        grid.move_to((r.x + label_col_w, r.y));
+        grid.line_to((r.x + label_col_w, r.y + r.height));
+        for c in 1..days {
+            let x = r.x + label_col_w + col_w * c as f64;
+            grid.move_to((x, r.y + header_h));
+            grid.line_to((x, r.y + r.height));
+        }
+        for rr in 1..row_count {
+            let y = r.y + header_h + row_h * rr as f64;
+            grid.move_to((r.x, y));
+            grid.line_to((r.x + r.width, y));
+        }
+        scene.stroke(&stroke_style_thin, transform, &brush, None, &grid);
+
+        // Day-of-month numbers along the header row.
+        let header_fs = (header_h * 0.6).clamp(2.5, 5.0) as f32;
+        for d in 1..=days {
+            let x = r.x + label_col_w + col_w * (d - 1) as f64;
+            draw_text_runs(
+                scene,
+                &mut self.font_ctx,
+                &mut self.layout_ctx,
+                transform,
+                &d.to_string(),
+                header_fs,
+                x,
+                r.y + 0.5,
+                col_w,
+                style.stroke_color,
+                Alignment::Center,
+            );
+        }
+
+        // Habit names down the left column.
+        let label_fs = (row_h * 0.55).clamp(3.0, 6.0) as f32;
+        for (i, name) in habits.iter().enumerate() {
+            let y = r.y + header_h + row_h * i as f64 + (row_h - label_fs as f64) * 0.5;
+            draw_text_runs(
+                scene,
+                &mut self.font_ctx,
+                &mut self.layout_ctx,
+                transform,
+                name,
+                label_fs,
+                r.x + 1.5,
+                y,
+                label_col_w - 3.0,
+                style.stroke_color,
+                Alignment::Start,
+            );
+        }
+    }
+
+    fn draw_tally(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        label: &str,
+        count: u32,
+    ) {
+        let count = count.max(1);
+        let label_w = (r.width * 0.30).clamp(15.0, 60.0);
+        let circles_w = r.width - label_w;
+        let label_fs = (r.height * 0.55).clamp(3.0, 7.0) as f32;
+        draw_text_runs(
+            scene,
+            &mut self.font_ctx,
+            &mut self.layout_ctx,
+            transform,
+            label,
+            label_fs,
+            r.x + 1.0,
+            r.y + (r.height - label_fs as f64) * 0.5,
+            label_w - 2.0,
+            style.stroke_color,
+            Alignment::Start,
+        );
+
+        let max_d = (r.height * 0.85).max(2.0);
+        let stride = circles_w / count as f64;
+        let diameter = stride.min(max_d) * 0.8;
+        let radius = diameter * 0.5;
+        let stroke_style_thin = stroke_style(style.stroke_width_mm.max(0.25));
+        let brush = solid(style.stroke_color);
+        for i in 0..count {
+            let cx = r.x + label_w + stride * (i as f64 + 0.5);
+            let cy = r.y + r.height * 0.5;
+            let path = Ellipse::new((cx, cy), (radius, radius), 0.0).to_path(0.05);
+            scene.stroke(&stroke_style_thin, transform, &brush, None, &path);
         }
     }
 

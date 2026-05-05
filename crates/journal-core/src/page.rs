@@ -57,6 +57,14 @@ pub enum WidgetOverride {
     Line {
         thickness_mm: f64,
     },
+    HabitTracker {
+        habits: Vec<String>,
+        days: u32,
+    },
+    Tally {
+        label: String,
+        count: u32,
+    },
 }
 
 /// A single page within a notebook section.

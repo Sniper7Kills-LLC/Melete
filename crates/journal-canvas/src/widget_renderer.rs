@@ -275,6 +275,29 @@ fn draw_widget(
         WidgetKind::WeeklyCompass => {
             draw_weekly_compass(ctx, transform, r, style);
         }
+        WidgetKind::HabitTracker { habits, days } => {
+            let (habits, n_days) = match override_ {
+                Some(WidgetOverride::HabitTracker { habits, days }) => {
+                    (habits.as_slice(), *days)
+                }
+                _ => (habits.as_slice(), *days),
+            };
+            let highlight_col = match render_ctx.date {
+                Some(d) if d == chrono::Local::now().date_naive() => {
+                    use chrono::Datelike;
+                    Some(d.day())
+                }
+                _ => None,
+            };
+            draw_habit_tracker(ctx, transform, r, style, habits, n_days, highlight_col);
+        }
+        WidgetKind::Tally { label, count } => {
+            let (label, n) = match override_ {
+                Some(WidgetOverride::Tally { label, count }) => (label.as_str(), *count),
+                _ => (label.as_str(), *count),
+            };
+            draw_tally(ctx, transform, r, style, label, n);
+        }
     }
 }
 
@@ -817,6 +840,112 @@ fn draw_daily_appointments(
             set_color(ctx, style.stroke_color);
             ctx.set_line_width(lw);
         }
+    }
+}
+
+fn draw_habit_tracker(
+    ctx: &cairo::Context,
+    transform: &ViewportTransform,
+    r: &WidgetRect,
+    style: &WidgetStyle,
+    habits: &[String],
+    days: u32,
+    highlight_col: Option<u32>,
+) {
+    let _ = transform;
+    let lw = style.stroke_width_mm.max(0.18);
+    let days = days.max(1);
+    let row_count = habits.len().max(1);
+    let label_col_w = (r.width * 0.28).clamp(20.0, 60.0);
+    let header_h = (r.height * 0.07).clamp(4.0, 8.0);
+    let body_w = r.width - label_col_w;
+    let body_h = r.height - header_h;
+    let col_w = body_w / days as f64;
+    let row_h = body_h / row_count as f64;
+
+    if let Some(col) = highlight_col {
+        if col >= 1 && col <= days {
+            ctx.save().ok();
+            ctx.set_source_rgba(0.839, 0.659, 0.227, 0.24);
+            let cx = r.x + label_col_w + col_w * (col - 1) as f64;
+            ctx.rectangle(cx, r.y, col_w, r.height);
+            let _ = ctx.fill();
+            ctx.restore().ok();
+        }
+    }
+
+    set_color(ctx, style.stroke_color);
+    ctx.set_line_width(lw);
+    rect_path(ctx, r);
+    let _ = ctx.stroke();
+    ctx.move_to(r.x, r.y + header_h);
+    ctx.line_to(r.x + r.width, r.y + header_h);
+    let _ = ctx.stroke();
+    ctx.move_to(r.x + label_col_w, r.y);
+    ctx.line_to(r.x + label_col_w, r.y + r.height);
+    let _ = ctx.stroke();
+    for c in 1..days {
+        let x = r.x + label_col_w + col_w * c as f64;
+        ctx.move_to(x, r.y + header_h);
+        ctx.line_to(x, r.y + r.height);
+        let _ = ctx.stroke();
+    }
+    for rr in 1..row_count {
+        let y = r.y + header_h + row_h * rr as f64;
+        ctx.move_to(r.x, y);
+        ctx.line_to(r.x + r.width, y);
+        let _ = ctx.stroke();
+    }
+
+    let header_fs = (header_h * 0.6).clamp(2.5, 5.0);
+    ctx.set_font_size(header_fs);
+    for d in 1..=days {
+        let x = r.x + label_col_w + col_w * (d - 1) as f64;
+        let label = d.to_string();
+        if let Ok(ext) = ctx.text_extents(&label) {
+            let cx = x + (col_w - ext.width()) * 0.5 - ext.x_bearing();
+            ctx.move_to(cx, r.y + header_h * 0.85);
+            let _ = ctx.show_text(&label);
+        }
+    }
+
+    let label_fs = (row_h * 0.55).clamp(3.0, 6.0);
+    ctx.set_font_size(label_fs);
+    for (i, name) in habits.iter().enumerate() {
+        let y = r.y + header_h + row_h * (i as f64 + 0.5) + label_fs * 0.35;
+        ctx.move_to(r.x + 1.5, y);
+        let _ = ctx.show_text(name);
+    }
+}
+
+fn draw_tally(
+    ctx: &cairo::Context,
+    transform: &ViewportTransform,
+    r: &WidgetRect,
+    style: &WidgetStyle,
+    label: &str,
+    count: u32,
+) {
+    let _ = transform;
+    let count = count.max(1);
+    let label_w = (r.width * 0.30).clamp(15.0, 60.0);
+    let circles_w = r.width - label_w;
+    let label_fs = (r.height * 0.55).clamp(3.0, 7.0);
+    set_color(ctx, style.stroke_color);
+    ctx.set_font_size(label_fs);
+    ctx.move_to(r.x + 1.0, r.y + r.height * 0.5 + label_fs * 0.35);
+    let _ = ctx.show_text(label);
+
+    let max_d = (r.height * 0.85).max(2.0);
+    let stride = circles_w / count as f64;
+    let diameter = stride.min(max_d) * 0.8;
+    let radius = diameter * 0.5;
+    ctx.set_line_width(style.stroke_width_mm.max(0.25));
+    for i in 0..count {
+        let cx = r.x + label_w + stride * (i as f64 + 0.5);
+        let cy = r.y + r.height * 0.5;
+        ctx.arc(cx, cy, radius, 0.0, std::f64::consts::TAU);
+        let _ = ctx.stroke();
     }
 }
 

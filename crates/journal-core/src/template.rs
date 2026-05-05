@@ -137,6 +137,21 @@ pub enum WidgetKind {
     },
     /// Grid of labeled role/goal boxes for weekly planning (Franklin Covey Weekly Compass).
     WeeklyCompass,
+    /// Habit-tracker grid: rows are habits (one per name) and columns
+    /// are day numbers (1..=days). Each cell renders an empty checkbox
+    /// for the user to fill in. Smart: when bound to a real date, the
+    /// column matching the bound date's day-of-month is highlighted.
+    HabitTracker {
+        habits: Vec<String>,
+        /// Number of day columns. 31 covers any month.
+        days: u32,
+    },
+    /// Horizontal row of N empty circles — quick visual tally for
+    /// daily counts (water glasses, reps, pomodoros, etc).
+    Tally {
+        label: String,
+        count: u32,
+    },
 }
 
 /// A widget placed on a template canvas.
