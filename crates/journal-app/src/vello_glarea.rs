@@ -54,6 +54,16 @@ pub fn build(state: SharedState) -> Option<GLArea> {
     let vello_cell: Rc<RefCell<Option<VelloRenderer>>> = Rc::new(RefCell::new(None));
     let widgets_cell: Rc<RefCell<journal_widgets::WidgetRenderer>> =
         Rc::new(RefCell::new(journal_widgets::WidgetRenderer::new()));
+    // Cached Vello scene of the page's template widgets (drawn at
+    // canvas-space identity transform). Re-laying out parley text and
+    // walking every widget every frame is the dominant CPU cost during
+    // a stroke on widget-heavy pages (Daily Planner, Cornell, etc).
+    // We rebuild only when the cache key (template widget ids + page
+    // rect + bound date + dark mode + now-minute + overrides) changes,
+    // and `Scene::append` composes the cached scene under the live
+    // `world_to_screen` transform on every frame.
+    let widgets_cache: Rc<RefCell<Option<(u64, journal_widgets::VelloScene)>>> =
+        Rc::new(RefCell::new(None));
 
     {
         let gl_cell = gl_cell.clone();
@@ -282,6 +292,15 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 }
             }
 
+            let widget_key = widget_cache_key(
+                &widgets,
+                &widget_ctx,
+                page_rect,
+                overlays.dark_mode,
+            );
+            let widgets_cache_inner = widgets_cache.clone();
+            let widgets_cell_inner = widgets_cell.clone();
+
             // Render Vello scene to RGBA8.
             let rgba = match vello_cell.borrow_mut().as_mut().unwrap().render_rgba(
                 &transform,
@@ -294,13 +313,28 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 w,
                 h,
                 |scene, world_to_screen, pr| {
-                    widgets_cell.borrow_mut().draw_widgets(
-                        scene,
-                        world_to_screen,
+                    // Cache hit: append the pre-built widget scene under
+                    // the live world-to-screen transform.
+                    let mut cache = widgets_cache_inner.borrow_mut();
+                    if let Some((k, cached)) = cache.as_ref() {
+                        if *k == widget_key {
+                            scene.append(cached, Some(world_to_screen));
+                            return;
+                        }
+                    }
+                    // Cache miss: rebuild the widget scene at IDENTITY
+                    // (canvas space) so it can be re-appended under any
+                    // world_to_screen on later frames.
+                    let mut fresh = journal_widgets::VelloScene::new();
+                    widgets_cell_inner.borrow_mut().draw_widgets(
+                        &mut fresh,
+                        journal_widgets::VelloAffine::IDENTITY,
                         &widgets,
                         pr,
                         &widget_ctx,
                     );
+                    scene.append(&fresh, Some(world_to_screen));
+                    *cache = Some((widget_key, fresh));
                 },
             ) {
                 Ok(b) => b,
@@ -599,6 +633,68 @@ fn compute_cursor_radius(s: &crate::state::CanvasState) -> f64 {
             _ => 5.0,
         }
     }
+}
+
+/// Hash of the bits that affect template-widget rendering output. When
+/// this matches the cached value, the widget Scene from last frame is
+/// re-appended under the live transform instead of rebuilt from scratch
+/// — saves the parley layout work on every stroke point.
+///
+/// Including `now_minute()` when any widget cares about "today" means
+/// the cache invalidates once per minute on a page bound to today's
+/// date; one parley rebuild per minute is a fraction of the cost of
+/// rebuilding every frame at 60Hz.
+fn widget_cache_key(
+    widgets: &[journal_core::TemplateWidget],
+    ctx: &journal_widgets::WidgetRenderContext,
+    page_rect: journal_core::Rect,
+    dark_mode: bool,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    widgets.len().hash(&mut h);
+    for w in widgets {
+        w.id.as_u128().hash(&mut h);
+        std::mem::discriminant(&w.kind).hash(&mut h);
+        // Hash the rect so widget moves invalidate.
+        w.rect.x.to_bits().hash(&mut h);
+        w.rect.y.to_bits().hash(&mut h);
+        w.rect.width.to_bits().hash(&mut h);
+        w.rect.height.to_bits().hash(&mut h);
+        // Hash variant bytes for kinds whose payload changes
+        // rendering output (text, item count, hour ranges).
+        format!("{:?}", w.kind).hash(&mut h);
+    }
+    if let Some(d) = ctx.date {
+        use chrono::Datelike;
+        d.year().hash(&mut h);
+        d.month().hash(&mut h);
+        d.day().hash(&mut h);
+    } else {
+        0u32.hash(&mut h);
+    }
+    ctx.overrides.len().hash(&mut h);
+    for (id, ov) in &ctx.overrides {
+        id.as_u128().hash(&mut h);
+        format!("{:?}", ov).hash(&mut h);
+    }
+    page_rect.x.to_bits().hash(&mut h);
+    page_rect.y.to_bits().hash(&mut h);
+    page_rect.width.to_bits().hash(&mut h);
+    page_rect.height.to_bits().hash(&mut h);
+    dark_mode.hash(&mut h);
+    // "Now"-line position: invalidate once per minute when widgets
+    // could care (Timeline / DailyAppointments / CalendarMonth on
+    // today's page).
+    let needs_now = ctx
+        .date
+        .is_some_and(|d| d == chrono::Local::now().date_naive());
+    if needs_now {
+        let now = chrono::Local::now();
+        use chrono::Timelike;
+        (now.hour() * 60 + now.minute()).hash(&mut h);
+    }
+    h.finish()
 }
 
 /// Cheap hash of the bits the renderer cares about. If this doesn't change,

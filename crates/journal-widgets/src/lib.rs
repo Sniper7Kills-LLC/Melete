@@ -11,6 +11,12 @@
 //! steady state) and exposes [`WidgetRenderer::draw_widgets`] which
 //! mirrors the original Cairo entry point.
 
+// Re-export the bits of vello that callers need to pre-build / cache
+// scenes that get appended into ours. Keeps `journal-app` from having
+// to declare a direct vello dependency.
+pub use vello::kurbo::Affine as VelloAffine;
+pub use vello::Scene as VelloScene;
+
 use std::collections::HashMap;
 
 use journal_core::{

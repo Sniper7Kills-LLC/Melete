@@ -83,7 +83,13 @@ pub fn attach_stylus(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
     let area: gtk4::Widget = area_in.clone().upcast();
     let area = &area;
     let gesture = GestureStylus::new();
-    gesture.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    // Bubble (the default) — Capture intercepts events before the target
+    // widget's own handlers fire, which on GTK4 swallows stylus tap
+    // events that the floating toolbar / overlay buttons need to wake
+    // up. Letting them bubble back lets the canvas still react to
+    // stylus events targeted at it without stealing taps from UI
+    // children sitting above the GLArea in the overlay.
+    gesture.set_propagation_phase(gtk4::PropagationPhase::Bubble);
 
     {
         let state = state.clone();
