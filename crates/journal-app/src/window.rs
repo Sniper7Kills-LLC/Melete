@@ -60,10 +60,21 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     sidebar_toggle_btn.set_visible(false);
     header.pack_start(&sidebar_toggle_btn);
 
-    let notebook_settings_btn = Button::from_icon_name("emblem-system-symbolic");
+    let notebook_settings_btn = Button::from_icon_name("document-properties-symbolic");
     notebook_settings_btn.set_tooltip_text(Some("Notebook settings"));
     notebook_settings_btn.set_visible(false);
     header.pack_end(&notebook_settings_btn);
+
+    let app_settings_btn = Button::from_icon_name("preferences-system-symbolic");
+    app_settings_btn.set_tooltip_text(Some("App settings"));
+    header.pack_end(&app_settings_btn);
+    {
+        let parent = parent.clone();
+        let state = state.clone();
+        app_settings_btn.connect_clicked(move |_| {
+            crate::settings_dialogs::open_app_settings(&parent, state.clone(), Box::new(|| {}));
+        });
+    }
 
     // Create current_notebook early so build_menu_button can share it.
     let current_notebook: Rc<RefCell<Option<NotebookId>>> = Rc::new(RefCell::new(None));
@@ -87,6 +98,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     header.pack_end(&cheatsheet_btn);
 
     let canvas = canvas_widget::build_canvas(state.clone());
+    crate::fetcher::install_poller(state.clone(), canvas.clone());
     let bar = toolbar::build_toolbar(state.clone(), tools_open.clone());
     let canvas_overlay = Overlay::new();
 

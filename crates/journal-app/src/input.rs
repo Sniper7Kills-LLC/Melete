@@ -95,6 +95,7 @@ pub fn attach_stylus(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
         let state = state.clone();
         let area = area.clone();
         gesture.connect_down(move |g, x, y| {
+            apply_stylus_tool_override(&state, g);
             let pressure = g.axis(gtk4::gdk::AxisUse::Pressure).unwrap_or(0.5) as f32;
             let tilt_x = g.axis(gtk4::gdk::AxisUse::Xtilt).unwrap_or(0.0) as f32;
             let tilt_y = g.axis(gtk4::gdk::AxisUse::Ytilt).unwrap_or(0.0) as f32;
@@ -107,6 +108,7 @@ pub fn attach_stylus(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
         let state = state.clone();
         let area = area.clone();
         gesture.connect_motion(move |g, x, y| {
+            apply_stylus_tool_override(&state, g);
             let pressure = g.axis(gtk4::gdk::AxisUse::Pressure).unwrap_or(0.5) as f32;
             let tilt_x = g.axis(gtk4::gdk::AxisUse::Xtilt).unwrap_or(0.0) as f32;
             let tilt_y = g.axis(gtk4::gdk::AxisUse::Ytilt).unwrap_or(0.0) as f32;
@@ -118,13 +120,176 @@ pub fn attach_stylus(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
     {
         let state = state.clone();
         let area = area.clone();
-        gesture.connect_up(move |_g, _x, _y| {
+        gesture.connect_up(move |g, _x, _y| {
             handle_end(&state);
+            // Restore tool if a flip-override was active and the stylus
+            // is no longer reporting Eraser tool_type.
+            apply_stylus_tool_override(&state, g);
             area.queue_draw();
         });
     }
 
     area.add_controller(gesture);
+    attach_stylus_buttons(area_in, state);
+}
+
+/// Inspects the current GdkEvent on the stylus gesture and, if the
+/// device tool type is `Eraser` (typical for the flipped/back end of a
+/// stylus), forces the active tool to `Eraser(Partial)` for the
+/// duration. When the tool flips back to `Pen`, the previously-active
+/// tool is restored. Override is tracked through
+/// `state.stylus_button_prev_tool` so it composes with the barrel-button
+/// hold-to-erase mapping (whichever fires first wins; the second is a
+/// no-op until release).
+fn apply_stylus_tool_override(state: &SharedState, g: &GestureStylus) {
+    use gtk4::gdk::DeviceToolType;
+    let tool_type = g
+        .current_event()
+        .and_then(|e| e.device_tool())
+        .map(|t| t.tool_type());
+    let is_eraser = matches!(tool_type, Some(DeviceToolType::Eraser));
+
+    let mut s = state.borrow_mut();
+    if is_eraser {
+        if !matches!(s.tool, Tool::Eraser(_)) {
+            if s.stylus_button_prev_tool.is_none() {
+                s.stylus_button_prev_tool = Some(s.tool);
+            }
+            let has_in_flight = s.current_stroke.is_some();
+            drop(s);
+            // Commit any stroke currently in flight so the eraser can act
+            // on it without the user lifting the pen first.
+            if has_in_flight {
+                finish_stroke(state);
+            }
+            crate::state::set_tool(
+                state,
+                Tool::Eraser(crate::state::EraserMode::Partial),
+            );
+        }
+    } else if let Some(prev) = s.stylus_button_prev_tool.take() {
+        drop(s);
+        crate::state::set_tool(state, prev);
+    }
+}
+
+/// Captures stylus barrel-button press/release events via an
+/// `EventControllerLegacy`. GTK4's `GestureStylus` only surfaces tip
+/// down/motion/up — barrel buttons arrive as plain button events that we
+/// have to filter ourselves (button >= 2, originating from a stylus
+/// `DeviceTool`).
+///
+/// Mappings:
+/// - **Lower barrel (button 2)** — hold-to-erase. On press, save the
+///   active tool and switch to `Eraser(Partial)`; on release, restore.
+/// - **Upper barrel (button 3)** — single click cycles through either
+///   drawing tools or `color_slots`, controlled by
+///   `AppConfig::stylus_top_action`.
+fn attach_stylus_buttons(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
+    let area: gtk4::Widget = area_in.clone().upcast();
+    let ctrl = gtk4::EventControllerLegacy::new();
+    ctrl.set_propagation_phase(gtk4::PropagationPhase::Capture);
+
+    let state_for_event = state.clone();
+    let area_for_event = area.clone();
+    ctrl.connect_event(move |_ctrl, event| {
+        use gtk4::gdk::EventType;
+        if event.device_tool().is_none() {
+            return glib::Propagation::Proceed;
+        }
+        let et = event.event_type();
+        if et != EventType::ButtonPress && et != EventType::ButtonRelease {
+            return glib::Propagation::Proceed;
+        }
+        let Some(button_event) = event.downcast_ref::<gtk4::gdk::ButtonEvent>() else {
+            return glib::Propagation::Proceed;
+        };
+        let button = button_event.button();
+        if button < 2 {
+            return glib::Propagation::Proceed;
+        }
+        match (et, button) {
+            (EventType::ButtonPress, 2) => {
+                let mut s = state_for_event.borrow_mut();
+                if s.stylus_button_prev_tool.is_none() {
+                    s.stylus_button_prev_tool = Some(s.tool);
+                }
+                drop(s);
+                crate::state::set_tool(
+                    &state_for_event,
+                    Tool::Eraser(crate::state::EraserMode::Partial),
+                );
+                area_for_event.queue_draw();
+                glib::Propagation::Stop
+            }
+            (EventType::ButtonRelease, 2) => {
+                let prev = state_for_event.borrow_mut().stylus_button_prev_tool.take();
+                if let Some(t) = prev {
+                    crate::state::set_tool(&state_for_event, t);
+                }
+                area_for_event.queue_draw();
+                glib::Propagation::Stop
+            }
+            (EventType::ButtonPress, 3) => {
+                let action = crate::config::load().stylus_top_action;
+                match action {
+                    crate::config::StylusTopAction::ToolCycle => {
+                        cycle_drawing_tool(&state_for_event);
+                    }
+                    crate::config::StylusTopAction::ColorCycle => {
+                        cycle_color_slot(&state_for_event);
+                    }
+                }
+                area_for_event.queue_draw();
+                glib::Propagation::Stop
+            }
+            _ => glib::Propagation::Proceed,
+        }
+    });
+
+    area.add_controller(ctrl);
+}
+
+fn cycle_drawing_tool(state: &SharedState) {
+    const ORDER: [Tool; 6] = [
+        Tool::Pen,
+        Tool::Pencil,
+        Tool::Highlighter,
+        Tool::Paintbrush,
+        Tool::SprayCan,
+        Tool::Calligraphy,
+    ];
+    let cur = state.borrow().tool;
+    let idx = ORDER.iter().position(|t| *t == cur).unwrap_or(0);
+    let next = ORDER[(idx + 1) % ORDER.len()];
+    crate::state::set_tool(state, next);
+}
+
+fn cycle_color_slot(state: &SharedState) {
+    let cfg = crate::config::load();
+    if cfg.color_slots.is_empty() {
+        return;
+    }
+    let mut s = state.borrow_mut();
+    let cur = [
+        s.pen.color.r,
+        s.pen.color.g,
+        s.pen.color.b,
+        s.pen.color.a,
+    ];
+    let idx = cfg
+        .color_slots
+        .iter()
+        .position(|c| *c == cur)
+        .map(|i| (i + 1) % cfg.color_slots.len())
+        .unwrap_or(0);
+    let next = cfg.color_slots[idx];
+    s.pen.color = journal_core::Color {
+        r: next[0],
+        g: next[1],
+        b: next[2],
+        a: next[3],
+    };
 }
 
 pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
@@ -552,46 +717,124 @@ fn compute_stroke_bbox(points: &[StrokePoint], half_width: f64) -> Rect {
     }
 }
 
-/// Split a stroke at eraser circle: returns the child sub-strokes (runs of points
-/// NOT within the eraser radius). Returns empty vec if nothing survives.
+/// Returns the parametric values t ∈ [0, 1] where segment a→b crosses the
+/// circle boundary (cx, cy, r). Returns 0–2 values, sorted ascending.
+fn segment_circle_intersections(
+    ax: f64,
+    ay: f64,
+    bx: f64,
+    by: f64,
+    cx: f64,
+    cy: f64,
+    r: f64,
+) -> Vec<f64> {
+    let dx = bx - ax;
+    let dy = by - ay;
+    let fx = ax - cx;
+    let fy = ay - cy;
+    let a = dx * dx + dy * dy;
+    if a < 1e-12 {
+        return Vec::new();
+    }
+    let b = 2.0 * (fx * dx + fy * dy);
+    let c = fx * fx + fy * fy - r * r;
+    let disc = b * b - 4.0 * a * c;
+    if disc < 0.0 {
+        return Vec::new();
+    }
+    let s = disc.sqrt();
+    let t1 = (-b - s) / (2.0 * a);
+    let t2 = (-b + s) / (2.0 * a);
+    let mut out = Vec::new();
+    if t1 > 0.0 && t1 < 1.0 {
+        out.push(t1);
+    }
+    if t2 > 0.0 && t2 < 1.0 && (t2 - t1).abs() > 1e-9 {
+        out.push(t2);
+    }
+    out
+}
+
+fn lerp_stroke_point(a: &StrokePoint, b: &StrokePoint, t: f64) -> StrokePoint {
+    let tf = t as f32;
+    StrokePoint {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        pressure: a.pressure + (b.pressure - a.pressure) * tf,
+        tilt_x: a.tilt_x + (b.tilt_x - a.tilt_x) * tf,
+        tilt_y: a.tilt_y + (b.tilt_y - a.tilt_y) * tf,
+        timestamp_ms: a.timestamp_ms,
+    }
+}
+
+/// Split a stroke at the eraser circle. Splitting happens at the circle
+/// boundary, not at vertex granularity — segments crossing the circle are
+/// clipped at the intersection points so surviving runs end exactly at the
+/// circle edge.
 fn split_stroke_by_eraser(stroke: &Stroke, cx: f64, cy: f64, r: f64) -> Vec<Stroke> {
     let zoc = stroke.zoom_at_creation.max(1e-6);
     let half_w = stroke.pen.base_width / zoc * 0.5;
     let r2 = r * r;
-    let inside = |p: &StrokePoint| (p.x - cx).powi(2) + (p.y - cy).powi(2) <= r2;
+    let inside_pt = |p: &StrokePoint| (p.x - cx).powi(2) + (p.y - cy).powi(2) <= r2;
 
     let mut children: Vec<Stroke> = Vec::new();
     let mut run: Vec<StrokePoint> = Vec::new();
+    let pts = &stroke.points;
+    if pts.is_empty() {
+        return children;
+    }
 
-    for pt in &stroke.points {
-        if inside(pt) {
-            if run.len() >= 2 {
-                let bbox = compute_stroke_bbox(&run, half_w);
-                children.push(Stroke {
-                    id: Uuid::new_v4(),
-                    points: run.clone(),
-                    pen: stroke.pen,
-                    zoom_at_creation: stroke.zoom_at_creation,
-                    bounding_box: bbox,
-                    brush_recipe: stroke.brush_recipe.clone(),
-                });
-            }
-            run.clear();
+    let flush = |run: &mut Vec<StrokePoint>, children: &mut Vec<Stroke>| {
+        if run.len() >= 2 {
+            let bbox = compute_stroke_bbox(run, half_w);
+            children.push(Stroke {
+                id: Uuid::new_v4(),
+                points: std::mem::take(run),
+                pen: stroke.pen,
+                zoom_at_creation: stroke.zoom_at_creation,
+                bounding_box: bbox,
+                brush_recipe: stroke.brush_recipe.clone(),
+            });
         } else {
-            run.push(*pt);
+            run.clear();
+        }
+    };
+
+    if !inside_pt(&pts[0]) {
+        run.push(pts[0]);
+    }
+    for i in 1..pts.len() {
+        let a = &pts[i - 1];
+        let b = &pts[i];
+        let a_in = inside_pt(a);
+        let b_in = inside_pt(b);
+        let ts = segment_circle_intersections(a.x, a.y, b.x, b.y, cx, cy, r);
+        match (a_in, b_in) {
+            (false, false) => {
+                if ts.len() == 2 {
+                    run.push(lerp_stroke_point(a, b, ts[0]));
+                    flush(&mut run, &mut children);
+                    run.push(lerp_stroke_point(a, b, ts[1]));
+                    run.push(*b);
+                } else {
+                    run.push(*b);
+                }
+            }
+            (false, true) => {
+                if let Some(&t) = ts.first() {
+                    run.push(lerp_stroke_point(a, b, t));
+                }
+                flush(&mut run, &mut children);
+            }
+            (true, false) => {
+                let t = ts.last().copied().unwrap_or(0.0);
+                run.push(lerp_stroke_point(a, b, t));
+                run.push(*b);
+            }
+            (true, true) => {}
         }
     }
-    if run.len() >= 2 {
-        let bbox = compute_stroke_bbox(&run, half_w);
-        children.push(Stroke {
-            id: Uuid::new_v4(),
-            points: run,
-            pen: stroke.pen,
-            zoom_at_creation: stroke.zoom_at_creation,
-            bounding_box: bbox,
-            brush_recipe: stroke.brush_recipe.clone(),
-        });
-    }
+    flush(&mut run, &mut children);
     children
 }
 

@@ -312,6 +312,7 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
                 t => Some(t.to_string()),
             };
             new_cfg.developer_mode = inputs.developer_mode;
+            new_cfg.stylus_top_action = inputs.stylus_top_action;
             if let Err(e) = crate::config::save(&new_cfg) {
                 tracing::error!("save config: {e}");
             }
@@ -419,6 +420,26 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
         });
     }
 
+    // ── Stylus ───────────────────────────────────────────────────────
+    let stylus_group = adw::PreferencesGroup::builder()
+        .title("Stylus")
+        .description("Stylus barrel-button bindings.")
+        .build();
+    let top_action_labels = ["Cycle drawing tools", "Cycle color slots"];
+    let top_action_model = gtk4::StringList::new(&top_action_labels);
+    let active_top_idx = match cfg.stylus_top_action {
+        crate::config::StylusTopAction::ToolCycle => 0,
+        crate::config::StylusTopAction::ColorCycle => 1,
+    };
+    let top_action_row = adw::ComboRow::builder()
+        .title("Top barrel button")
+        .subtitle("Action when the upper stylus button is clicked.")
+        .model(&top_action_model)
+        .selected(active_top_idx)
+        .build();
+    stylus_group.add(&top_action_row);
+    page.add(&stylus_group);
+
     // ── Developer ────────────────────────────────────────────────────
     let dev_group = adw::PreferencesGroup::builder().title("Developer").build();
     let dev_row = adw::SwitchRow::builder()
@@ -439,10 +460,15 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
         let path_state = path_state.clone();
         let text_row = text_row.clone();
         let dev_row = dev_row.clone();
+        let top_action_row = top_action_row.clone();
         move || PersistInputs {
             image_path: path_state.borrow().clone(),
             text: text_row.text().to_string(),
             developer_mode: dev_row.is_active(),
+            stylus_top_action: match top_action_row.selected() {
+                1 => crate::config::StylusTopAction::ColorCycle,
+                _ => crate::config::StylusTopAction::ToolCycle,
+            },
         }
     };
 
@@ -502,6 +528,13 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
             persist(&snapshot_inputs());
         });
     }
+    {
+        let persist = persist.clone();
+        let snapshot_inputs = snapshot_inputs.clone();
+        top_action_row.connect_selected_notify(move |_| {
+            persist(&snapshot_inputs());
+        });
+    }
 
     prefs.present();
 }
@@ -510,6 +543,7 @@ struct PersistInputs {
     image_path: Option<std::path::PathBuf>,
     text: String,
     developer_mode: bool,
+    stylus_top_action: crate::config::StylusTopAction,
 }
 
 // ── Pen presets settings dialog ───────────────────────────────────────────────

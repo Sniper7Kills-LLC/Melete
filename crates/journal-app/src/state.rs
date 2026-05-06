@@ -109,6 +109,10 @@ pub struct CanvasState {
     /// Per-widget overrides loaded from `Page.widget_overrides` for the
     /// currently-loaded page. Empty when no page is loaded.
     pub current_page_overrides: std::collections::HashMap<uuid::Uuid, journal_core::WidgetOverride>,
+    /// Cached fetch payloads loaded from `Page.widget_data`. Read by the
+    /// Vello widget renderer; written by the app-layer fetcher.
+    pub current_page_widget_data:
+        std::collections::HashMap<uuid::Uuid, journal_core::WidgetData>,
     /// Installed by the planner navigation strip; called from `load_page`
     /// when the user clicks a Day-addressed planner page so prev/next walk
     /// from that date instead of from "today".
@@ -191,6 +195,11 @@ pub struct CanvasState {
     /// In-memory only for now — persistence lands with the
     /// per-tool brush picker UI in a follow-up commit.
     pub tool_brushes: std::collections::HashMap<String, journal_core::Brush>,
+
+    /// Tool the user had active before the lower stylus barrel button
+    /// triggered a temporary eraser. Restored on button release.
+    /// `None` when no temporary override is active.
+    pub stylus_button_prev_tool: Option<Tool>,
 }
 
 pub type SharedState = Rc<RefCell<CanvasState>>;
@@ -259,6 +268,7 @@ pub fn new_shared_state(
         current_template: None,
         current_page_date: None,
         current_page_overrides: std::collections::HashMap::new(),
+        current_page_widget_data: std::collections::HashMap::new(),
         planner_nav_sync_date: None,
         tool: Tool::Pen,
         history: History::new(),
@@ -286,6 +296,7 @@ pub fn new_shared_state(
         brush_params: journal_canvas::vello_renderer::ToolStyleParams::default(),
         tool_palettes: std::collections::HashMap::new(),
         active_brush_recipe: None,
+        stylus_button_prev_tool: None,
         brush_library: crate::brush_library::load(),
         tool_brushes: std::collections::HashMap::new(),
     }))
@@ -460,7 +471,7 @@ fn load_image_surface(path: std::path::PathBuf) -> Option<cairo::ImageSurface> {
 /// Caller is responsible for queue_draw on the canvas afterwards.
 pub fn set_current_page(state: &SharedState, page_id: PageId) {
     let backend = state.borrow().backend.clone();
-    let (strokes, page_date, overrides) = {
+    let (strokes, page_date, overrides, widget_data) = {
         let mut b = backend.borrow_mut();
         let strokes = match b.list_strokes_for_page(page_id) {
             Ok(v) => v,
@@ -469,17 +480,21 @@ pub fn set_current_page(state: &SharedState, page_id: PageId) {
                 Vec::new()
             }
         };
-        let (page_date, overrides) = match b.get_page(page_id) {
+        let (page_date, overrides, widget_data) = match b.get_page(page_id) {
             Ok(p) => {
                 let d = match p.planner_address {
                     Some(journal_core::CalendarPageAddress::Day { date, .. }) => Some(date),
                     _ => None,
                 };
-                (d, p.widget_overrides.clone())
+                (d, p.widget_overrides.clone(), p.widget_data.clone())
             }
-            Err(_) => (None, std::collections::HashMap::new()),
+            Err(_) => (
+                None,
+                std::collections::HashMap::new(),
+                std::collections::HashMap::new(),
+            ),
         };
-        (strokes, page_date, overrides)
+        (strokes, page_date, overrides, widget_data)
     };
     let mut s = state.borrow_mut();
     let was_different = s.current_page_id != Some(page_id);
@@ -491,6 +506,10 @@ pub fn set_current_page(state: &SharedState, page_id: PageId) {
     }
     s.current_page_date = page_date;
     s.current_page_overrides = overrides;
+    s.current_page_widget_data = widget_data;
+    drop(s);
+    crate::fetcher::schedule_fetches_for_current_page(state.clone());
+    let mut s = state.borrow_mut();
     s.history.clear();
     s.selected_stroke_ids.clear();
     s.lasso_points.clear();
@@ -552,7 +571,7 @@ pub fn toggle_tool_eraser(state: &SharedState) {
     let mut s = state.borrow_mut();
     s.tool = match s.tool {
         Tool::Eraser(_) => Tool::Pen,
-        _ => Tool::Eraser(EraserMode::Stroke),
+        _ => Tool::Eraser(EraserMode::Partial),
     };
 }
 

@@ -150,10 +150,6 @@ pub fn build_home(
     title.add_css_class("title-1");
     header.append(&title);
 
-    let settings_btn = Button::from_icon_name("emblem-system-symbolic");
-    settings_btn.set_tooltip_text(Some("App settings"));
-    header.append(&settings_btn);
-
     let templates_btn = Button::with_label("Templates");
     templates_btn.set_tooltip_text(Some("Manage page and notebook templates"));
     header.append(&templates_btn);
@@ -171,14 +167,6 @@ pub fn build_home(
         let opener = on_open_template_editor.clone();
         templates_btn.connect_clicked(move |_| {
             template_manager::open(&parent, state.clone(), opener.clone());
-        });
-    }
-
-    {
-        let parent = parent.clone();
-        let state = state.clone();
-        settings_btn.connect_clicked(move |_| {
-            crate::settings_dialogs::open_app_settings(&parent, state.clone(), Box::new(|| {}));
         });
     }
 

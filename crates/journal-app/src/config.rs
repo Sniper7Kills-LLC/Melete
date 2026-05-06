@@ -2,6 +2,18 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum StylusTopAction {
+    ToolCycle,
+    ColorCycle,
+}
+
+impl Default for StylusTopAction {
+    fn default() -> Self {
+        StylusTopAction::ToolCycle
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PenPreset {
     pub name: String,
@@ -129,6 +141,11 @@ pub struct AppConfig {
     /// pane and overwrite this field.
     #[serde(default)]
     pub last_seen_version: Option<String>,
+    /// Action bound to the stylus upper barrel button (single click).
+    /// `ToolCycle` (default) advances through drawing tools; `ColorCycle`
+    /// advances through `color_slots`.
+    #[serde(default)]
+    pub stylus_top_action: StylusTopAction,
 }
 
 /// (slug, label, font-family chain). The slug is what's persisted in
@@ -195,6 +212,7 @@ impl Default for AppConfig {
             display_font: None,
             tour_dismissed: false,
             last_seen_version: None,
+            stylus_top_action: StylusTopAction::ToolCycle,
         }
     }
 }
