@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::calendar::PlannerPageAddress;
 use crate::notebook::SectionId;
 use crate::template::TemplateId;
+use crate::widget_data::WidgetData;
 
 /// Unique identifier for a page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -89,4 +90,10 @@ pub struct Page {
     /// `#[serde(default)]` keeps old TOML/JSON / DB rows readable.
     #[serde(default)]
     pub widget_overrides: HashMap<Uuid, WidgetOverride>,
+    /// Cached fetch payload for fetch-backed widgets, keyed by
+    /// `TemplateWidget.id`. Populated by the app-layer fetcher; the
+    /// renderer only reads from here. `#[serde(default)]` keeps pages
+    /// from before this field was added decoding cleanly.
+    #[serde(default)]
+    pub widget_data: HashMap<Uuid, WidgetData>,
 }

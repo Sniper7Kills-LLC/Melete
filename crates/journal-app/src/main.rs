@@ -10,6 +10,7 @@ mod brush_library;
 mod canvas_widget;
 mod config;
 mod dialogs;
+mod fetcher;
 mod history;
 mod input;
 mod notebook_template_creator;
@@ -20,6 +21,8 @@ mod shortcuts;
 mod state;
 mod template_creator;
 mod template_manager;
+#[cfg(feature = "vello")]
+mod template_preview;
 mod thumbnail;
 mod tool_editor;
 mod tool_options_popup;
@@ -448,6 +451,22 @@ flowbox > flowboxchild:nth-child(12) .notebook-card { animation-delay: 330ms; }
     margin-top: 8px;
     margin-bottom: 2px;
 }
+
+/* ── Dark-mode legibility overrides ────────────────────────────────────
+   The amber/indigo palette above is tuned for the cream paper light
+   theme; on a dark background `@accent_color` (#5a5e96) and the dim
+   `opacity: 0.55` labels collapse into the chrome. These selectors
+   only apply when the root window has the `.dark` class (set by
+   `bind_system_dark_mode`) so they don't disturb the light theme. */
+.dark .notebook-card .card-kind     { color: @amber_accent; }
+.dark .notebook-card .card-subtitle { opacity: 0.85; }
+.dark .empty-state-icon             { color: alpha(@amber_accent, 0.65); }
+.dark .empty-state-subtitle         { opacity: 0.85; }
+.dark .template-category-header     { opacity: 0.80; }
+.dark .var-group-header             { opacity: 0.80; }
+.dark .nbtc-palette-cat             { opacity: 0.80; }
+.dark .nbtc-preview-prelabel        { opacity: 0.80; }
+.dark .nbtc-empty-hint              { opacity: 0.80; }
 "#;
 
 thread_local! {

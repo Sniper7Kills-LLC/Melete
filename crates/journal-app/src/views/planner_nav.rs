@@ -120,6 +120,7 @@ pub fn ensure_planner_pages(
                     modified_at: now,
                     name: title.clone(),
                     widget_overrides: Default::default(),
+                    widget_data: Default::default(),
                 };
                 if let Err(e) = db.insert_page(&page) {
                     tracing::error!("failed to insert planner page: {}", e);
@@ -361,26 +362,40 @@ fn year_fraction(d: NaiveDate) -> f64 {
     (d.ordinal() as f64 - 1.0) / days_in_year
 }
 
-/// Draw the year-progress bar: dim background rounded rect, indigo foreground,
-/// 12 month-tick lines, and optionally highlight where `frac` sits.
+/// Draw the year-progress bar: dim background rounded rect, accent foreground,
+/// 12 month-tick lines, and optionally highlight where `frac` sits. Adapts to
+/// dark mode so the indigo fill stays visible against a dark window.
 fn draw_year_bar(ctx: &gtk4::cairo::Context, w: f64, h: f64, frac: f64) {
     let r = h / 2.0;
+    let dark = crate::is_dark_mode();
 
     // Dim background track.
-    ctx.set_source_rgba(0.5, 0.5, 0.5, 0.15);
+    if dark {
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.12);
+    } else {
+        ctx.set_source_rgba(0.5, 0.5, 0.5, 0.15);
+    }
     rounded_rect(ctx, 0.0, 0.0, w, h, r);
     let _ = ctx.fill();
 
-    // Filled progress in indigo accent #3a3d6e.
+    // Filled progress: indigo on light, brighter periwinkle on dark.
     let progress_w = (w * frac).max(0.0).min(w);
     if progress_w > 0.0 {
-        ctx.set_source_rgba(0.227, 0.239, 0.431, 0.85);
+        if dark {
+            ctx.set_source_rgba(0.62, 0.66, 0.92, 0.95);
+        } else {
+            ctx.set_source_rgba(0.227, 0.239, 0.431, 0.85);
+        }
         rounded_rect(ctx, 0.0, 0.0, progress_w, h, r);
         let _ = ctx.fill();
     }
 
     // Month tick marks at each 1/12 boundary.
-    ctx.set_source_rgba(1.0, 1.0, 1.0, 0.25);
+    if dark {
+        ctx.set_source_rgba(0.0, 0.0, 0.0, 0.35);
+    } else {
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.25);
+    }
     ctx.set_line_width(0.75);
     for m in 1..12 {
         let x = w * (m as f64 / 12.0);

@@ -166,6 +166,72 @@ pub enum WidgetKind {
         sweep_deg: f64,
         sector_deg: f64,
     },
+
+    // ---- Fetch-backed widgets -------------------------------------------
+    //
+    // Each variant below is a "background data" widget — the renderer
+    // reads a typed `WidgetPayload` from the page's `widget_data` cache
+    // (see `journal_core::widget_data`). The actual fetch is performed
+    // by the app-layer fetcher; this enum only declares *what* to fetch
+    // and the per-instance config (location, source, etc).
+    //
+    // None of these require auth: every endpoint is either a free
+    // public API with no key (Open-Meteo, bible-api.com, Wikipedia REST,
+    // sunrise-sunset.org, public RSS) or computed locally (moon phase).
+
+    /// Open-Meteo forecast for the bound page-date. Caches current
+    /// conditions and a few-day strip. `Freshness::UntilDate`.
+    Weather {
+        lat: f64,
+        lon: f64,
+        location_label: String,
+        days: u32,
+    },
+    /// Quote of the day — pulled from `source` (zenquotes.io if
+    /// `source == "zen"`, quotable.io if `source == "quotable"`, or a
+    /// local rotation file if `source == "local"`). `Freshness::Once`.
+    Quote {
+        source: String,
+    },
+    /// Bible verse — `bible-api.com`. `reference` is a verse spec
+    /// (e.g. `"John 3:16"`) or `"random"` for verse-of-day.
+    /// `translation` is a translation slug (kjv, web, asv, …).
+    /// `Freshness::Once`.
+    BibleVerse {
+        reference: String,
+        translation: String,
+    },
+    /// Sunrise / sunset / daylight length for the bound date and
+    /// (lat, lon). Uses sunrise-sunset.org. `Freshness::Once`.
+    Sunrise {
+        lat: f64,
+        lon: f64,
+    },
+    /// Moon phase for the bound date — computed locally, no network.
+    /// `Freshness::Once` (since a date's phase never changes).
+    MoonPhase,
+    /// Wikipedia "On this day" events for the bound date.
+    /// `Freshness::Once`. `lang` is a Wikipedia language code (e.g.
+    /// `"en"`).
+    OnThisDay {
+        lang: String,
+        max_events: u32,
+    },
+    /// Wiktionary word-of-day pulled at page open. `Freshness::Once`.
+    WordOfDay {
+        lang: String,
+    },
+    /// Top N items from a public RSS / Atom feed. `Freshness::UntilDate`.
+    RssHeadline {
+        url: String,
+        count: u32,
+    },
+    /// Open-Meteo astronomy: planetary visibility / meteor shower
+    /// notes for the date. `Freshness::Once`.
+    Astronomy {
+        lat: f64,
+        lon: f64,
+    },
 }
 
 /// A widget placed on a template canvas.

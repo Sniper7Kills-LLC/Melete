@@ -10,7 +10,7 @@ use gtk4::{
     Label, MenuButton, Orientation, Paned, Popover, ScrolledWindow, SpinButton, Switch,
 };
 use journal_canvas::{
-    draw_widgets_with_context, paint_with_widgets_ctx, ViewportTransform, WidgetRenderContext,
+    draw_widgets_with_context, ViewportTransform, WidgetRenderContext,
 };
 use journal_core::{
     Color, PageTemplate, Rect, TemplateWidget, WidgetKind, WidgetRect, WidgetStyle,
@@ -37,6 +37,15 @@ enum PlaceTool {
     PriorityList,
     DailyAppointments,
     WeeklyCompass,
+    Weather,
+    Quote,
+    BibleVerse,
+    Sunrise,
+    MoonPhase,
+    OnThisDay,
+    WordOfDay,
+    RssHeadline,
+    Astronomy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -350,7 +359,7 @@ fn select_widget(
 /// stack and routing back-navigation through `on_done` (called from both
 /// Save and Cancel).
 pub fn build_editor_view(
-    _parent: &ApplicationWindow,
+    parent: &ApplicationWindow,
     state: SharedState,
     edit: Option<PageTemplate>,
     on_done: Rc<dyn Fn()>,
@@ -385,6 +394,10 @@ pub fn build_editor_view(
         .hexpand(true)
         .build();
     title.add_css_class("title-3");
+    let preview_btn = Button::with_label("Preview");
+    preview_btn.set_tooltip_text(Some(
+        "Render the template through the live page pipeline with widget data populated.",
+    ));
     let save_btn = Button::with_label("Save");
     save_btn.add_css_class("suggested-action");
     let saved_indicator = Label::builder().label("").halign(gtk4::Align::End).build();
@@ -392,7 +405,23 @@ pub fn build_editor_view(
     action_row.append(&back_btn);
     action_row.append(&title);
     action_row.append(&saved_indicator);
+    action_row.append(&preview_btn);
     action_row.append(&save_btn);
+
+    #[cfg(feature = "vello")]
+    {
+        let cs_preview = cs.clone();
+        let parent = parent.clone();
+        preview_btn.connect_clicked(move |_| {
+            let template = cs_preview.borrow().template.clone();
+            crate::template_preview::open_preview(&parent, template);
+        });
+    }
+    #[cfg(not(feature = "vello"))]
+    {
+        preview_btn.set_sensitive(false);
+        preview_btn.set_tooltip_text(Some("Preview requires the Vello GPU backend (built in by default)."));
+    }
     root.append(&action_row);
 
     let meta_row = build_meta_row(&cs);
@@ -413,14 +442,6 @@ pub fn build_editor_view(
         .orientation(Orientation::Vertical)
         .spacing(0)
         .build();
-
-    // ── Live preview thumbnail (audit §4) ──
-    // Repaints the template through the same Cairo widget pipeline used
-    // for real pages, with three baked-in dummy strokes so the user can
-    // see how their widgets sit relative to ink. Refreshes on a tick
-    // when the template hash changes.
-    let live_preview = build_live_preview(&cs);
-    props_outer.append(&live_preview);
 
     let props_box = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -723,6 +744,18 @@ fn build_palette(
         ("Priority List", PlaceTool::PriorityList),
         ("Day Schedule", PlaceTool::DailyAppointments),
         ("Weekly Compass", PlaceTool::WeeklyCompass),
+        // Fetch-backed widgets — pull from public no-auth APIs at page
+        // open. See `crates/journal-app/src/fetcher.rs` for endpoints
+        // and freshness policy.
+        ("Weather", PlaceTool::Weather),
+        ("Quote", PlaceTool::Quote),
+        ("Bible Verse", PlaceTool::BibleVerse),
+        ("Sun", PlaceTool::Sunrise),
+        ("Moon Phase", PlaceTool::MoonPhase),
+        ("On This Day", PlaceTool::OnThisDay),
+        ("Word of the Day", PlaceTool::WordOfDay),
+        ("RSS Headlines", PlaceTool::RssHeadline),
+        ("Astronomy", PlaceTool::Astronomy),
     ];
 
     for (label_text, tool) in tools {
@@ -1868,8 +1901,361 @@ fn refresh_props_panel(vbox: &Rc<GtkBox>, cs: &Rc<RefCell<CreatorState>>, area: 
             });
             vbox.append(&entry);
         }
+
+        // ── Fetch widgets ────────────────────────────────────────────────
+        WidgetKind::Weather {
+            lat,
+            lon,
+            location_label,
+            days,
+        } => {
+            fetch_label_entry(vbox, cs, area, idx, "Location label", &location_label, |k, v| {
+                if let WidgetKind::Weather { location_label, .. } = k {
+                    *location_label = v;
+                }
+            });
+            fetch_lat_lon(vbox, cs, area, idx, lat, lon, |k| {
+                if let WidgetKind::Weather { lat, lon, .. } = k {
+                    Some((lat, lon))
+                } else {
+                    None
+                }
+            });
+            fetch_u32_spin(vbox, cs, area, idx, "Forecast days", days, 1.0, 7.0, |k, v| {
+                if let WidgetKind::Weather { days, .. } = k {
+                    *days = v;
+                }
+            });
+        }
+        WidgetKind::Quote { source } => {
+            #[allow(deprecated)]
+            let combo = gtk4::ComboBoxText::new();
+            #[allow(deprecated)]
+            for (id, label) in [
+                ("zen", "ZenQuotes (no key)"),
+                ("quotable", "Quotable (no key)"),
+                ("local", "Local quotes.toml"),
+            ] {
+                combo.append(Some(id), label);
+            }
+            #[allow(deprecated)]
+            combo.set_active_id(Some(&source));
+            vbox.append(
+                &Label::builder()
+                    .label("Source")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
+            let cs2 = cs.clone();
+            let area2 = area.clone();
+            #[allow(deprecated)]
+            combo.connect_changed(move |c| {
+                #[allow(deprecated)]
+                let new_src = c.active_id().map(|s| s.to_string()).unwrap_or_else(|| "zen".into());
+                let before = snapshot_widget(&cs2.borrow(), idx);
+                if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                    if let WidgetKind::Quote { source } = &mut w.kind {
+                        *source = new_src;
+                    }
+                }
+                let after = snapshot_widget(&cs2.borrow(), idx);
+                if let (Some(b), Some(a)) = (before, after) {
+                    push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, b, a);
+                }
+                area2.queue_draw();
+            });
+            vbox.append(&combo);
+        }
+        WidgetKind::BibleVerse {
+            reference,
+            translation,
+        } => {
+            fetch_label_entry(
+                vbox,
+                cs,
+                area,
+                idx,
+                "Reference (or 'random')",
+                &reference,
+                |k, v| {
+                    if let WidgetKind::BibleVerse { reference, .. } = k {
+                        *reference = v;
+                    }
+                },
+            );
+            #[allow(deprecated)]
+            let combo = gtk4::ComboBoxText::new();
+            #[allow(deprecated)]
+            for (id, label) in [
+                ("kjv", "King James (KJV)"),
+                ("web", "World English Bible (WEB)"),
+                ("asv", "American Standard (ASV)"),
+                ("bbe", "Basic English (BBE)"),
+                ("ylt", "Young's Literal (YLT)"),
+            ] {
+                combo.append(Some(id), label);
+            }
+            #[allow(deprecated)]
+            combo.set_active_id(Some(&translation));
+            vbox.append(
+                &Label::builder()
+                    .label("Translation")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
+            let cs2 = cs.clone();
+            let area2 = area.clone();
+            #[allow(deprecated)]
+            combo.connect_changed(move |c| {
+                #[allow(deprecated)]
+                let new_t = c.active_id().map(|s| s.to_string()).unwrap_or_else(|| "kjv".into());
+                let before = snapshot_widget(&cs2.borrow(), idx);
+                if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                    if let WidgetKind::BibleVerse { translation, .. } = &mut w.kind {
+                        *translation = new_t;
+                    }
+                }
+                let after = snapshot_widget(&cs2.borrow(), idx);
+                if let (Some(b), Some(a)) = (before, after) {
+                    push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, b, a);
+                }
+                area2.queue_draw();
+            });
+            vbox.append(&combo);
+        }
+        WidgetKind::Sunrise { lat, lon } => {
+            fetch_lat_lon(vbox, cs, area, idx, lat, lon, |k| {
+                if let WidgetKind::Sunrise { lat, lon } = k {
+                    Some((lat, lon))
+                } else {
+                    None
+                }
+            });
+        }
+        WidgetKind::MoonPhase => {
+            vbox.append(
+                &Label::builder()
+                    .label("Computed locally — no network.")
+                    .halign(gtk4::Align::Start)
+                    .build(),
+            );
+        }
+        WidgetKind::OnThisDay { lang, max_events } => {
+            fetch_label_entry(vbox, cs, area, idx, "Wikipedia lang code", &lang, |k, v| {
+                if let WidgetKind::OnThisDay { lang, .. } = k {
+                    *lang = v;
+                }
+            });
+            fetch_u32_spin(
+                vbox,
+                cs,
+                area,
+                idx,
+                "Max events",
+                max_events,
+                1.0,
+                30.0,
+                |k, v| {
+                    if let WidgetKind::OnThisDay { max_events, .. } = k {
+                        *max_events = v;
+                    }
+                },
+            );
+        }
+        WidgetKind::WordOfDay { lang } => {
+            fetch_label_entry(vbox, cs, area, idx, "Wiktionary lang code", &lang, |k, v| {
+                if let WidgetKind::WordOfDay { lang } = k {
+                    *lang = v;
+                }
+            });
+        }
+        WidgetKind::RssHeadline { url, count } => {
+            fetch_label_entry(vbox, cs, area, idx, "Feed URL", &url, |k, v| {
+                if let WidgetKind::RssHeadline { url, .. } = k {
+                    *url = v;
+                }
+            });
+            fetch_u32_spin(vbox, cs, area, idx, "Headline count", count, 1.0, 30.0, |k, v| {
+                if let WidgetKind::RssHeadline { count, .. } = k {
+                    *count = v;
+                }
+            });
+        }
+        WidgetKind::Astronomy { lat, lon } => {
+            fetch_lat_lon(vbox, cs, area, idx, lat, lon, |k| {
+                if let WidgetKind::Astronomy { lat, lon } = k {
+                    Some((lat, lon))
+                } else {
+                    None
+                }
+            });
+        }
         _ => {}
     }
+}
+
+// --- Property-panel helpers shared by fetch widgets ------------------------
+
+fn fetch_label_entry(
+    vbox: &GtkBox,
+    cs: &Rc<RefCell<CreatorState>>,
+    area: &DrawingArea,
+    idx: usize,
+    label: &str,
+    initial: &str,
+    apply: impl Fn(&mut WidgetKind, String) + 'static,
+) {
+    vbox.append(
+        &Label::builder()
+            .label(label)
+            .halign(gtk4::Align::Start)
+            .build(),
+    );
+    let entry = Entry::builder().text(initial).hexpand(true).build();
+    let cs2 = cs.clone();
+    let area2 = area.clone();
+    let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
+    entry.connect_changed(move |e| {
+        let v = e.text().to_string();
+        let before = before_snap
+            .borrow_mut()
+            .get_or_insert_with(|| {
+                snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+            })
+            .clone();
+        if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+            apply(&mut w.kind, v);
+        }
+        let after = snapshot_widget(&cs2.borrow(), idx);
+        if let Some(after) = after {
+            push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
+        }
+        area2.queue_draw();
+    });
+    vbox.append(&entry);
+}
+
+fn fetch_u32_spin(
+    vbox: &GtkBox,
+    cs: &Rc<RefCell<CreatorState>>,
+    area: &DrawingArea,
+    idx: usize,
+    label: &str,
+    initial: u32,
+    min: f64,
+    max: f64,
+    apply: impl Fn(&mut WidgetKind, u32) + 'static,
+) {
+    vbox.append(
+        &Label::builder()
+            .label(label)
+            .halign(gtk4::Align::Start)
+            .build(),
+    );
+    let spin = SpinButton::with_range(min, max, 1.0);
+    spin.set_digits(0);
+    spin.set_value(initial as f64);
+    let cs2 = cs.clone();
+    let area2 = area.clone();
+    let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
+    spin.connect_value_changed(move |sb| {
+        let before = before_snap
+            .borrow_mut()
+            .get_or_insert_with(|| {
+                snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+            })
+            .clone();
+        if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+            apply(&mut w.kind, sb.value() as u32);
+        }
+        let after = snapshot_widget(&cs2.borrow(), idx);
+        if let Some(after) = after {
+            push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
+        }
+        area2.queue_draw();
+    });
+    vbox.append(&spin);
+}
+
+/// Lat/lon pair editor used by Weather, Sunrise, Astronomy.
+fn fetch_lat_lon(
+    vbox: &GtkBox,
+    cs: &Rc<RefCell<CreatorState>>,
+    area: &DrawingArea,
+    idx: usize,
+    initial_lat: f64,
+    initial_lon: f64,
+    pick: impl Fn(&mut WidgetKind) -> Option<(&mut f64, &mut f64)> + Clone + 'static,
+) {
+    vbox.append(
+        &Label::builder()
+            .label("Latitude")
+            .halign(gtk4::Align::Start)
+            .build(),
+    );
+    let lat_spin = SpinButton::with_range(-90.0, 90.0, 0.001);
+    lat_spin.set_digits(4);
+    lat_spin.set_value(initial_lat);
+    {
+        let cs2 = cs.clone();
+        let area2 = area.clone();
+        let pick = pick.clone();
+        let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
+        lat_spin.connect_value_changed(move |sb| {
+            let before = before_snap
+                .borrow_mut()
+                .get_or_insert_with(|| {
+                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                })
+                .clone();
+            if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                if let Some((lat, _)) = pick(&mut w.kind) {
+                    *lat = sb.value();
+                }
+            }
+            let after = snapshot_widget(&cs2.borrow(), idx);
+            if let Some(after) = after {
+                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
+            }
+            area2.queue_draw();
+        });
+    }
+    vbox.append(&lat_spin);
+
+    vbox.append(
+        &Label::builder()
+            .label("Longitude")
+            .halign(gtk4::Align::Start)
+            .build(),
+    );
+    let lon_spin = SpinButton::with_range(-180.0, 180.0, 0.001);
+    lon_spin.set_digits(4);
+    lon_spin.set_value(initial_lon);
+    {
+        let cs2 = cs.clone();
+        let area2 = area.clone();
+        let pick = pick.clone();
+        let before_snap: Rc<RefCell<Option<TemplateWidget>>> = Rc::new(RefCell::new(None));
+        lon_spin.connect_value_changed(move |sb| {
+            let before = before_snap
+                .borrow_mut()
+                .get_or_insert_with(|| {
+                    snapshot_widget(&cs2.borrow(), idx).unwrap_or_else(|| unreachable!())
+                })
+                .clone();
+            if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
+                if let Some((_, lon)) = pick(&mut w.kind) {
+                    *lon = sb.value();
+                }
+            }
+            let after = snapshot_widget(&cs2.borrow(), idx);
+            if let Some(after) = after {
+                push_or_coalesce_modify(&mut cs2.borrow_mut().history, idx, before, after);
+            }
+            area2.queue_draw();
+        });
+    }
+    vbox.append(&lon_spin);
 }
 
 fn kind_label(k: &WidgetKind) -> &'static str {
@@ -1892,6 +2278,15 @@ fn kind_label(k: &WidgetKind) -> &'static str {
         WidgetKind::HabitTracker { .. } => "Habit Tracker",
         WidgetKind::Tally { .. } => "Tally",
         WidgetKind::RangeArcs { .. } => "Range Arcs",
+        WidgetKind::Weather { .. } => "Weather",
+        WidgetKind::Quote { .. } => "Quote",
+        WidgetKind::BibleVerse { .. } => "Bible Verse",
+        WidgetKind::Sunrise { .. } => "Sun",
+        WidgetKind::MoonPhase => "Moon Phase",
+        WidgetKind::OnThisDay { .. } => "On This Day",
+        WidgetKind::WordOfDay { .. } => "Word of the Day",
+        WidgetKind::RssHeadline { .. } => "RSS Headlines",
+        WidgetKind::Astronomy { .. } => "Astronomy",
     }
 }
 
@@ -1962,6 +2357,15 @@ fn default_size_for(tool: PlaceTool) -> (f64, f64) {
         PlaceTool::PriorityList => (90.0, 130.0),
         PlaceTool::DailyAppointments => (90.0, 150.0),
         PlaceTool::WeeklyCompass => (110.0, 130.0),
+        PlaceTool::Weather => (110.0, 50.0),
+        PlaceTool::Quote => (140.0, 40.0),
+        PlaceTool::BibleVerse => (140.0, 50.0),
+        PlaceTool::Sunrise => (60.0, 35.0),
+        PlaceTool::MoonPhase => (45.0, 55.0),
+        PlaceTool::OnThisDay => (140.0, 70.0),
+        PlaceTool::WordOfDay => (110.0, 45.0),
+        PlaceTool::RssHeadline => (140.0, 70.0),
+        PlaceTool::Astronomy => (90.0, 35.0),
         PlaceTool::None => (40.0, 40.0),
     }
 }
@@ -1994,230 +2398,45 @@ fn default_kind_for(tool: PlaceTool) -> WidgetKind {
             end_hour: 19,
         },
         PlaceTool::WeeklyCompass => WidgetKind::WeeklyCompass,
+        // Fetch widgets — see fetcher.rs for the source endpoints. The
+        // defaults here pick sensible-but-replaceable values; users tune
+        // them via the Properties panel after placement.
+        PlaceTool::Weather => WidgetKind::Weather {
+            // Default to NYC; user overrides per instance.
+            lat: 40.7128,
+            lon: -74.006,
+            location_label: "New York".into(),
+            days: 5,
+        },
+        PlaceTool::Quote => WidgetKind::Quote {
+            source: "zen".into(),
+        },
+        PlaceTool::BibleVerse => WidgetKind::BibleVerse {
+            reference: "random".into(),
+            translation: "kjv".into(),
+        },
+        PlaceTool::Sunrise => WidgetKind::Sunrise {
+            lat: 40.7128,
+            lon: -74.006,
+        },
+        PlaceTool::MoonPhase => WidgetKind::MoonPhase,
+        PlaceTool::OnThisDay => WidgetKind::OnThisDay {
+            lang: "en".into(),
+            max_events: 5,
+        },
+        PlaceTool::WordOfDay => WidgetKind::WordOfDay {
+            lang: "en".into(),
+        },
+        PlaceTool::RssHeadline => WidgetKind::RssHeadline {
+            url: "https://hnrss.org/frontpage".into(),
+            count: 5,
+        },
+        PlaceTool::Astronomy => WidgetKind::Astronomy {
+            lat: 40.7128,
+            lon: -74.006,
+        },
         PlaceTool::None => WidgetKind::Rectangle,
     }
-}
-
-/// "On a real page" preview thumbnail — paints the template + dummy
-/// strokes through the live render pipeline. Audit §4: lets the user
-/// see how widgets sit relative to ink without saving + opening a page.
-fn build_live_preview(cs: &Rc<RefCell<CreatorState>>) -> GtkBox {
-    use std::cell::Cell;
-
-    let outer = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(4)
-        .margin_top(8)
-        .margin_bottom(8)
-        .margin_start(8)
-        .margin_end(8)
-        .build();
-
-    let header = Label::builder()
-        .label("On a real page")
-        .halign(gtk4::Align::Start)
-        .build();
-    header.add_css_class("dim-label");
-    outer.append(&header);
-
-    let area = DrawingArea::builder()
-        .height_request(280)
-        .hexpand(true)
-        .build();
-    area.add_css_class("template-preview-frame");
-
-    {
-        let cs = cs.clone();
-        area.set_draw_func(move |_a, ctx, w, h| {
-            if w <= 0 || h <= 0 {
-                return;
-            }
-            let s = cs.borrow();
-            let template = &s.template;
-            let dark_mode = libadwaita::StyleManager::default().is_dark();
-            let (tw, th) = template.size_mm;
-            let page_rect = Rect {
-                x: 0.0,
-                y: 0.0,
-                width: tw,
-                height: th,
-            };
-            let margin = 0.92;
-            let zoom = ((w as f64 / tw).min(h as f64 / th)) * margin;
-            let viewport = journal_core::Viewport {
-                center: journal_core::Point {
-                    x: tw * 0.5,
-                    y: th * 0.5,
-                },
-                zoom,
-                rotation: 0.0,
-            };
-            let transform = ViewportTransform::new(viewport, w as f64, h as f64);
-            let bg = journal_templates::page_template_to_background_config(template);
-            let strokes = dummy_strokes(page_rect);
-            let render_ctx = WidgetRenderContext {
-                date: Some(chrono::Local::now().date_naive()),
-                overrides: Default::default(),
-            };
-            let empty: HashSet<Uuid> = HashSet::new();
-            paint_with_widgets_ctx(
-                ctx,
-                &transform,
-                &bg,
-                page_rect,
-                &template.widgets,
-                &strokes,
-                &empty,
-                dark_mode,
-                &render_ctx,
-            );
-        });
-    }
-
-    // Cheap dirty check: hash widget count + each widget rect's (x, y,
-    // w, h) into a u64 every tick. Repaint only when it changes — keeps
-    // the thumbnail responsive without burning CPU on idle frames.
-    {
-        let area_for_tick = area.clone();
-        let cs = cs.clone();
-        let last_hash: Rc<Cell<u64>> = Rc::new(Cell::new(0));
-        area.add_tick_callback(move |_, _| {
-            let h = template_hash(&cs.borrow());
-            if h != last_hash.get() {
-                last_hash.set(h);
-                area_for_tick.queue_draw();
-            }
-            gtk4::glib::ControlFlow::Continue
-        });
-    }
-
-    outer.append(&area);
-    outer
-}
-
-fn template_hash(cs: &CreatorState) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    cs.template.widgets.len().hash(&mut h);
-    let (sw, sh) = cs.template.size_mm;
-    sw.to_bits().hash(&mut h);
-    sh.to_bits().hash(&mut h);
-    format!("{:?}", cs.template.background).hash(&mut h);
-    for w in &cs.template.widgets {
-        w.rect.x.to_bits().hash(&mut h);
-        w.rect.y.to_bits().hash(&mut h);
-        w.rect.width.to_bits().hash(&mut h);
-        w.rect.height.to_bits().hash(&mut h);
-    }
-    h.finish()
-}
-
-/// Three small hand-drawn-feel strokes baked into the live preview so
-/// the user sees their widgets against ink. Coordinates are in
-/// page-mm; samples are pressure 1.0, no tilt.
-fn dummy_strokes(page_rect: Rect) -> Vec<journal_core::Stroke> {
-    use journal_core::{BlendMode, Color, PenSettings, Stroke, StrokePoint, ToolStyle};
-
-    fn stroke(points_mm: Vec<(f64, f64)>, color: Color, width: f64) -> Stroke {
-        let pen = PenSettings {
-            color,
-            base_width: width,
-            opacity: 1.0,
-            blend_mode: BlendMode::Normal,
-            brush_style: ToolStyle::Pen,
-        };
-        let pts: Vec<StrokePoint> = points_mm
-            .iter()
-            .enumerate()
-            .map(|(i, (x, y))| StrokePoint {
-                x: *x,
-                y: *y,
-                pressure: 1.0,
-                tilt_x: 0.0,
-                tilt_y: 0.0,
-                timestamp_ms: i as u64 * 16,
-            })
-            .collect();
-        let (mut min_x, mut min_y, mut max_x, mut max_y) = (
-            f64::INFINITY,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            f64::NEG_INFINITY,
-        );
-        for p in &pts {
-            min_x = min_x.min(p.x);
-            min_y = min_y.min(p.y);
-            max_x = max_x.max(p.x);
-            max_y = max_y.max(p.y);
-        }
-        let bbox = Rect {
-            x: min_x,
-            y: min_y,
-            width: (max_x - min_x).max(0.0),
-            height: (max_y - min_y).max(0.0),
-        };
-        Stroke {
-            id: Uuid::new_v4(),
-            points: pts,
-            pen,
-            zoom_at_creation: 1.0,
-            bounding_box: bbox,
-            brush_recipe: None,
-        }
-    }
-
-    let pw = page_rect.width;
-    let ph = page_rect.height;
-    let ink = Color {
-        r: 30,
-        g: 36,
-        b: 64,
-        a: 255,
-    };
-    let amber = Color {
-        r: 214,
-        g: 168,
-        b: 58,
-        a: 230,
-    };
-
-    // Diagonal, scribble, check mark — each scaled to a corner of the
-    // page so they don't stomp on the centered widget areas.
-    vec![
-        stroke(
-            vec![
-                (pw * 0.06, ph * 0.10),
-                (pw * 0.18, ph * 0.06),
-                (pw * 0.30, ph * 0.10),
-                (pw * 0.22, ph * 0.18),
-                (pw * 0.34, ph * 0.20),
-            ],
-            ink,
-            0.9,
-        ),
-        stroke(
-            vec![
-                (pw * 0.62, ph * 0.06),
-                (pw * 0.66, ph * 0.10),
-                (pw * 0.70, ph * 0.06),
-                (pw * 0.74, ph * 0.10),
-                (pw * 0.78, ph * 0.06),
-                (pw * 0.82, ph * 0.10),
-                (pw * 0.86, ph * 0.06),
-            ],
-            amber,
-            1.4,
-        ),
-        stroke(
-            vec![
-                (pw * 0.10, ph * 0.92),
-                (pw * 0.16, ph * 0.96),
-                (pw * 0.28, ph * 0.84),
-            ],
-            ink,
-            1.1,
-        ),
-    ]
 }
 
 fn draw_creator_canvas(ctx: &cairo::Context, w: f64, h: f64, cs: &CreatorState) {

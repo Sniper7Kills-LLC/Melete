@@ -348,6 +348,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
                         modified_at: now,
                         name: String::new(),
                         widget_overrides,
+                        widget_data: Default::default(),
                     };
                     if let Err(e) = ctx_inner.db.borrow_mut().insert_page(&page) {
                         tracing::error!("failed to insert page: {}", e);
@@ -765,6 +766,7 @@ fn duplicate_page(ctx: &SidebarCtx, page: &Page, canvas: &DrawingArea) {
         modified_at: now,
         name: new_name,
         widget_overrides: page.widget_overrides.clone(),
+        widget_data: page.widget_data.clone(),
     };
 
     {

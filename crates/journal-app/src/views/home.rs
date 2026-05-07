@@ -1,10 +1,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use gtk4::gio;
 use gtk4::prelude::*;
 use gtk4::{
-    Align, ApplicationWindow, Box as GtkBox, Button, FlowBox, Image, Label, Orientation,
-    ScrolledWindow, SelectionMode, Separator, Window,
+    Align, ApplicationWindow, Box as GtkBox, Button, FlowBox, GestureClick, Image, Label,
+    Orientation, PopoverMenu, ScrolledWindow, SelectionMode, Separator, Window,
 };
 use journal_core::{Notebook, NotebookId, NotebookKind, PageTemplate};
 
@@ -117,6 +118,7 @@ use journal_storage::JournalBackend;
 use uuid::Uuid;
 
 use crate::dialogs;
+use crate::settings_dialogs;
 use crate::state::SharedState;
 use crate::template_manager;
 
@@ -186,32 +188,31 @@ pub fn build_home(
     root.append(&scroller);
 
     let list_box_rc = Rc::new(list_box);
-    refresh_list(&list_box_rc, db.clone(), on_open.clone());
+    let card_ctx = CardCtx {
+        parent: parent.clone(),
+        state: state.clone(),
+        db: db.clone(),
+        list_box: list_box_rc.clone(),
+        on_open: on_open.clone(),
+    };
+    refresh_list(&list_box_rc, &card_ctx);
 
     {
         let parent = parent.clone();
-        let state = state.clone();
-        let db = db.clone();
-        let list_box = list_box_rc.clone();
-        let on_open = on_open.clone();
+        let card_ctx = card_ctx.clone();
         new_btn.connect_clicked(move |_| {
             let parent_inner = parent.clone();
-            let state_inner = state.clone();
-            let db_inner = db.clone();
-            let list_box_inner = list_box.clone();
-            let on_open_inner = on_open.clone();
+            let card_ctx_inner = card_ctx.clone();
 
             // Step 1: ask the user which kind of notebook they want.
             prompt_notebook_kind(
                 &parent,
                 Box::new(move |kind| {
                     let parent2 = parent_inner.clone();
-                    let state2 = state_inner.clone();
-                    let db2 = db_inner.clone();
-                    let list_box2 = list_box_inner.clone();
-                    let on_open2 = on_open_inner.clone();
+                    let ctx2 = card_ctx_inner.clone();
                     match kind {
                         NotebookKindChoice::Standard => {
+                            let ctx2 = ctx2.clone();
                             dialogs::prompt_new_notebook(
                                 &parent2,
                                 Box::new(move |name| {
@@ -221,18 +222,19 @@ pub fn build_home(
                                         kind: NotebookKind::Standard,
                                         assigned_templates: Vec::new(),
                                     };
-                                    if let Err(e) = db2.borrow_mut().insert_notebook(&nb) {
+                                    if let Err(e) = ctx2.db.borrow_mut().insert_notebook(&nb) {
                                         tracing::error!("failed to insert notebook: {}", e);
                                         return;
                                     }
-                                    refresh_list(&list_box2, db2.clone(), on_open2.clone());
+                                    refresh_list(&ctx2.list_box, &ctx2);
                                 }),
                             );
                         }
                         NotebookKindChoice::Planner => {
+                            let ctx2 = ctx2.clone();
                             dialogs::prompt_new_planner(
                                 &parent2,
-                                state2,
+                                ctx2.state.clone(),
                                 Box::new(move |choice| {
                                     let nb = Notebook {
                                         id: NotebookId(Uuid::new_v4()),
@@ -243,11 +245,11 @@ pub fn build_home(
                                         },
                                         assigned_templates: Vec::new(),
                                     };
-                                    if let Err(e) = db2.borrow_mut().insert_notebook(&nb) {
+                                    if let Err(e) = ctx2.db.borrow_mut().insert_notebook(&nb) {
                                         tracing::error!("failed to insert planner: {}", e);
                                         return;
                                     }
-                                    refresh_list(&list_box2, db2.clone(), on_open2.clone());
+                                    refresh_list(&ctx2.list_box, &ctx2);
                                 }),
                             );
                         }
@@ -260,7 +262,16 @@ pub fn build_home(
     root
 }
 
-fn notebook_card(nb: &Notebook, on_open: Rc<dyn Fn(NotebookId)>) -> Button {
+#[derive(Clone)]
+struct CardCtx {
+    parent: ApplicationWindow,
+    state: SharedState,
+    db: Rc<RefCell<dyn JournalBackend>>,
+    list_box: Rc<GtkBox>,
+    on_open: Rc<dyn Fn(NotebookId)>,
+}
+
+fn notebook_card(nb: &Notebook, ctx: &CardCtx) -> Button {
     // Outer button so the entire card is a single tap target.
     let btn = Button::new();
     btn.add_css_class("notebook-card");
@@ -317,11 +328,138 @@ fn notebook_card(nb: &Notebook, on_open: Rc<dyn Fn(NotebookId)>) -> Button {
 
     btn.set_child(Some(&body));
     let id = nb.id;
-    btn.connect_clicked(move |_| on_open(id));
+    {
+        let on_open = ctx.on_open.clone();
+        btn.connect_clicked(move |_| on_open(id));
+    }
+    attach_card_context_menu(&btn, nb, ctx);
     btn
 }
 
-fn build_card_grid(notebooks: &[&Notebook], on_open: Rc<dyn Fn(NotebookId)>) -> FlowBox {
+fn attach_card_context_menu(btn: &Button, nb: &Notebook, ctx: &CardCtx) {
+    let menu = gio::Menu::new();
+    menu.append(Some("Manage templates…"), Some("nb-ctx.templates"));
+    menu.append(Some("Delete notebook…"), Some("nb-ctx.delete"));
+
+    let popover = PopoverMenu::from_model(Some(&menu));
+    popover.set_parent(btn);
+    popover.set_has_arrow(false);
+
+    let action_group = gio::SimpleActionGroup::new();
+    let id = nb.id;
+    let nb_name = nb.name.clone();
+
+    {
+        let ctx = ctx.clone();
+        let act = gio::SimpleAction::new("templates", None);
+        act.connect_activate(move |_, _| {
+            let ctx_for_save = ctx.clone();
+            settings_dialogs::open_notebook_settings(
+                &ctx.parent,
+                ctx.state.clone(),
+                id,
+                Box::new(move || {
+                    refresh_list(
+                        &ctx_for_save.list_box,
+                        &ctx_for_save,
+                    );
+                }),
+            );
+        });
+        action_group.add_action(&act);
+    }
+
+    {
+        let ctx = ctx.clone();
+        let nb_name = nb_name.clone();
+        let act = gio::SimpleAction::new("delete", None);
+        act.connect_activate(move |_, _| {
+            confirm_delete_notebook(&ctx, id, &nb_name);
+        });
+        action_group.add_action(&act);
+    }
+
+    btn.insert_action_group("nb-ctx", Some(&action_group));
+
+    let right_click = GestureClick::new();
+    right_click.set_button(gtk4::gdk::BUTTON_SECONDARY);
+    right_click.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    {
+        let popover = popover.clone();
+        right_click.connect_pressed(move |g, _n, x, y| {
+            let rect = gtk4::gdk::Rectangle::new(x as i32, y as i32, 1, 1);
+            popover.set_pointing_to(Some(&rect));
+            popover.popup();
+            g.set_state(gtk4::EventSequenceState::Claimed);
+        });
+    }
+    btn.add_controller(right_click);
+}
+
+fn confirm_delete_notebook(ctx: &CardCtx, id: NotebookId, nb_name: &str) {
+    let win = Window::builder()
+        .transient_for(&ctx.parent)
+        .modal(true)
+        .title("Delete notebook?")
+        .default_width(360)
+        .build();
+    let body = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(12)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+    let msg = Label::new(Some(&format!(
+        "Permanently delete \u{201c}{}\u{201d}? All sections, pages, and strokes inside this notebook will be removed.",
+        nb_name
+    )));
+    msg.set_wrap(true);
+    msg.set_halign(Align::Start);
+    body.append(&msg);
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .halign(Align::End)
+        .build();
+    let cancel = Button::with_label("Cancel");
+    let delete = Button::with_label("Delete");
+    delete.add_css_class("destructive-action");
+    row.append(&cancel);
+    row.append(&delete);
+    body.append(&row);
+    win.set_child(Some(&body));
+
+    {
+        let win = win.clone();
+        cancel.connect_clicked(move |_| win.close());
+    }
+    {
+        let win = win.clone();
+        let ctx = ctx.clone();
+        delete.connect_clicked(move |_| {
+            // Scope the borrow_mut so the RefMut is dropped before
+            // refresh_list runs (refresh_list re-borrows the backend).
+            let result = ctx.db.borrow_mut().delete_notebook(id);
+            match result {
+                Err(e) => tracing::error!("failed to delete notebook {:?}: {}", id, e),
+                Ok(_) => {
+                    let mut cfg = crate::config::load();
+                    cfg.recent_notebook_ids.retain(|u| *u != id.0);
+                    if let Err(e) = crate::config::save(&cfg) {
+                        tracing::warn!("failed to prune recent notebooks: {}", e);
+                    }
+                    refresh_list(&ctx.list_box, &ctx);
+                }
+            }
+            win.close();
+        });
+    }
+    win.present();
+}
+
+fn build_card_grid(notebooks: &[&Notebook], ctx: &CardCtx) -> FlowBox {
     let flow = FlowBox::builder()
         .max_children_per_line(8)
         .min_children_per_line(1)
@@ -332,7 +470,7 @@ fn build_card_grid(notebooks: &[&Notebook], on_open: Rc<dyn Fn(NotebookId)>) -> 
         .activate_on_single_click(false)
         .build();
     for nb in notebooks {
-        flow.append(&notebook_card(nb, on_open.clone()));
+        flow.append(&notebook_card(nb, ctx));
     }
     flow
 }
@@ -362,16 +500,12 @@ fn build_empty_state() -> GtkBox {
     v
 }
 
-fn refresh_list(
-    list_box: &Rc<GtkBox>,
-    db: Rc<RefCell<dyn JournalBackend>>,
-    on_open: Rc<dyn Fn(NotebookId)>,
-) {
+fn refresh_list(list_box: &Rc<GtkBox>, ctx: &CardCtx) {
     while let Some(child) = list_box.first_child() {
         list_box.remove(&child);
     }
 
-    let notebooks = match db.borrow_mut().list_notebooks() {
+    let notebooks = match ctx.db.borrow_mut().list_notebooks() {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("failed to list notebooks: {}", e);
@@ -399,7 +533,7 @@ fn refresh_list(
             recent_label.add_css_class("heading");
             list_box.append(&recent_label);
 
-            list_box.append(&build_card_grid(&recent_notebooks, on_open.clone()));
+            list_box.append(&build_card_grid(&recent_notebooks, ctx));
 
             let sep = Separator::new(Orientation::Horizontal);
             sep.set_margin_top(16);
@@ -416,5 +550,5 @@ fn refresh_list(
     }
 
     let all_refs: Vec<&Notebook> = notebooks.iter().collect();
-    list_box.append(&build_card_grid(&all_refs, on_open));
+    list_box.append(&build_card_grid(&all_refs, ctx));
 }

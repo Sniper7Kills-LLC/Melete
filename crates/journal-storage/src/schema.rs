@@ -157,6 +157,19 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         }
         conn.pragma_update(None, "user_version", 6)?;
     }
+    if v < 7 {
+        // Per-page fetched-widget cache — JSON map keyed by
+        // TemplateWidget.id to a typed `WidgetData` body. Populated by
+        // the app-layer fetcher; the renderer reads from this map when
+        // drawing fetch-backed widgets.
+        if !column_exists(conn, "pages", "widget_data_json")? {
+            conn.execute(
+                "ALTER TABLE pages ADD COLUMN widget_data_json TEXT NOT NULL DEFAULT '{}'",
+                [],
+            )?;
+        }
+        conn.pragma_update(None, "user_version", 7)?;
+    }
     Ok(())
 }
 

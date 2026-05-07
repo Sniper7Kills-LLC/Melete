@@ -326,7 +326,62 @@ fn draw_widget(
                 sector_deg,
             );
         }
+        // Fetch-backed widgets are intentionally rendered as a simple
+        // labeled rectangle in the legacy Cairo path. The Cairo
+        // renderer is now only used for PDF export — and a frozen
+        // "Weather: <location>" caption is the right thing to print
+        // when the canvas is being snapshotted for offline output.
+        // The active Vello renderer in `journal-widgets` is the one
+        // that draws the rich body.
+        WidgetKind::Weather { location_label, .. } => {
+            draw_fetch_placeholder(ctx, transform, r, style, &format!("Weather — {}", location_label));
+        }
+        WidgetKind::Quote { .. } => {
+            draw_fetch_placeholder(ctx, transform, r, style, "Quote of the day");
+        }
+        WidgetKind::BibleVerse { reference, .. } => {
+            draw_fetch_placeholder(ctx, transform, r, style, &format!("Verse — {}", reference));
+        }
+        WidgetKind::Sunrise { .. } => {
+            draw_fetch_placeholder(ctx, transform, r, style, "Sun");
+        }
+        WidgetKind::MoonPhase => {
+            draw_fetch_placeholder(ctx, transform, r, style, "Moon");
+        }
+        WidgetKind::OnThisDay { .. } => {
+            draw_fetch_placeholder(ctx, transform, r, style, "On this day");
+        }
+        WidgetKind::WordOfDay { .. } => {
+            draw_fetch_placeholder(ctx, transform, r, style, "Word of the day");
+        }
+        WidgetKind::RssHeadline { .. } => {
+            draw_fetch_placeholder(ctx, transform, r, style, "Headlines");
+        }
+        WidgetKind::Astronomy { .. } => {
+            draw_fetch_placeholder(ctx, transform, r, style, "Astronomy");
+        }
     }
+}
+
+fn draw_fetch_placeholder(
+    ctx: &cairo::Context,
+    _transform: &ViewportTransform,
+    r: &WidgetRect,
+    style: &WidgetStyle,
+    title: &str,
+) {
+    set_color(ctx, style.stroke_color);
+    ctx.set_line_width(style.stroke_width_mm.max(0.2));
+    ctx.rectangle(r.x, r.y, r.width, r.height);
+    let _ = ctx.stroke();
+    let header_h = (r.height * 0.18).clamp(4.0, 8.0);
+    ctx.move_to(r.x, r.y + header_h);
+    ctx.line_to(r.x + r.width, r.y + header_h);
+    let _ = ctx.stroke();
+    let fs = (header_h * 0.55).clamp(2.4, 4.5);
+    ctx.set_font_size(fs);
+    ctx.move_to(r.x + 1.5, r.y + (header_h + fs) * 0.5);
+    let _ = ctx.show_text(&title.to_uppercase());
 }
 
 fn draw_grid_region(

@@ -27,6 +27,9 @@ poppler-rs = { version = "0.24", features = ["v22_7"], optional = true }
 glow = { version = "0.16", optional = true }
 libloading = { version = "0.8", optional = true }
 journal-widgets = { path = "../journal-widgets", optional = true }
+ureq = { version = "2", default-features = false, features = ["tls"] }
+serde_json = { workspace = true }
+roxmltree = "0.20"
 
 [features]
 default = ["pdf", "vello"]

@@ -265,6 +265,7 @@ mod tests {
             modified_at: now,
             name: String::new(),
             widget_overrides: Default::default(),
+            widget_data: Default::default(),
         };
         insert_page(db.conn(), &p).unwrap();
         (db, p.id)

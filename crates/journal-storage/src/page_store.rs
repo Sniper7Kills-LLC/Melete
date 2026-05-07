@@ -7,7 +7,7 @@ use crate::error::{Result, StorageError};
 use crate::util::{blob_to_uuid, uuid_to_blob};
 
 const PAGE_COLUMNS: &str =
-    "id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json";
+    "id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json";
 
 pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
     let template_blob = page.template_id.map(|t| uuid_to_blob(t.0));
@@ -16,9 +16,10 @@ pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
         None => None,
     };
     let overrides_json = serde_json::to_string(&page.widget_overrides)?;
+    let widget_data_json = serde_json::to_string(&page.widget_data)?;
     conn.execute(
-        "INSERT INTO pages (id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+        "INSERT INTO pages (id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             uuid_to_blob(page.id.0),
             uuid_to_blob(page.section_id.0),
@@ -29,6 +30,7 @@ pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
             page.modified_at.to_rfc3339(),
             page.name,
             overrides_json,
+            widget_data_json,
         ],
     )?;
     Ok(())
@@ -85,10 +87,11 @@ pub fn update_page(conn: &Connection, page: &Page) -> Result<()> {
         None => None,
     };
     let overrides_json = serde_json::to_string(&page.widget_overrides)?;
+    let widget_data_json = serde_json::to_string(&page.widget_data)?;
     let updated = conn.execute(
         "UPDATE pages SET section_id = ?2, position = ?3, template_id = ?4,
             planner_address_json = ?5, created_at = ?6, modified_at = ?7, name = ?8,
-            widget_overrides_json = ?9
+            widget_overrides_json = ?9, widget_data_json = ?10
          WHERE id = ?1",
         params![
             uuid_to_blob(page.id.0),
@@ -100,6 +103,7 @@ pub fn update_page(conn: &Connection, page: &Page) -> Result<()> {
             page.modified_at.to_rfc3339(),
             page.name,
             overrides_json,
+            widget_data_json,
         ],
     )?;
     if updated == 0 {
@@ -201,6 +205,9 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
     let overrides_json: String = row
         .get::<_, Option<String>>(8)?
         .unwrap_or_else(|| "{}".into());
+    let widget_data_json: String = row
+        .get::<_, Option<String>>(9)?
+        .unwrap_or_else(|| "{}".into());
     Ok((|| {
         let template_id = match template_blob {
             Some(b) => Some(TemplateId(blob_to_uuid(&b)?)),
@@ -213,6 +220,7 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
         let created_at = parse_dt(&created_at_str)?;
         let modified_at = parse_dt(&modified_at_str)?;
         let widget_overrides = serde_json::from_str(&overrides_json).unwrap_or_default();
+        let widget_data = serde_json::from_str(&widget_data_json).unwrap_or_default();
         Ok(Page {
             id: PageId(blob_to_uuid(&id_blob)?),
             section_id: SectionId(blob_to_uuid(&section_blob)?),
@@ -223,6 +231,7 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
             modified_at,
             name,
             widget_overrides,
+            widget_data,
         })
     })())
 }
@@ -275,6 +284,7 @@ mod tests {
             modified_at: now,
             name: String::new(),
             widget_overrides: Default::default(),
+            widget_data: Default::default(),
         }
     }
 

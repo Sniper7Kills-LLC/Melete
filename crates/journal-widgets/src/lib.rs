@@ -20,8 +20,8 @@ pub use vello::Scene as VelloScene;
 use std::collections::HashMap;
 
 use journal_core::{
-    render_title, Color, Rect, TemplateWidget, TitleContext, WidgetKind, WidgetOverride,
-    WidgetRect, WidgetStyle,
+    render_title, Color, Rect, TemplateWidget, TitleContext, WidgetData, WidgetKind,
+    WidgetOverride, WidgetPayload, WidgetRect, WidgetStyle,
 };
 use parley::{
     Alignment, AlignmentOptions, FontContext, LayoutContext, PositionedLayoutItem, StyleProperty,
@@ -40,6 +40,47 @@ use vello::Scene;
 pub struct WidgetRenderContext {
     pub date: Option<chrono::NaiveDate>,
     pub overrides: HashMap<Uuid, WidgetOverride>,
+    /// Cached fetch payloads for this page's fetch-backed widgets,
+    /// keyed by `TemplateWidget.id`. Renderers read from here when
+    /// drawing widgets like Weather / Quote / RssHeadline; the actual
+    /// fetch is owned by the app-layer fetcher.
+    pub widget_data: HashMap<Uuid, WidgetData>,
+    /// Set when the host UI is in dark mode. Widgets use this to
+    /// auto-invert dark stroke colors to a bright foreground so text
+    /// stays legible against the dark page background.
+    pub dark_mode: bool,
+}
+
+/// Resolve a widget's style for the current render context. In dark
+/// mode, stroke / fill colors that are too dark to read against the
+/// dim-teal page background are flipped to a bright foreground while
+/// preserving alpha. Light-mode rendering returns the style unchanged.
+fn effective_style(style: &WidgetStyle, dark_mode: bool) -> WidgetStyle {
+    if !dark_mode {
+        return style.clone();
+    }
+    WidgetStyle {
+        stroke_color: brighten_for_dark(style.stroke_color),
+        fill_color: style.fill_color.map(brighten_for_dark),
+        stroke_width_mm: style.stroke_width_mm,
+    }
+}
+
+fn brighten_for_dark(c: Color) -> Color {
+    // Perceptual luminance (Rec. 601). If the color is dark, swap to
+    // a near-white foreground so it reads against the dim-teal page;
+    // otherwise leave it alone (amber accents stay amber).
+    let lum = 0.299 * c.r as f32 + 0.587 * c.g as f32 + 0.114 * c.b as f32;
+    if lum < 140.0 {
+        Color {
+            r: 234,
+            g: 234,
+            b: 240,
+            a: c.a,
+        }
+    } else {
+        c
+    }
 }
 
 fn resolve_date(ctx: &WidgetRenderContext) -> chrono::NaiveDate {
@@ -267,7 +308,8 @@ impl WidgetRenderer {
         render_ctx: &WidgetRenderContext,
     ) {
         let r = &widget.rect;
-        let style = &widget.style;
+        let local_style = effective_style(&widget.style, render_ctx.dark_mode);
+        let style = &local_style;
         let override_ = render_ctx.overrides.get(&widget.id);
 
         match &widget.kind {
@@ -477,6 +519,47 @@ impl WidgetRenderer {
                     sweep_deg,
                     sector_deg,
                 );
+            }
+
+            // ---- Fetch widgets — read cached payload from
+            // render_ctx.widget_data; show a "Loading…" placeholder
+            // when the cache is empty (first open before fetcher
+            // populates it) or an error string when it failed.
+            WidgetKind::Weather { location_label, .. } => {
+                let data = render_ctx.widget_data.get(&widget.id);
+                self.draw_weather(scene, transform, r, style, location_label, data);
+            }
+            WidgetKind::Quote { .. } => {
+                let data = render_ctx.widget_data.get(&widget.id);
+                self.draw_quote(scene, transform, r, style, data);
+            }
+            WidgetKind::BibleVerse { reference, .. } => {
+                let data = render_ctx.widget_data.get(&widget.id);
+                self.draw_bible_verse(scene, transform, r, style, reference, data);
+            }
+            WidgetKind::Sunrise { .. } => {
+                let data = render_ctx.widget_data.get(&widget.id);
+                self.draw_sunrise(scene, transform, r, style, data);
+            }
+            WidgetKind::MoonPhase => {
+                let data = render_ctx.widget_data.get(&widget.id);
+                self.draw_moon_phase(scene, transform, r, style, data);
+            }
+            WidgetKind::OnThisDay { .. } => {
+                let data = render_ctx.widget_data.get(&widget.id);
+                self.draw_on_this_day(scene, transform, r, style, data);
+            }
+            WidgetKind::WordOfDay { .. } => {
+                let data = render_ctx.widget_data.get(&widget.id);
+                self.draw_word_of_day(scene, transform, r, style, data);
+            }
+            WidgetKind::RssHeadline { count, .. } => {
+                let data = render_ctx.widget_data.get(&widget.id);
+                self.draw_rss(scene, transform, r, style, *count, data);
+            }
+            WidgetKind::Astronomy { .. } => {
+                let data = render_ctx.widget_data.get(&widget.id);
+                self.draw_astronomy(scene, transform, r, style, data);
             }
         }
     }
@@ -1143,6 +1226,538 @@ impl WidgetRenderer {
         }
     }
 
+    // ---- Fetch-widget renderers ----------------------------------------
+    //
+    // All fetch widgets share the same surface: a 1px frame around the
+    // rect, a small caption row at top, and a body block underneath
+    // showing the cached payload (or a "Loading…" / error message
+    // when the cache is empty). The fetcher in journal-app populates
+    // `WidgetRenderContext::widget_data`; this code only reads.
+
+    fn draw_fetch_frame(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        title: &str,
+    ) -> (f64, f64) {
+        // Outer frame.
+        let frame = stroke_style(style.stroke_width_mm.max(0.2));
+        let brush = solid(style.stroke_color);
+        let mut path = BezPath::new();
+        path.move_to((r.x, r.y));
+        path.line_to((r.x + r.width, r.y));
+        path.line_to((r.x + r.width, r.y + r.height));
+        path.line_to((r.x, r.y + r.height));
+        path.line_to((r.x, r.y));
+        scene.stroke(&frame, transform, &brush, None, &path);
+
+        // Header band — title sits in the top-left in small caps.
+        let header_h = (r.height * 0.18).clamp(4.0, 8.0);
+        let mut underline = BezPath::new();
+        underline.move_to((r.x, r.y + header_h));
+        underline.line_to((r.x + r.width, r.y + header_h));
+        scene.stroke(&frame, transform, &brush, None, &underline);
+
+        let title_fs = (header_h * 0.55).clamp(2.4, 4.5) as f32;
+        draw_text_runs(
+            scene,
+            &mut self.font_ctx,
+            &mut self.layout_ctx,
+            transform,
+            &title.to_uppercase(),
+            title_fs,
+            r.x + 1.5,
+            r.y + (header_h - title_fs as f64) * 0.5,
+            r.width - 3.0,
+            style.stroke_color,
+            Alignment::Start,
+        );
+
+        let body_top = r.y + header_h + 1.0;
+        let body_h = r.height - header_h - 1.0;
+        (body_top, body_h)
+    }
+
+    fn draw_fetch_body_text(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        body_top: f64,
+        body_h: f64,
+        text: &str,
+        font_mm: f64,
+    ) {
+        let fs = font_mm.clamp(2.5, 6.0) as f32;
+        draw_text_runs(
+            scene,
+            &mut self.font_ctx,
+            &mut self.layout_ctx,
+            transform,
+            text,
+            fs,
+            r.x + 1.5,
+            body_top + 0.5,
+            r.width - 3.0,
+            style.stroke_color,
+            Alignment::Start,
+        );
+        let _ = body_h;
+    }
+
+    fn draw_loading(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        body_top: f64,
+        body_h: f64,
+        msg: &str,
+    ) {
+        let dim_color = Color {
+            r: style.stroke_color.r,
+            g: style.stroke_color.g,
+            b: style.stroke_color.b,
+            a: style.stroke_color.a / 2,
+        };
+        let fs = (body_h * 0.35).clamp(3.0, 5.5) as f32;
+        draw_text_runs(
+            scene,
+            &mut self.font_ctx,
+            &mut self.layout_ctx,
+            transform,
+            msg,
+            fs,
+            r.x + 1.5,
+            body_top + (body_h - fs as f64) * 0.5,
+            r.width - 3.0,
+            dim_color,
+            Alignment::Center,
+        );
+    }
+
+    fn draw_weather(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        location_label: &str,
+        data: Option<&WidgetData>,
+    ) {
+        let (body_top, body_h) =
+            self.draw_fetch_frame(scene, transform, r, style, &format!("Weather — {}", location_label));
+        match data.map(|d| &d.payload) {
+            Some(WidgetPayload::Weather {
+                current_c,
+                current_code,
+                days,
+                ..
+            }) => {
+                let glyph = weather_glyph(*current_code);
+                let header = format!("{} {}  {:.0}°C", glyph, weather_summary(*current_code), current_c);
+                let header_fs = (body_h * 0.32).clamp(3.5, 7.0) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    &header,
+                    header_fs,
+                    r.x + 1.5,
+                    body_top + 0.5,
+                    r.width - 3.0,
+                    style.stroke_color,
+                    Alignment::Start,
+                );
+                // Forecast strip — N day cells across the bottom 50%.
+                let strip_y = body_top + body_h * 0.5;
+                let strip_h = body_h * 0.5 - 1.0;
+                let n = days.len().max(1);
+                let col_w = r.width / n as f64;
+                let cell_fs = (strip_h * 0.3).clamp(2.5, 4.5) as f32;
+                for (i, day) in days.iter().enumerate() {
+                    let x = r.x + col_w * i as f64;
+                    let label = format!(
+                        "{}\n{}\n{:.0}°/{:.0}°",
+                        day.date.split('-').next_back().unwrap_or(""),
+                        weather_glyph(day.code),
+                        day.hi_c,
+                        day.lo_c,
+                    );
+                    draw_text_runs(
+                        scene,
+                        &mut self.font_ctx,
+                        &mut self.layout_ctx,
+                        transform,
+                        &label,
+                        cell_fs,
+                        x + 0.5,
+                        strip_y,
+                        col_w - 1.0,
+                        style.stroke_color,
+                        Alignment::Center,
+                    );
+                }
+            }
+            Some(WidgetPayload::Error { message }) => {
+                self.draw_loading(scene, transform, r, style, body_top, body_h, message);
+            }
+            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading weather…"),
+        }
+    }
+
+    fn draw_quote(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        data: Option<&WidgetData>,
+    ) {
+        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, "Quote of the day");
+        match data.map(|d| &d.payload) {
+            Some(WidgetPayload::Quote { text, author }) => {
+                let body_fs = (body_h * 0.18).clamp(3.0, 5.5) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    &format!("\u{201C}{}\u{201D}", text),
+                    body_fs,
+                    r.x + 1.5,
+                    body_top + 0.5,
+                    r.width - 3.0,
+                    style.stroke_color,
+                    Alignment::Start,
+                );
+                let author_fs = (body_h * 0.14).clamp(2.5, 4.5) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    &format!("— {}", author),
+                    author_fs,
+                    r.x + 1.5,
+                    body_top + body_h - author_fs as f64 - 0.5,
+                    r.width - 3.0,
+                    style.stroke_color,
+                    Alignment::End,
+                );
+            }
+            Some(WidgetPayload::Error { message }) => {
+                self.draw_loading(scene, transform, r, style, body_top, body_h, message);
+            }
+            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading quote…"),
+        }
+    }
+
+    fn draw_bible_verse(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        configured_ref: &str,
+        data: Option<&WidgetData>,
+    ) {
+        let title = if configured_ref.eq_ignore_ascii_case("random") {
+            "Verse of the day".to_string()
+        } else {
+            format!("Bible — {}", configured_ref)
+        };
+        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, &title);
+        match data.map(|d| &d.payload) {
+            Some(WidgetPayload::BibleVerse {
+                reference,
+                text,
+                translation,
+            }) => {
+                let body_fs = (body_h * 0.16).clamp(3.0, 5.5) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    text,
+                    body_fs,
+                    r.x + 1.5,
+                    body_top + 0.5,
+                    r.width - 3.0,
+                    style.stroke_color,
+                    Alignment::Start,
+                );
+                let attr_fs = (body_h * 0.13).clamp(2.5, 4.0) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    &format!("— {} ({})", reference, translation),
+                    attr_fs,
+                    r.x + 1.5,
+                    body_top + body_h - attr_fs as f64 - 0.5,
+                    r.width - 3.0,
+                    style.stroke_color,
+                    Alignment::End,
+                );
+            }
+            Some(WidgetPayload::Error { message }) => {
+                self.draw_loading(scene, transform, r, style, body_top, body_h, message);
+            }
+            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading verse…"),
+        }
+    }
+
+    fn draw_sunrise(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        data: Option<&WidgetData>,
+    ) {
+        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, "Sun");
+        match data.map(|d| &d.payload) {
+            Some(WidgetPayload::Sunrise {
+                sunrise_local,
+                sunset_local,
+                daylight_hms,
+            }) => {
+                let lines = format!(
+                    "\u{2600} {}\n\u{1F319} {}\nDaylight {}",
+                    sunrise_local, sunset_local, daylight_hms
+                );
+                self.draw_fetch_body_text(scene, transform, r, style, body_top, body_h, &lines, body_h * 0.22);
+            }
+            Some(WidgetPayload::Error { message }) => {
+                self.draw_loading(scene, transform, r, style, body_top, body_h, message);
+            }
+            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading sun…"),
+        }
+    }
+
+    fn draw_moon_phase(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        data: Option<&WidgetData>,
+    ) {
+        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, "Moon");
+        match data.map(|d| &d.payload) {
+            Some(WidgetPayload::MoonPhase {
+                name,
+                illumination_pct,
+                emoji,
+            }) => {
+                let glyph_fs = (body_h * 0.55).clamp(6.0, 18.0) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    emoji,
+                    glyph_fs,
+                    r.x,
+                    body_top + 0.5,
+                    r.width,
+                    style.stroke_color,
+                    Alignment::Center,
+                );
+                let label_fs = (body_h * 0.18).clamp(2.5, 5.0) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    &format!("{}\n{:.0}% lit", name, illumination_pct),
+                    label_fs,
+                    r.x,
+                    body_top + body_h - (label_fs as f64) * 2.2,
+                    r.width,
+                    style.stroke_color,
+                    Alignment::Center,
+                );
+            }
+            Some(WidgetPayload::Error { message }) => {
+                self.draw_loading(scene, transform, r, style, body_top, body_h, message);
+            }
+            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Computing moon…"),
+        }
+    }
+
+    fn draw_on_this_day(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        data: Option<&WidgetData>,
+    ) {
+        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, "On this day");
+        match data.map(|d| &d.payload) {
+            Some(WidgetPayload::OnThisDay { events }) => {
+                let lines: Vec<String> = events
+                    .iter()
+                    .map(|e| format!("{} — {}", e.year, e.text))
+                    .collect();
+                let joined = lines.join("\n");
+                let fs = (body_h / (events.len().max(1) as f64) * 0.55).clamp(2.4, 4.5) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    &joined,
+                    fs,
+                    r.x + 1.5,
+                    body_top + 0.5,
+                    r.width - 3.0,
+                    style.stroke_color,
+                    Alignment::Start,
+                );
+            }
+            Some(WidgetPayload::Error { message }) => {
+                self.draw_loading(scene, transform, r, style, body_top, body_h, message);
+            }
+            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading history…"),
+        }
+    }
+
+    fn draw_word_of_day(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        data: Option<&WidgetData>,
+    ) {
+        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, "Word of the day");
+        match data.map(|d| &d.payload) {
+            Some(WidgetPayload::WordOfDay { word, definition }) => {
+                let word_fs = (body_h * 0.30).clamp(4.0, 8.0) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    word,
+                    word_fs,
+                    r.x + 1.5,
+                    body_top + 0.5,
+                    r.width - 3.0,
+                    style.stroke_color,
+                    Alignment::Start,
+                );
+                let def_fs = (body_h * 0.16).clamp(2.5, 4.5) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    definition,
+                    def_fs,
+                    r.x + 1.5,
+                    body_top + word_fs as f64 + 1.5,
+                    r.width - 3.0,
+                    style.stroke_color,
+                    Alignment::Start,
+                );
+            }
+            Some(WidgetPayload::Error { message }) => {
+                self.draw_loading(scene, transform, r, style, body_top, body_h, message);
+            }
+            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading word…"),
+        }
+    }
+
+    fn draw_rss(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        max_items: u32,
+        data: Option<&WidgetData>,
+    ) {
+        let title = match data.map(|d| &d.payload) {
+            Some(WidgetPayload::RssHeadline { feed_title, .. }) if !feed_title.is_empty() => {
+                feed_title.clone()
+            }
+            _ => "Headlines".to_string(),
+        };
+        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, &title);
+        match data.map(|d| &d.payload) {
+            Some(WidgetPayload::RssHeadline { items, .. }) => {
+                let take = (max_items as usize).max(1).min(items.len().max(1));
+                let row_h = body_h / take as f64;
+                let fs = (row_h * 0.55).clamp(2.6, 4.5) as f32;
+                for (i, item) in items.iter().take(take).enumerate() {
+                    let y = body_top + row_h * i as f64;
+                    draw_text_runs(
+                        scene,
+                        &mut self.font_ctx,
+                        &mut self.layout_ctx,
+                        transform,
+                        &format!("\u{2022} {}", item.title),
+                        fs,
+                        r.x + 1.5,
+                        y + 0.5,
+                        r.width - 3.0,
+                        style.stroke_color,
+                        Alignment::Start,
+                    );
+                }
+            }
+            Some(WidgetPayload::Error { message }) => {
+                self.draw_loading(scene, transform, r, style, body_top, body_h, message);
+            }
+            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading feed…"),
+        }
+    }
+
+    fn draw_astronomy(
+        &mut self,
+        scene: &mut Scene,
+        transform: Affine,
+        r: &WidgetRect,
+        style: &WidgetStyle,
+        data: Option<&WidgetData>,
+    ) {
+        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, "Astronomy");
+        match data.map(|d| &d.payload) {
+            Some(WidgetPayload::Astronomy { lines }) => {
+                let joined = lines.join("\n");
+                let fs = (body_h * 0.18).clamp(2.6, 4.5) as f32;
+                draw_text_runs(
+                    scene,
+                    &mut self.font_ctx,
+                    &mut self.layout_ctx,
+                    transform,
+                    &joined,
+                    fs,
+                    r.x + 1.5,
+                    body_top + 0.5,
+                    r.width - 3.0,
+                    style.stroke_color,
+                    Alignment::Start,
+                );
+            }
+            Some(WidgetPayload::Error { message }) => {
+                self.draw_loading(scene, transform, r, style, body_top, body_h, message);
+            }
+            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading sky…"),
+        }
+    }
+
     fn draw_weekly_compass(
         &mut self,
         scene: &mut Scene,
@@ -1316,6 +1931,49 @@ fn draw_dots_region(
     }
     let brush = solid(style.stroke_color);
     scene.fill(Fill::NonZero, transform, &brush, None, &path);
+}
+
+// ---------------------------------------------------------------------------
+// Weather code → glyph / short summary
+// ---------------------------------------------------------------------------
+//
+// Mapping follows the WMO weather-code table that Open-Meteo returns in
+// `current.weather_code` and `daily.weather_code`. Kept as plain ASCII /
+// emoji glyphs so the renderer can draw them without a custom symbol
+// font.
+
+fn weather_glyph(code: u32) -> &'static str {
+    match code {
+        0 => "\u{2600}",
+        1 | 2 => "\u{1F324}",
+        3 => "\u{2601}",
+        45 | 48 => "\u{1F32B}",
+        51..=57 => "\u{1F327}",
+        61..=67 => "\u{1F327}",
+        71..=77 => "\u{2744}",
+        80..=82 => "\u{1F326}",
+        85 | 86 => "\u{1F328}",
+        95 | 96 | 99 => "\u{26C8}",
+        _ => "?",
+    }
+}
+
+fn weather_summary(code: u32) -> &'static str {
+    match code {
+        0 => "Clear",
+        1 => "Mostly clear",
+        2 => "Partly cloudy",
+        3 => "Overcast",
+        45 | 48 => "Fog",
+        51..=57 => "Drizzle",
+        61..=67 => "Rain",
+        71..=77 => "Snow",
+        80..=82 => "Showers",
+        85 | 86 => "Snow showers",
+        95 => "Thunderstorm",
+        96 | 99 => "Thunder + hail",
+        _ => "Unknown",
+    }
 }
 
 // ---------------------------------------------------------------------------

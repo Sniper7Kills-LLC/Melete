@@ -229,6 +229,8 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 let widget_ctx = journal_widgets::WidgetRenderContext {
                     date: s.current_page_date,
                     overrides: s.current_page_overrides.clone(),
+                    widget_data: s.current_page_widget_data.clone(),
+                    dark_mode: crate::is_dark_mode(),
                 };
                 let selection_bbox = if s.selected_stroke_ids.is_empty() {
                     None

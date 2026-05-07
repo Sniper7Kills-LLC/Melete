@@ -7,6 +7,7 @@ pub mod stroke;
 pub mod template;
 pub mod title_format;
 pub mod viewport;
+pub mod widget_data;
 
 pub use brush::{Brush, BrushLayer, ColorMod, CursorShape, Geometry, TipShape, WidthMode};
 pub use calendar::{CalendarPageAddress, PlannerPageAddress};
@@ -21,6 +22,9 @@ pub use template::{
 };
 pub use title_format::{render as render_title, TitleContext};
 pub use viewport::Viewport;
+pub use widget_data::{
+    Freshness, OnThisDayEvent, RssItem, WeatherDay, WidgetData, WidgetPayload,
+};
 
 /// A simple 2D point.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
