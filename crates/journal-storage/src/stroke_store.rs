@@ -266,6 +266,7 @@ mod tests {
             name: String::new(),
             widget_overrides: Default::default(),
             widget_data: Default::default(),
+            flagged: false,
         };
         insert_page(db.conn(), &p).unwrap();
         (db, p.id)

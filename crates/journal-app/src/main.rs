@@ -124,6 +124,32 @@ const APP_CSS_TEMPLATE: &str = r#"
     box-shadow: inset 3px 0 0 @amber_accent;
 }
 
+/* Subtle flag/bookmark toggle on the trailing edge of each page row.
+   Transparent, no chrome, soft hover that reads as a tap target without
+   competing with the row's own hover. Filled-star (.starred-symbolic)
+   takes the amber accent; the hollow state stays muted. */
+.page-flag-toggle {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    min-width: 22px;
+    min-height: 22px;
+    padding: 2px;
+    -gtk-icon-size: 14px;
+    opacity: 0.55;
+    transition: opacity 120ms ease, background-color 120ms ease;
+}
+.page-flag-toggle:hover  { opacity: 1.0; background-color: alpha(@accent_color, 0.10); }
+.page-flag-toggle:active { background-color: alpha(@accent_color, 0.18); }
+.page-row .page-flag-toggle image { color: @amber_accent; }
+
+/* Bookmarks panel at the top of the notebook sidebar. The expander itself
+   keeps GTK defaults; we just give the wrapper a hair of breathing room
+   beneath so it doesn't crash into the first section. */
+.bookmarks-panel {
+    margin-bottom: 6px;
+}
+
 /* Section row: same hover, looks live ──────────────────────────────── */
 .section-row {
     border-radius: 6px;

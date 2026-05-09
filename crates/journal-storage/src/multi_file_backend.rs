@@ -692,6 +692,7 @@ mod tests {
             name: String::new(),
             widget_overrides: Default::default(),
             widget_data: Default::default(),
+            flagged: false,
         }
     }
 

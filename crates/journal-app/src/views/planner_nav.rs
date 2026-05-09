@@ -121,6 +121,7 @@ pub fn ensure_planner_pages(
                     name: title.clone(),
                     widget_overrides: Default::default(),
                     widget_data: Default::default(),
+                    flagged: false,
                 };
                 if let Err(e) = db.insert_page(&page) {
                     tracing::error!("failed to insert planner page: {}", e);

@@ -96,4 +96,9 @@ pub struct Page {
     /// from before this field was added decoding cleanly.
     #[serde(default)]
     pub widget_data: HashMap<Uuid, WidgetData>,
+    /// User-toggled bookmark flag. Surfaces this page in the notebook
+    /// sidebar's "Bookmarks" panel. `#[serde(default)]` keeps old
+    /// TOML/JSON / DB rows readable.
+    #[serde(default)]
+    pub flagged: bool,
 }
