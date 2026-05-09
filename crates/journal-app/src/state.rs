@@ -253,6 +253,8 @@ pub fn new_shared_state(
         brush_style: journal_core::ToolStyle::Pen,
     };
 
+    let brush_library = crate::brush_library::load(&backend);
+
     Rc::new(RefCell::new(CanvasState {
         transform,
         strokes: Vec::new(),
@@ -297,7 +299,7 @@ pub fn new_shared_state(
         tool_palettes: std::collections::HashMap::new(),
         active_brush_recipe: None,
         stylus_button_prev_tool: None,
-        brush_library: crate::brush_library::load(),
+        brush_library,
         tool_brushes: std::collections::HashMap::new(),
     }))
 }
