@@ -6,6 +6,7 @@ import "./index.css";
 import { Viewer } from "./pages/Viewer";
 import { Designer } from "./pages/Designer";
 import { Templeter } from "./pages/Templeter";
+import { Tooler } from "./pages/Tooler";
 import { useUnits } from "./store/unitsStore";
 
 function NavBar() {
@@ -42,6 +43,14 @@ function NavBar() {
           }
         >
           Templeter
+        </NavLink>
+        <NavLink
+          to="/tooler"
+          className={({ isActive }) =>
+            `${linkBase} ${isActive ? linkActive : "text-slate-700"}`
+          }
+        >
+          Tooler
         </NavLink>
       </nav>
       <UnitsSelector />
@@ -82,6 +91,7 @@ function App() {
             <Route path="/" element={<Viewer />} />
             <Route path="/designer" element={<Designer />} />
             <Route path="/templeter" element={<Templeter />} />
+            <Route path="/tooler" element={<Tooler />} />
             <Route
               path="*"
               element={

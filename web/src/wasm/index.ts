@@ -17,6 +17,7 @@
 // That directory is gitignored — the binaries are build artefacts.
 
 import type { NotebookBundle, PageTemplate } from "@/types";
+import type { Brush } from "@/types/brush";
 
 /**
  * Read-only viewer. Mirrors §5.4 of docs/web-portal.md:
@@ -45,6 +46,10 @@ export interface Viewer {
 export interface Shim {
   parseTemplateToml(toml: string): PageTemplate;
   serializeTemplateToml(t: PageTemplate): string;
+  /** Parse a TOML brush document. See `parse_brush_toml` (Rust). */
+  parseBrushToml(toml: string): Brush;
+  /** Serialize a `Brush` to TOML. See `serialize_brush_toml` (Rust). */
+  serializeBrushToml(b: Brush): string;
 }
 
 // ---------------------------------------------------------------------
@@ -171,6 +176,9 @@ function realShim(): Shim {
   let mod: {
     parse_template_toml: (toml: string) => PageTemplate;
     serialize_template_toml: (t: PageTemplate) => string;
+    /** May be missing on older shim builds — Tooler falls back to JSON. */
+    parse_brush_toml?: (toml: string) => Brush;
+    serialize_brush_toml?: (b: Brush) => string;
   } | null = null;
   let mockFallback: Shim | null = null;
 
@@ -189,6 +197,8 @@ function realShim(): Shim {
       mod = {
         parse_template_toml: m.parse_template_toml,
         serialize_template_toml: m.serialize_template_toml,
+        parse_brush_toml: m.parse_brush_toml,
+        serialize_brush_toml: m.serialize_brush_toml,
       };
     } catch (e) {
       console.warn(
@@ -217,6 +227,20 @@ function realShim(): Shim {
       throw new Error(
         "shim WASM not loaded yet — call this after the module resolves, " +
           "or run bash web/build-wasm.sh.",
+      );
+    },
+    parseBrushToml(toml: string): Brush {
+      if (mod && mod.parse_brush_toml) return mod.parse_brush_toml(toml);
+      if (mockFallback) return mockFallback.parseBrushToml(toml);
+      throw new Error(
+        "shim WASM brush bindings missing — rebuild via bash web/build-wasm.sh.",
+      );
+    },
+    serializeBrushToml(b: Brush): string {
+      if (mod && mod.serialize_brush_toml) return mod.serialize_brush_toml(b);
+      if (mockFallback) return mockFallback.serializeBrushToml(b);
+      throw new Error(
+        "shim WASM brush bindings missing — rebuild via bash web/build-wasm.sh.",
       );
     },
   };
@@ -355,6 +379,24 @@ export function mockShim(): Shim {
         "# WARNING: this is a mock TOML preview.",
         "# Real output will come from journal-templates::format.",
         "# Field names below already match the Rust schema.",
+        "",
+        "[preview-as-json]",
+        ...json.split("\n").map((line) => `# ${line}`),
+      ].join("\n");
+    },
+    parseBrushToml(toml: string): Brush {
+      console.info("[mock-shim] parseBrushToml (stub)", toml.slice(0, 80));
+      throw new Error(
+        "mockShim.parseBrushToml is not implemented; wire real WASM.",
+      );
+    },
+    serializeBrushToml(b: Brush): string {
+      // Same JSON-shaped placeholder pattern. The real shim emits
+      // wrapped `[meta] / [brush]` TOML.
+      const json = JSON.stringify(b, null, 2);
+      return [
+        "# WARNING: this is a mock TOML preview.",
+        "# Real output will come from journal-web-shim::serialize_brush_toml.",
         "",
         "[preview-as-json]",
         ...json.split("\n").map((line) => `# ${line}`),
