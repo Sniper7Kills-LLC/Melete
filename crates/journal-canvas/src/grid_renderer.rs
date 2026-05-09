@@ -1,6 +1,8 @@
-use gtk4::cairo;
 use journal_core::Color;
 
+#[cfg(feature = "desktop")]
+use gtk4::cairo;
+#[cfg(feature = "desktop")]
 use crate::viewport_transform::ViewportTransform;
 
 #[derive(Debug, Clone, Copy)]
@@ -30,6 +32,7 @@ impl Default for GridSettings {
 /// Draw a square grid at fixed canvas spacing — no LOD subdivision. Major
 /// lines (every `subdivisions`-th) are drawn thicker so the eye can still
 /// pick out coarse structure without the grid auto-shifting on zoom.
+#[cfg(feature = "desktop")]
 pub fn draw_grid(ctx: &cairo::Context, transform: &ViewportTransform, settings: &GridSettings) {
     if settings.base_spacing <= 0.0 {
         return;

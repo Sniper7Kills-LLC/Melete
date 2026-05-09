@@ -1,13 +1,27 @@
+use std::path::PathBuf;
+
+#[cfg(feature = "desktop")]
 use std::cell::RefCell;
+#[cfg(feature = "desktop")]
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "desktop")]
+use std::path::Path;
 
+#[cfg(feature = "desktop")]
 use gtk4::cairo;
+#[cfg(feature = "desktop")]
 use gtk4::gdk_pixbuf::Pixbuf;
+#[cfg(feature = "desktop")]
 use gtk4::prelude::*;
-use journal_core::{Color, Rect};
+#[cfg(feature = "desktop")]
+use journal_core::Color;
+#[cfg(feature = "desktop")]
+use journal_core::Rect;
 
-use crate::grid_renderer::{draw_grid, GridSettings};
+use crate::grid_renderer::GridSettings;
+#[cfg(feature = "desktop")]
+use crate::grid_renderer::draw_grid;
+#[cfg(feature = "desktop")]
 use crate::viewport_transform::ViewportTransform;
 
 /// Apply a uniform scale to every spacing-bearing variant of `bg`. Used by
@@ -79,6 +93,7 @@ pub enum BackgroundConfig {
     },
 }
 
+#[cfg(feature = "desktop")]
 fn pattern_color() -> Color {
     Color {
         r: 90,
@@ -91,6 +106,7 @@ fn pattern_color() -> Color {
 /// Draw a 1-px screen-space outline around `page_rect` when the visible canvas
 /// extends beyond the page on any side and the config is not a tiling grid.
 /// Must be called while the canvas transform is active (after `paint` sets it up).
+#[cfg(feature = "desktop")]
 pub fn draw_page_bounds_outline(
     ctx: &cairo::Context,
     transform: &ViewportTransform,
@@ -134,6 +150,7 @@ pub fn draw_page_bounds_outline(
     ctx.restore().ok();
 }
 
+#[cfg(feature = "desktop")]
 pub fn draw_background(
     ctx: &cairo::Context,
     transform: &ViewportTransform,
@@ -176,6 +193,7 @@ pub fn draw_background(
     }
 }
 
+#[cfg(feature = "desktop")]
 fn draw_dots(
     ctx: &cairo::Context,
     transform: &ViewportTransform,
@@ -223,6 +241,7 @@ fn draw_dots(
     ctx.restore().ok();
 }
 
+#[cfg(feature = "desktop")]
 fn draw_lines(
     ctx: &cairo::Context,
     transform: &ViewportTransform,
@@ -267,6 +286,7 @@ fn draw_lines(
     ctx.restore().ok();
 }
 
+#[cfg(feature = "desktop")]
 #[derive(Clone)]
 struct CachedSurface {
     surface: cairo::ImageSurface,
@@ -274,10 +294,12 @@ struct CachedSurface {
     pixel_h: i32,
 }
 
+#[cfg(feature = "desktop")]
 thread_local! {
     static IMAGE_CACHE: RefCell<HashMap<PathBuf, CachedSurface>> = RefCell::new(HashMap::new());
 }
 
+#[cfg(feature = "desktop")]
 fn load_surface(path: &Path) -> Option<CachedSurface> {
     let pixbuf = match Pixbuf::from_file(path) {
         Ok(p) => p,
@@ -316,6 +338,7 @@ fn load_surface(path: &Path) -> Option<CachedSurface> {
     })
 }
 
+#[cfg(feature = "desktop")]
 fn with_cached_surface<F: FnOnce(&CachedSurface)>(path: &Path, f: F) {
     IMAGE_CACHE.with(|cache| {
         let mut map = cache.borrow_mut();
@@ -330,12 +353,12 @@ fn with_cached_surface<F: FnOnce(&CachedSurface)>(path: &Path, f: F) {
     });
 }
 
-#[cfg(feature = "pdf")]
+#[cfg(all(feature = "pdf", feature = "desktop"))]
 thread_local! {
     static PDF_CACHE: RefCell<HashMap<(PathBuf, u32), CachedSurface>> = RefCell::new(HashMap::new());
 }
 
-#[cfg(feature = "pdf")]
+#[cfg(all(feature = "pdf", feature = "desktop"))]
 fn render_pdf_to_surface(path: &Path, page_idx: u32) -> Option<CachedSurface> {
     use poppler::Document;
     let abs = match path.canonicalize() {
@@ -380,7 +403,7 @@ fn render_pdf_to_surface(path: &Path, page_idx: u32) -> Option<CachedSurface> {
     })
 }
 
-#[cfg(feature = "pdf")]
+#[cfg(all(feature = "pdf", feature = "desktop"))]
 fn draw_pdf(
     ctx: &cairo::Context,
     page_rect: Rect,
@@ -416,6 +439,7 @@ fn draw_pdf(
     });
 }
 
+#[cfg(feature = "desktop")]
 fn draw_image(ctx: &cairo::Context, page_rect: Rect, path: &Path, size_canvas: (f64, f64)) {
     if size_canvas.0 <= 0.0 || size_canvas.1 <= 0.0 {
         return;
@@ -455,6 +479,7 @@ fn draw_image(ctx: &cairo::Context, page_rect: Rect, path: &Path, size_canvas: (
 ///
 /// All three families have perpendicular distance = (spacing*√3)/4 between
 /// adjacent parallels, so triangles formed are equilateral.
+#[cfg(feature = "desktop")]
 fn draw_isometric(ctx: &cairo::Context, transform: &ViewportTransform, spacing: f64) {
     if spacing <= 0.0 {
         return;
@@ -516,6 +541,7 @@ fn draw_isometric(ctx: &cairo::Context, transform: &ViewportTransform, spacing: 
 
 /// Draw a pointy-top hexagonal grid across the visible canvas. `spacing`
 /// is the distance between adjacent hex centres along the X axis.
+#[cfg(feature = "desktop")]
 fn draw_hexagonal(ctx: &cairo::Context, transform: &ViewportTransform, spacing: f64) {
     if spacing <= 0.0 {
         return;
