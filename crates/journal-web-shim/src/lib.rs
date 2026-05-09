@@ -25,6 +25,7 @@
 
 #![allow(clippy::needless_pass_by_value)]
 
+use journal_core::brush::Brush;
 use journal_core::PageTemplate;
 use journal_templates::format::{
     parse_template_toml as parse_toml, serialize_template_toml as serialize_toml,
@@ -89,6 +90,66 @@ pub fn serialize_template_toml(value: JsValue) -> Result<String, JsValue> {
 // `serde::Serialize` is brought into scope for `template.serialize(...)` above.
 use serde::Serialize;
 
+// ---------------------------------------------------------------------
+// Brush round-trip — backs the SPA's `/tooler` route.
+// ---------------------------------------------------------------------
+
+/// TOML wire format for a `Brush`. Wraps the `Brush` under a top-level
+/// `[brush]` table so the file is self-describing (matches the
+/// page-template wire format's `[template]` table). Adds a small
+/// `[meta]` header carrying a schema version so older readers can
+/// reject future formats explicitly.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct BrushFile {
+    #[serde(default)]
+    meta: BrushFileMeta,
+    brush: Brush,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct BrushFileMeta {
+    /// Bumped when the on-disk schema changes incompatibly.
+    schema_version: u32,
+}
+
+impl Default for BrushFileMeta {
+    fn default() -> Self {
+        Self { schema_version: 1 }
+    }
+}
+
+/// Parse a TOML brush document into a JS object.
+///
+/// Accepts either the wrapped `[brush]` form produced by
+/// `serialize_brush_toml` or a bare `Brush` table at the root, so the
+/// SPA can paste in either shape.
+#[wasm_bindgen]
+pub fn parse_brush_toml(toml: &str) -> Result<JsValue, JsValue> {
+    install_panic_hook();
+    // Try the wrapped form first; fall back to a bare Brush.
+    let brush: Brush = match toml::from_str::<BrushFile>(toml) {
+        Ok(file) => file.brush,
+        Err(_) => toml::from_str::<Brush>(toml).map_err(js_err)?,
+    };
+    let serializer = Serializer::new().serialize_maps_as_objects(true);
+    brush.serialize(&serializer).map_err(js_err)
+}
+
+/// Serialize a JS-side `Brush` object to TOML.
+///
+/// Output is the wrapped `[meta] / [brush]` form so a downstream parser
+/// can reject older / newer schema versions explicitly.
+#[wasm_bindgen]
+pub fn serialize_brush_toml(value: JsValue) -> Result<String, JsValue> {
+    install_panic_hook();
+    let brush: Brush = serde_wasm_bindgen::from_value(value).map_err(js_err)?;
+    let file = BrushFile {
+        meta: BrushFileMeta::default(),
+        brush,
+    };
+    toml::to_string_pretty(&file).map_err(js_err)
+}
+
 #[cfg(test)]
 mod tests {
     // The crate's test suite lives outside wasm — `cargo test` (host
@@ -98,4 +159,60 @@ mod tests {
     // upstream. Adding a duplicate harness here would require a
     // wasm-bindgen-test runner; not worth the wiring for a 60-line
     // adapter crate.
+
+    use super::{BrushFile, BrushFileMeta};
+    use journal_core::brush::{Brush, Geometry, TipShape, WidthMode};
+
+
+    /// Round-trip a one-layer Brush through the BrushFile TOML wrapper
+    /// to catch any serde derives going missing on the underlying enum
+    /// types — we deserialize from a tagged-enum TOML form.
+    #[test]
+    fn brush_file_toml_roundtrip() {
+        // Build a Brush JSON literal that exercises every internally
+        // tagged enum (Geometry, WidthMode, TipShape, CursorShape) plus
+        // ColorMod / BlendMode plain shapes — proves the schema.
+        let json = serde_json::json!({
+            "id": "00000000-0000-0000-0000-000000000000",
+            "name": "test-brush",
+            "layers": [{
+                "enabled": true,
+                "geometry": { "type": "smooth", "resample_step_mm": 0.5 },
+                "width": { "type": "pressure", "floor": 0.2, "amp": 1.0 },
+                "tip": { "type": "round" },
+                "tip_scale": 1.0,
+                "color": { "alpha_mult": 1.0, "hue_shift_deg": 0.0 },
+                "blend": "Normal"
+            }],
+            "cursor": { "type": "auto" },
+            "default_color": [60, 60, 80, 255]
+        });
+        let brush: Brush = serde_json::from_value(json).expect("brush from json");
+        let file = BrushFile {
+            meta: BrushFileMeta::default(),
+            brush,
+        };
+        let s = toml::to_string_pretty(&file).expect("serialize");
+        let parsed: BrushFile = toml::from_str(&s).expect("deserialize wrapped");
+        assert_eq!(parsed.brush.name, "test-brush");
+        assert_eq!(parsed.meta.schema_version, 1);
+        assert_eq!(parsed.brush.layers.len(), 1);
+        match parsed.brush.layers[0].geometry {
+            Geometry::Smooth { resample_step_mm } => {
+                assert!((resample_step_mm - 0.5).abs() < 1e-9);
+            }
+            _ => panic!("wrong geometry"),
+        }
+        match parsed.brush.layers[0].width {
+            WidthMode::Pressure { floor, amp } => {
+                assert!((floor - 0.2).abs() < 1e-9);
+                assert!((amp - 1.0).abs() < 1e-9);
+            }
+            _ => panic!("wrong width"),
+        }
+        match parsed.brush.layers[0].tip {
+            TipShape::Round => {}
+            _ => panic!("wrong tip"),
+        }
+    }
 }
