@@ -1,5 +1,11 @@
 # Project Plan — Journal App
 
+> **Issue tracking has moved to GitHub.** Open work for Phase 6 and the
+> "Future (Not Now)" backlog lives at
+> <https://github.com/Sniper7Kills-LLC/Journal/issues>. This document
+> remains the architectural reference and historical record of completed
+> phases. Unchecked items below are annotated with their GH issue number.
+
 ## Vision
 
 Personal OneNote/rnote alternative for Linux. Two key differentiators:
@@ -176,8 +182,8 @@ Home screen (no notebook open) shows notebook grid/list.
 - [x] `journal-app`: Section settings — limit templates (gear button per section, "inherit notebook" toggle)
 - [x] `journal-app`: Template management area (list + delete user templates; built-ins protected)
 - [x] `journal-app`: Import image as template background (via `gdk_pixbuf` → Cairo `ImageSurface` cache)
-- [ ] `journal-app`: Import PDF page as template background (deferred — needs poppler bindings)
-- [ ] `journal-app`: Basic template creator (deferred)
+- [ ] `journal-app`: Import PDF page as template background (deferred — needs poppler bindings) — **GH [#1](https://github.com/Sniper7Kills-LLC/Journal/issues/1)**
+- [x] ~~`journal-app`: Basic template creator (deferred)~~ — superseded by Phase 3.7 full-screen template editor
 
 ---
 
@@ -209,7 +215,7 @@ Home screen (no notebook open) shows notebook grid/list.
 - [x] `journal-app`: Auto-land on today's page when opening planner; sidebar refresh after every date nav
 - [x] `journal-app`: Hierarchical sidebar — Year section → Month-or-Week wrapper → daily pages, recursive expanders
 - [x] `journal-app`: No-page placeholder canvas (drawing disabled until a page is selected)
-- [ ] `journal-app`: Notebook template editor — full version (deferred; minimal stub exists)
+- [x] ~~`journal-app`: Notebook template editor — full version (deferred; minimal stub exists)~~ — superseded by Phase 5.7 drag-drop editor
 
 **Milestone:** Yearly planner. Navigate any date. Pages auto-generate. ✅
 
@@ -249,7 +255,7 @@ Home screen (no notebook open) shows notebook grid/list.
 
 - [x] Configurable no-page placeholder image + text via `~/.config/journal/config.toml`; settings dialog on home
 - [x] Full notebook template editor (name, description, grouping, page title format, year/month/week section formats, daily slots with day-of-week toggles + page template picker, add/remove slots; persisted to disk)
-- [ ] PDF template background import (deferred — poppler-rs crate compatibility with current gtk4-rs/glib generation needs verification; libpoppler-glib is available system-side)
+- [ ] PDF template background import (deferred — poppler-rs crate compatibility with current gtk4-rs/glib generation needs verification; libpoppler-glib is available system-side) — **GH [#1](https://github.com/Sniper7Kills-LLC/Journal/issues/1)**
 
 ## Phase 5.5: Nav + Editing polish
 
@@ -303,9 +309,9 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ## Future (Not Now)
 
-- [ ] Calendar integration (Google Calendar, iCal) — display events on template areas
-- [ ] Storage offloading — archive old notebooks to external storage
-- [ ] Handwriting recognition / search
+- [ ] Calendar integration (Google Calendar, iCal) — display events on template areas — **GH [#15](https://github.com/Sniper7Kills-LLC/Journal/issues/15)**
+- [ ] Storage offloading — archive old notebooks to external storage — **GH [#16](https://github.com/Sniper7Kills-LLC/Journal/issues/16)**
+- [ ] Handwriting recognition / search — **GH [#17](https://github.com/Sniper7Kills-LLC/Journal/issues/17)**
 
 ---
 
@@ -329,9 +335,7 @@ the optional template-sharing portal, not for the journal app.
 
 - [x] **SQLite (single file)** — original layout, kept as the `SqliteBackend` impl in case anyone wants a one-file backup.
 - [x] **File-per-notebook `.journal`** — `MultiFileSqliteBackend`. Each notebook lives in its own self-contained SQLite file (`journals/{id}.journal`); a small `index.db` catalogues them for fast listing. Pre-existing single-file dbs migrate automatically on first boot (renamed `journal.db.legacy`). Per-process caches (`section_to_notebook`, `page_to_notebook`, `stroke_to_notebook`) route id-only operations without scanning every file. Cross-notebook page moves are explicitly rejected.
-- [ ] **File-per-notebook `.journal`** — revisit the original PLAN.md design;
-  may layer over SQLite by giving each notebook its own DB file (so users can
-  copy/share/back-up a single file).
+- [x] ~~**File-per-notebook `.journal`** — revisit the original PLAN.md design~~ — duplicate of the bullet above; shipped as `MultiFileSqliteBackend`.
 
 ### 6.3 Remote template backend (first network feature) — AWS Amplify
 
@@ -339,27 +343,9 @@ Templates are the lowest-risk thing to host: small TOML blobs, no per-stroke
 write traffic, valuable to share. We do **not** roll our own server — the
 backend is **AWS Amplify** (Cognito + AppSync/REST + DynamoDB + S3).
 
-- [ ] AWS infra (Amplify project alongside the repo, e.g. `amplify/`):
-  - **Auth:** Cognito user pool — email + password, optional federated
-    (Google/Apple) later. Hosted UI not used; client opens the OAuth flow
-    in the system browser via `webbrowser` + a localhost loopback redirect.
-  - **API:** AppSync (GraphQL) preferred over REST — schema models
-    `Template`, `User`, `Visibility { Private | Unlisted | Public }`,
-    `Fork` mutation. Authorization rules per-field via Cognito groups.
-  - **Storage:** DynamoDB for metadata (id, owner, name, description,
-    visibility, fork_of, created_at). S3 bucket for the TOML body
-    (key = `templates/{id}.toml`); lets large/binary attachments grow
-    without DynamoDB row-size pain.
-  - **Render service (later):** Lambda triggered on template upload that
-    runs a headless `journal-canvas` Cairo pass to render a PNG preview
-    into `templates/{id}.png`.
-- [ ] `journal-storage`: add `RemoteTemplateStore` impl. No `reqwest` — use
-  the **AWS Rust SDK** (`aws-sdk-cognitoidentityprovider`,
-  `aws-sdk-dynamodb`, `aws-sdk-s3`) or the AppSync GraphQL endpoint via a
-  thin `reqwest` wrapper that signs requests with SigV4 / Cognito JWT.
-  Cache fetched templates locally so the editor works offline.
-- [ ] `journal-app`: settings pane to log in / log out / pick "sync templates"
-  toggle. Template manager grows tabs for "Local", "My (synced)", "Public".
+- [ ] AWS infra (Amplify project alongside the repo, e.g. `amplify/`) — **GH [#4](https://github.com/Sniper7Kills-LLC/Journal/issues/4) (CDK stack), [#5](https://github.com/Sniper7Kills-LLC/Journal/issues/5) (AppSync schema)**
+- [ ] `journal-storage`: add `RemoteTemplateStore` impl — **GH [#6](https://github.com/Sniper7Kills-LLC/Journal/issues/6)**
+- [ ] `journal-app`: settings pane to log in / log out / pick "sync templates" toggle. Template manager grows tabs for "Local", "My (synced)", "Public". — **GH [#7](https://github.com/Sniper7Kills-LLC/Journal/issues/7)**
 
 ### 6.4 Web template portal — Amplify Hosting
 
@@ -373,7 +359,7 @@ for the journal" rule still holds — **drawing on a page** stays native;
 
 - [ ] **Browse/share** — list public templates with Lambda-rendered PNG
   previews, fork to "my templates". Authenticated users can rename /
-  set visibility / delete their own.
+  set visibility / delete their own. — **GH [#8](https://github.com/Sniper7Kills-LLC/Journal/issues/8), [#9](https://github.com/Sniper7Kills-LLC/Journal/issues/9)**
 - [ ] **Page template designer** — drag-and-drop editor mirroring the
   native template editor: a widget palette (TextBlock, Rectangle, Ellipse,
   Line, Grid/Lines/Dots Region, CalendarMonth, Timeline, Checklist,
@@ -382,7 +368,7 @@ for the journal" rule still holds — **drawing on a page** stays native;
   (stroke/fill colour, width, per-kind controls, text-variable insertion).
   Output is the **same TOML schema** consumed by the native client
   (`schema_version = 1`, `widgets = [...]`) so a template designed on the
-  web loads unchanged on the desktop.
+  web loads unchanged on the desktop. — **GH [#10](https://github.com/Sniper7Kills-LLC/Journal/issues/10)**
 - [ ] **Notebook template designer** — drag-and-drop editor for planner
   structure: define `year_start`, `before_quarter`, `before_month`,
   `before_week` slots (each takes an ordered list of page templates,
@@ -391,37 +377,169 @@ for the journal" rule still holds — **drawing on a page** stays native;
   `grouping = Month | Week`; edit `page_title_format` +
   `section_title_formats` with a live preview that uses tomorrow's date.
   Output matches the native notebook-template TOML at
-  `~/.local/share/journal/notebook_templates/`.
+  `~/.local/share/journal/notebook_templates/`. — **GH [#11](https://github.com/Sniper7Kills-LLC/Journal/issues/11)**
 - [ ] **Schema parity guarantee** — page-template + notebook-template
   schemas live in `journal-core` (already true for page templates via
   `journal_core::template`). The web SPA fetches a versioned JSON schema
   from a Lambda endpoint to render its forms, so adding a new
   `WidgetKind` variant on the desktop automatically becomes available
-  in the web designer's palette without a separate web release.
+  in the web designer's palette without a separate web release. — **GH [#13](https://github.com/Sniper7Kills-LLC/Journal/issues/13)**
 - [ ] **Render preview** — the web designer renders previews client-side
   via a small TypeScript port of `widget_renderer` against an HTML5
   `<canvas>`. Same coord system, same default sizes, same `title_format`
   expansion (port of `journal_core::title_format`). Lambda-rendered PNG
   remains the source of truth for thumbnails (server side, headless
-  Cairo) so browse-list previews match the native client byte-for-byte.
+  Cairo) so browse-list previews match the native client byte-for-byte. — **GH [#3](https://github.com/Sniper7Kills-LLC/Journal/issues/3) (WASM build), [#12](https://github.com/Sniper7Kills-LLC/Journal/issues/12) (viewer + QR share)**
 - [ ] **Out of scope:** drawing on a page (strokes, stylus input, ink) —
   that stays on the native client, full stop.
 
 ### 6.5 Remote notebook/stroke backend (later, gated on 6.3)
 
-Same Amplify stack scaled to notebooks/strokes:
+Same Amplify stack scaled to notebooks/strokes — tracked as a single
+umbrella issue **GH [#14](https://github.com/Sniper7Kills-LLC/Journal/issues/14)**:
 
-- [ ] DynamoDB tables: `Notebook`, `Section`, `Page`, `Stroke` (with `pageId`
-  partition key + `id` sort key + a GSI for `(pageId, modifiedAt)`).
-- [ ] Sync engine with conflict resolution (per-stroke is append-only, so
-  last-writer-wins on `Stroke.id` is safe; page reorders need vector clocks
-  or CRDT).
-- [ ] End-to-end encryption option (notebooks are personal — server stores
-  ciphertext, key lives on the client / derived from Cognito identity).
-- [ ] Multi-device sync (replaces the standalone "Sync between devices" item).
-- [ ] Collaborative notebooks (replaces the standalone "Collaborative
-  notebooks" item) — depends on CRDT design above; AppSync subscriptions
-  give us live updates for free.
+- [ ] DynamoDB tables: `Notebook`, `Section`, `Page`, `Stroke`
+- [ ] Sync engine with conflict resolution (last-writer-wins on append-only strokes; CRDT for page reorder)
+- [ ] End-to-end encryption option (server stores ciphertext)
+- [ ] Multi-device sync
+- [ ] Collaborative notebooks via AppSync subscriptions
+
+---
+
+## Phase 7: Productization
+
+After the web POC + desktop bookmarks land, the project shifts from
+"working in isolation" to "shippable product". Seven gating steps in
+roughly the order they should happen — each tracked as a top-level GH
+issue so the work splits cleanly across sessions.
+
+### 7.1 Final product name
+
+- [ ] Decide on a single brand. Today the project lives under
+  "Journal" + the `dev.s7k.journal` reverse-DNS id; that's a working
+  title. Inputs: domain availability, conflict with existing apps
+  (rnote / Joplin / Logseq / Obsidian / Notability / OneNote),
+  trademark search, social-handle availability, .desktop AppId
+  rename cost, GitHub repo rename cost. Once chosen: rename the repo,
+  update Cargo metadata, freedesktop AppId, README, marketing doc.
+  Tracked as **GH [#39](https://github.com/Sniper7Kills-LLC/Journal/issues/39)**.
+
+### 7.2 Web ↔ Desktop integration
+
+The web POC at `web/` and the desktop binary share `journal-core` /
+`journal-templates` / `journal-canvas` / `journal-widgets` /
+`journal-web-shim` / `journal-web-viewer` — but the round-trip
+(designer ↔ desktop) has only been validated on a handful of
+templates. This phase exhaustively integrates and tests them:
+
+- [ ] Schema-parity CI for page-template + notebook-template + brush
+  TOML round-trip (both desktop ↔ web SPA build artefacts).
+- [ ] Visual regression harness for the web viewer against the
+  desktop's rendered PNG (golden corpus).
+- [ ] End-to-end: create template in Templeter → download TOML →
+  drop in `~/.local/share/journal/templates/` → desktop loads,
+  renders, edits, saves → re-export → diff against original.
+- [ ] Same for brushes (Tooler → `brushes.toml`).
+- [ ] Same for notebook templates (needs `serialize_notebook_template_toml`
+  in `journal-web-shim` first — currently the Gallery emits JSON).
+
+Tracked as **GH [#40](https://github.com/Sniper7Kills-LLC/Journal/issues/40)**.
+
+### 7.3 Polish + publish
+
+- [ ] UX audit pass on every web route (Viewer / Designer / Templeter
+  / Tooler / Gallery). Smart-guides, undo/redo coverage, keyboard
+  shortcuts, accessibility, dark-mode parity.
+- [ ] Desktop polish backlog (bookmarks panel position, sidebar
+  chrome, dialog modality, error toasts).
+- [ ] Hosting decision for the web SPA: Amplify Hosting vs. static
+  S3 + CloudFront vs. Vercel/Netlify (Amplify ties to the eventual
+  backend, see #4).
+- [ ] First public deploy of the SPA at the chosen domain (post-7.1).
+
+Tracked as **GH [#41](https://github.com/Sniper7Kills-LLC/Journal/issues/41)**.
+
+### 7.4 Feedback collection
+
+- [ ] In-app feedback widget — "Send feedback" header item with text
+  + optional screenshot, posts to a Lambda that lands in a
+  DynamoDB / SES inbox.
+- [ ] Public feedback channel: GitHub issues template + a triage
+  rotation, plus an optional Discord / Discussions destination
+  for non-bug ideation.
+- [ ] Telemetry opt-in (anonymous): session counts, route hits,
+  brush + template downloads. Strictly opt-in, off by default,
+  documented in privacy doc.
+
+Tracked as **GH [#42](https://github.com/Sniper7Kills-LLC/Journal/issues/42)**.
+
+### 7.5 Multi-OS packaging
+
+Originally out of scope (Linux-first); now in scope.
+
+- [ ] Linux: AppImage, Flatpak, .deb, .rpm. Existing `Makefile` /
+  `install.sh` handles `.desktop` + binary install — extend to
+  one-shot Flatpak/AppImage builds.
+- [ ] macOS: bundle (`.app` + DMG), code-signing, notarization. wgpu
+  on macOS uses the Metal backend — already supported by Vello, but
+  CI needs a macOS runner.
+- [ ] Windows: MSI installer, code-signing certificate.
+- [ ] CI matrix: every push builds artefacts for all three OSes;
+  release tags publish to a downloads page.
+- [ ] Auto-update: `cargo-dist` covers macOS + Windows; Linux
+  packages handle their own updaters via the distro repo.
+
+Tracked as **GH [#43](https://github.com/Sniper7Kills-LLC/Journal/issues/43)**.
+
+### 7.6 Paid plans
+
+Needs a design pass *before* implementation. The product ships as
+"works-locally-free, pay-for-cloud-extras" — the desktop + offline
+notebooks stay free forever; paid tier unlocks the Amplify-backed
+features behind a Cognito user.
+
+Provisional tier sketch (subject to design, not committed):
+
+- **Free** — local desktop, local notebook storage, browse public
+  Gallery content, fork / download to local.
+- **Plus** — sync own templates + brushes across devices, publish
+  templates / brushes to Gallery (with rate limit), 5 GB notebook
+  storage on the cloud backend.
+- **Pro** — increased notebook storage (50 GB), live sharing of
+  notebooks (read-only links), longer share-link expiry.
+- **Team** — collaborative editing, shared notebooks across
+  multiple Cognito accounts, SSO.
+
+Open questions to design before any code:
+
+- [ ] Pricing strategy (one-off vs. monthly, USD anchor, regional
+  pricing).
+- [ ] Storage accounting (per-byte vs. per-stroke vs. per-page).
+- [ ] Live-sharing model (read-only viewer first; collaborative
+  edit needs CRDT work — gates on #14).
+- [ ] Payment processor (Stripe is the obvious pick; tax + invoicing
+  scope creep matters).
+- [ ] Plan switching, downgrade pathway (data ownership when a user
+  drops below a paid tier).
+- [ ] EU/UK/US regulatory surface (VAT, sales tax, GDPR data
+  retention).
+
+Tracked as **GH [#44](https://github.com/Sniper7Kills-LLC/Journal/issues/44)**.
+
+### 7.7 Informational / marketing site
+
+- [ ] Marketing landing page on the chosen domain (post-7.1) — clean
+  hero, "what is it" copy, screenshots, downloads link, link to the
+  web Gallery.
+- [ ] Documentation: getting-started, daily workflow, planner setup,
+  brush authoring, troubleshooting. Likely a static site
+  (Astro / Vitepress / Docusaurus) sharing the same domain.
+- [ ] Pricing page (gates on 7.6 design).
+- [ ] Privacy + Terms pages (gate on 7.4 telemetry decisions and
+  7.6 payments).
+- [ ] Press kit (logo PNG/SVG, screenshots, contact link).
+
+Tracked as **GH [#45](https://github.com/Sniper7Kills-LLC/Journal/issues/45)**.
 
 ---
 
