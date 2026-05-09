@@ -11,6 +11,7 @@ mod canvas_widget;
 mod config;
 mod dialogs;
 mod fetcher;
+mod first_run;
 mod history;
 mod input;
 mod notebook_template_creator;
@@ -644,11 +645,22 @@ fn build_ui(app: &adw::Application) -> Result<()> {
 
     window.present();
 
-    // Discoverability nudges (audit §11). Tour fires on first launch
-    // until dismissed; what's-new fires once per crate version after the
-    // tour has been seen at least once.
-    onboarding::show_first_launch_tour(&window);
-    onboarding::show_whats_new_if_upgraded(&window);
+    // First-run sign-in / skip welcome window. Shown modally over the
+    // freshly-presented main window the very first time Journal launches
+    // (or any boot where `AppConfig::first_run_completed` is still
+    // false). Either button persists the flag and runs the post-welcome
+    // tour + what's-new chain; if the user has already dispatched the
+    // welcome window the callback fires synchronously.
+    {
+        let window_for_callback = window.clone();
+        first_run::show_if_needed(&window, move || {
+            // Discoverability nudges (audit §11). Tour fires on first launch
+            // until dismissed; what's-new fires once per crate version after the
+            // tour has been seen at least once.
+            onboarding::show_first_launch_tour(&window_for_callback);
+            onboarding::show_whats_new_if_upgraded(&window_for_callback);
+        });
+    }
 
     Ok(())
 }
