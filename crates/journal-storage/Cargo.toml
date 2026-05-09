@@ -22,3 +22,10 @@ dirs = { workspace = true }
 tempfile = "3"
 sha2 = "0.10"
 hex = "0.4"
+
+[features]
+# Enables the remote (AWS Amplify) template store. Empty for now —
+# issue #6 will populate this with `reqwest` + the AWS SDK crates.
+# This crate's `build.rs` and the `remote_template_store::config`
+# module are gated on this feature.
+remote = []
