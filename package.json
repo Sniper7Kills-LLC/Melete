@@ -1,0 +1,32 @@
+{
+  "name": "journal-amplify",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Amplify Gen 2 backend for the Journal app (Cognito + AppSync + DynamoDB + S3). Sandbox-only until prod creds land.",
+  "type": "module",
+  "scripts": {
+    "sandbox": "ampx sandbox",
+    "sandbox:delete": "ampx sandbox delete",
+    "typecheck": "tsc --noEmit -p amplify/tsconfig.json"
+  },
+  "devDependencies": {
+    "@aws-amplify/backend": "^1.4.0",
+    "@aws-amplify/backend-cli": "^1.4.0",
+    "@aws-appsync/utils": "^2.1.1",
+    "@aws-sdk/lib-dynamodb": "^3.1045.0",
+    "@types/node": "^22.19.18",
+    "aws-cdk": "^2.158.0",
+    "aws-cdk-lib": "^2.158.0",
+    "constructs": "^10.4.2",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.687.0",
+    "@aws-sdk/client-s3": "^3.687.0",
+    "@aws-sdk/s3-request-presigner": "^3.687.0",
+    "@aws-sdk/util-dynamodb": "^3.687.0",
+    "aws-amplify": "^6.6.0"
+  }
+}
