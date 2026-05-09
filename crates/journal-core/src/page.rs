@@ -101,4 +101,9 @@ pub struct Page {
     /// TOML/JSON / DB rows readable.
     #[serde(default)]
     pub flagged: bool,
+    /// Sort position within the notebook's Bookmarks panel. Only meaningful
+    /// when `flagged` is true; otherwise zero. Newly bookmarked pages get
+    /// `max + 1`; drag-reorder rewrites positions densely.
+    #[serde(default)]
+    pub bookmark_position: u32,
 }

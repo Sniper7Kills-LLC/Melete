@@ -181,6 +181,18 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         }
         conn.pragma_update(None, "user_version", 8)?;
     }
+    if v < 9 {
+        // Per-page bookmark sort position — drives ordering of the
+        // sidebar's "Bookmarks" panel so users can drag-reorder bookmarks
+        // independently of page position within their section.
+        if !column_exists(conn, "pages", "bookmark_position")? {
+            conn.execute(
+                "ALTER TABLE pages ADD COLUMN bookmark_position INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        conn.pragma_update(None, "user_version", 9)?;
+    }
     Ok(())
 }
 

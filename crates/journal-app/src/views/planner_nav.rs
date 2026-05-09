@@ -122,6 +122,7 @@ pub fn ensure_planner_pages(
                     widget_overrides: Default::default(),
                     widget_data: Default::default(),
                     flagged: false,
+                    bookmark_position: 0,
                 };
                 if let Err(e) = db.insert_page(&page) {
                     tracing::error!("failed to insert planner page: {}", e);

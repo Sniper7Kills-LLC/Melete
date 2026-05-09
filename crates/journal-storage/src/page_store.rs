@@ -7,7 +7,7 @@ use crate::error::{Result, StorageError};
 use crate::util::{blob_to_uuid, uuid_to_blob};
 
 const PAGE_COLUMNS: &str =
-    "id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json, flagged";
+    "id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json, flagged, bookmark_position";
 
 pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
     let template_blob = page.template_id.map(|t| uuid_to_blob(t.0));
@@ -19,8 +19,8 @@ pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
     let widget_data_json = serde_json::to_string(&page.widget_data)?;
     let flagged: i64 = if page.flagged { 1 } else { 0 };
     conn.execute(
-        "INSERT INTO pages (id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json, flagged)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        "INSERT INTO pages (id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json, flagged, bookmark_position)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             uuid_to_blob(page.id.0),
             uuid_to_blob(page.section_id.0),
@@ -33,6 +33,7 @@ pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
             overrides_json,
             widget_data_json,
             flagged,
+            page.bookmark_position as i64,
         ],
     )?;
     Ok(())
@@ -94,7 +95,8 @@ pub fn update_page(conn: &Connection, page: &Page) -> Result<()> {
     let updated = conn.execute(
         "UPDATE pages SET section_id = ?2, position = ?3, template_id = ?4,
             planner_address_json = ?5, created_at = ?6, modified_at = ?7, name = ?8,
-            widget_overrides_json = ?9, widget_data_json = ?10, flagged = ?11
+            widget_overrides_json = ?9, widget_data_json = ?10, flagged = ?11,
+            bookmark_position = ?12
          WHERE id = ?1",
         params![
             uuid_to_blob(page.id.0),
@@ -108,6 +110,7 @@ pub fn update_page(conn: &Connection, page: &Page) -> Result<()> {
             overrides_json,
             widget_data_json,
             flagged,
+            page.bookmark_position as i64,
         ],
     )?;
     if updated == 0 {
@@ -213,6 +216,7 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
         .get::<_, Option<String>>(9)?
         .unwrap_or_else(|| "{}".into());
     let flagged_int: i64 = row.get::<_, Option<i64>>(10)?.unwrap_or(0);
+    let bookmark_position: i64 = row.get::<_, Option<i64>>(11)?.unwrap_or(0);
     Ok((|| {
         let template_id = match template_blob {
             Some(b) => Some(TemplateId(blob_to_uuid(&b)?)),
@@ -238,6 +242,7 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
             widget_overrides,
             widget_data,
             flagged: flagged_int != 0,
+            bookmark_position: bookmark_position.max(0) as u32,
         })
     })())
 }
@@ -292,6 +297,7 @@ mod tests {
             widget_overrides: Default::default(),
             widget_data: Default::default(),
             flagged: false,
+            bookmark_position: 0,
         }
     }
 

@@ -150,6 +150,19 @@ const APP_CSS_TEMPLATE: &str = r#"
     margin-bottom: 6px;
 }
 
+/* Horizontal bookmarks strip rendered above the canvas when the sidebar is
+   collapsed. Thin separator beneath so it reads as a chrome row, not page
+   content. Chips are pill-shaped with amber-tinted hover. */
+.bookmarks-top-strip {
+    border-bottom: 1px solid alpha(@accent_color, 0.25);
+    background-color: alpha(@accent_bg_color, 0.05);
+}
+.bookmark-chip {
+    padding: 2px 6px;
+    border-radius: 999px;
+}
+.bookmark-chip image { color: @amber_accent; }
+
 /* Section row: same hover, looks live ──────────────────────────────── */
 .section-row {
     border-radius: 6px;

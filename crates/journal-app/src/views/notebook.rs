@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use chrono::Utc;
@@ -27,6 +27,12 @@ pub struct NotebookView {
 struct SidebarCtx {
     parent: ApplicationWindow,
     sections_box: Rc<GtkBox>,
+    /// Horizontal bookmarks strip rendered above the paned. Visible only when
+    /// the sidebar is collapsed (paned position == 0); empty otherwise.
+    top_strip: Rc<GtkBox>,
+    /// Persists the sidebar Bookmarks expander's expanded state across
+    /// refreshes (which rebuild the panel from scratch).
+    bookmarks_expanded: Rc<Cell<bool>>,
     db: Rc<RefCell<dyn JournalBackend>>,
     state: SharedState,
     notebook_id: NotebookId,
@@ -38,15 +44,7 @@ struct SidebarCtx {
 
 impl SidebarCtx {
     fn refresh(&self) {
-        refresh_sections(
-            &self.parent,
-            &self.sections_box,
-            self.db.clone(),
-            self.state.clone(),
-            self.notebook_id,
-            self.canvas.clone(),
-            self.is_planner,
-        );
+        refresh_sections(self);
     }
 }
 
@@ -107,9 +105,19 @@ pub fn build_notebook_view(
     let db = state.borrow().backend.clone();
     let sections_box_rc = Rc::new(sections_box);
 
+    let top_strip = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(0)
+        .build();
+    top_strip.add_css_class("bookmarks-top-strip");
+    top_strip.set_visible(false);
+    let top_strip_rc = Rc::new(top_strip);
+
     let ctx = SidebarCtx {
         parent: parent.clone(),
         sections_box: sections_box_rc.clone(),
+        top_strip: top_strip_rc.clone(),
+        bookmarks_expanded: Rc::new(Cell::new(false)),
         db: db.clone(),
         state: state.clone(),
         notebook_id,
@@ -171,7 +179,28 @@ pub fn build_notebook_view(
         );
         root.append(&strip);
     }
+    root.append(top_strip_rc.as_ref());
     root.append(&paned);
+
+    // Sidebar collapsed → show the horizontal bookmarks strip along the top.
+    // Two collapse paths:
+    //   1. Header `sidebar_toggle_btn` toggles `sidebar_root.set_visible`.
+    //   2. Portrait orientation auto-collapse drags `paned.position` to 0.
+    // Watch both signals; treat sidebar as collapsed if either is true.
+    {
+        let strip_for_sync = top_strip_rc.clone();
+        let sidebar_for_sync = sidebar_root.clone();
+        let paned_for_sync = paned.clone();
+        let sync = Rc::new(move || {
+            let collapsed = !sidebar_for_sync.is_visible() || paned_for_sync.position() == 0;
+            strip_for_sync.set_visible(collapsed);
+        });
+        sync();
+        let sync_cb = sync.clone();
+        paned.connect_position_notify(move |_| sync_cb());
+        let sync_cb = sync.clone();
+        sidebar_root.connect_visible_notify(move |_| sync_cb());
+    }
 
     // Auto-collapse the sidebar when the window is in portrait orientation
     // (height > width). In portrait, drawing space is at a premium and the
@@ -213,20 +242,29 @@ pub fn build_notebook_view(
     NotebookView { root, sidebar_root }
 }
 
-fn refresh_sections(
-    parent: &ApplicationWindow,
-    sections_box: &Rc<GtkBox>,
-    db: Rc<RefCell<dyn JournalBackend>>,
-    state: SharedState,
-    notebook_id: NotebookId,
-    canvas: DrawingArea,
-    is_planner: bool,
-) {
+fn refresh_sections(ctx: &SidebarCtx) {
+    let sections_box = &ctx.sections_box;
+    let top_strip = &ctx.top_strip;
+
     while let Some(child) = sections_box.first_child() {
         sections_box.remove(&child);
     }
+    while let Some(child) = top_strip.first_child() {
+        top_strip.remove(&child);
+    }
 
-    let roots = match db.borrow_mut().list_root_sections(notebook_id) {
+    // Bookmarks live above sections in the sidebar AND in the horizontal top
+    // strip (visible only when sidebar is collapsed). Both reflect the same
+    // ordered entries.
+    let bookmarks = collect_bookmark_entries(ctx);
+    if !bookmarks.is_empty() {
+        if let Some(panel) = build_bookmarks_sidebar_panel(ctx, &bookmarks) {
+            sections_box.append(&panel);
+        }
+        build_bookmarks_top_strip(ctx, &bookmarks);
+    }
+
+    let roots = match ctx.db.borrow_mut().list_root_sections(ctx.notebook_id) {
         Ok(v) => v,
         Err(e) => {
             tracing::error!("failed to list root sections: {}", e);
@@ -235,7 +273,7 @@ fn refresh_sections(
     };
 
     if roots.is_empty() {
-        let empty_text = if is_planner {
+        let empty_text = if ctx.is_planner {
             "Pages appear here as you navigate to dates above."
         } else {
             "No sections — add one below."
@@ -248,35 +286,19 @@ fn refresh_sections(
         return;
     }
 
-    let ctx = SidebarCtx {
-        parent: parent.clone(),
-        sections_box: sections_box.clone(),
-        db: db.clone(),
-        state: state.clone(),
-        notebook_id,
-        canvas: canvas.clone(),
-        is_planner,
-    };
-
-    // Bookmarks panel (only renders when at least one flagged page exists in
-    // the notebook). Walks every section + iterates list_pages so flagged
-    // pages from any depth surface in one flat list.
-    if let Some(bookmarks) = build_bookmarks_panel(&ctx) {
-        sections_box.append(&bookmarks);
-    }
-
     for section in roots {
-        let row = build_section_row(&ctx, section, 0);
+        let row = build_section_row(ctx, section, 0);
         sections_box.append(&row);
     }
 }
 
-/// Build a collapsible "Bookmarks" expander listing every flagged page in the
-/// notebook. Returns `None` when no flagged pages exist (so the panel hides
-/// itself). Defaults to collapsed; clicking a row navigates to the page.
-fn build_bookmarks_panel(ctx: &SidebarCtx) -> Option<GtkBox> {
-    // Walk the section tree depth-first, collecting (page, section_name) for
-    // every flagged page across every section depth.
+const BOOKMARK_DRAG_PREFIX: &str = "bookmark:";
+
+/// Walks the section tree depth-first, collecting (page, section_name) for
+/// every flagged page in the notebook, sorted by `bookmark_position` (with a
+/// name tiebreaker so newly-flagged pages with `bookmark_position == 0`
+/// remain in a stable order).
+fn collect_bookmark_entries(ctx: &SidebarCtx) -> Vec<(Page, String)> {
     let mut entries: Vec<(Page, String)> = Vec::new();
     {
         let mut db = ctx.db.borrow_mut();
@@ -284,7 +306,7 @@ fn build_bookmarks_panel(ctx: &SidebarCtx) -> Option<GtkBox> {
             Ok(v) => v,
             Err(e) => {
                 tracing::error!("bookmarks: list_root_sections: {}", e);
-                return None;
+                return entries;
             }
         };
         while let Some(section) = stack.pop() {
@@ -305,11 +327,6 @@ fn build_bookmarks_panel(ctx: &SidebarCtx) -> Option<GtkBox> {
         }
     }
 
-    if entries.is_empty() {
-        return None;
-    }
-
-    // Sort by page name (falling back to "Page N") for a stable list.
     entries.sort_by(|a, b| {
         let an = if a.0.name.is_empty() {
             format!("Page {}", a.0.position + 1)
@@ -321,8 +338,22 @@ fn build_bookmarks_panel(ctx: &SidebarCtx) -> Option<GtkBox> {
         } else {
             b.0.name.clone()
         };
-        an.to_lowercase().cmp(&bn.to_lowercase())
+        a.0.bookmark_position
+            .cmp(&b.0.bookmark_position)
+            .then_with(|| an.to_lowercase().cmp(&bn.to_lowercase()))
     });
+    entries
+}
+
+/// Sidebar Bookmarks panel: vertical Expander whose expansion state persists
+/// across refreshes via `ctx.bookmarks_expanded`.
+fn build_bookmarks_sidebar_panel(
+    ctx: &SidebarCtx,
+    entries: &[(Page, String)],
+) -> Option<GtkBox> {
+    if entries.is_empty() {
+        return None;
+    }
 
     let wrapper = GtkBox::builder()
         .orientation(Orientation::Vertical)
@@ -332,14 +363,18 @@ fn build_bookmarks_panel(ctx: &SidebarCtx) -> Option<GtkBox> {
 
     let expander = Expander::builder()
         .label(&format!("Bookmarks ({})", entries.len()))
-        .expanded(false)
+        .expanded(ctx.bookmarks_expanded.get())
         .build();
+    {
+        let cell = ctx.bookmarks_expanded.clone();
+        expander.connect_expanded_notify(move |e| cell.set(e.is_expanded()));
+    }
 
     let list = gtk4::ListBox::new();
     list.add_css_class("navigation-sidebar");
     list.set_selection_mode(gtk4::SelectionMode::None);
 
-    for (page, section_name) in entries {
+    for (idx, (page, section_name)) in entries.iter().enumerate() {
         let row_box = GtkBox::builder()
             .orientation(Orientation::Horizontal)
             .spacing(6)
@@ -366,7 +401,7 @@ fn build_bookmarks_panel(ctx: &SidebarCtx) -> Option<GtkBox> {
         row_box.append(&name_label);
 
         let section_label = Label::builder()
-            .label(&section_name)
+            .label(section_name)
             .halign(gtk4::Align::End)
             .ellipsize(gtk4::pango::EllipsizeMode::End)
             .build();
@@ -378,8 +413,6 @@ fn build_bookmarks_panel(ctx: &SidebarCtx) -> Option<GtkBox> {
         row.set_child(Some(&row_box));
         row.set_activatable(true);
 
-        // Click → navigate. Use connect_activated on the ListBox below; we
-        // store the page on the row's activatable signal via a closure.
         let state = ctx.state.clone();
         let canvas = ctx.canvas.clone();
         let page_for_nav = page.clone();
@@ -391,12 +424,155 @@ fn build_bookmarks_panel(ctx: &SidebarCtx) -> Option<GtkBox> {
         row.add_controller(click);
         row.set_cursor_from_name(Some("pointer"));
 
+        attach_bookmark_drag_source(&row_box, page.id);
+        attach_bookmark_drop_target(ctx, row.upcast_ref::<gtk4::Widget>(), idx as u32);
+
         list.append(&row);
     }
 
     expander.set_child(Some(&list));
     wrapper.append(&expander);
     Some(wrapper)
+}
+
+/// Horizontal bookmark strip rendered above the paned. Visible only when the
+/// sidebar is collapsed. Each entry is a flat icon+label chip; drag-reorder
+/// works the same as in the sidebar panel.
+fn build_bookmarks_top_strip(ctx: &SidebarCtx, entries: &[(Page, String)]) {
+    let strip = ctx.top_strip.as_ref();
+    if entries.is_empty() {
+        return;
+    }
+
+    let scroller = ScrolledWindow::builder()
+        .hscrollbar_policy(gtk4::PolicyType::Automatic)
+        .vscrollbar_policy(gtk4::PolicyType::Never)
+        .hexpand(true)
+        .build();
+    let row_box = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(4)
+        .margin_top(4)
+        .margin_bottom(4)
+        .margin_start(8)
+        .margin_end(8)
+        .build();
+
+    for (idx, (page, _section)) in entries.iter().enumerate() {
+        let chip = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(4)
+            .build();
+        chip.add_css_class("bookmark-chip");
+        let star = gtk4::Image::from_icon_name("starred-symbolic");
+        star.set_pixel_size(12);
+        chip.append(&star);
+        let name_text = if !page.name.is_empty() {
+            page.name.clone()
+        } else {
+            format!("Page {}", page.position + 1)
+        };
+        let lbl = Label::builder()
+            .label(&name_text)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
+            .max_width_chars(20)
+            .build();
+        chip.append(&lbl);
+
+        let btn = Button::builder().child(&chip).build();
+        btn.add_css_class("flat");
+        btn.set_focus_on_click(false);
+
+        let state = ctx.state.clone();
+        let canvas = ctx.canvas.clone();
+        let page_for_nav = page.clone();
+        btn.connect_clicked(move |_| {
+            load_page(&state, &page_for_nav, &canvas);
+        });
+
+        attach_bookmark_drag_source(&chip, page.id);
+        attach_bookmark_drop_target(ctx, btn.upcast_ref::<gtk4::Widget>(), idx as u32);
+
+        row_box.append(&btn);
+    }
+
+    scroller.set_child(Some(&row_box));
+    strip.append(&scroller);
+}
+
+fn attach_bookmark_drag_source(handle: &GtkBox, page_id: PageId) {
+    let source = DragSource::new();
+    source.set_actions(DragAction::MOVE);
+    source.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    let payload = format!("{}{}", BOOKMARK_DRAG_PREFIX, page_id.0);
+    source.connect_prepare(move |_, _, _| {
+        let value = payload.clone().to_value();
+        Some(ContentProvider::for_value(&value))
+    });
+    handle.add_controller(source);
+}
+
+fn attach_bookmark_drop_target(ctx: &SidebarCtx, row: &gtk4::Widget, target_index: u32) {
+    let target = DropTarget::new(glib::types::Type::STRING, DragAction::MOVE);
+    {
+        let row_enter = row.clone();
+        target.connect_enter(move |_, _, _| {
+            row_enter.add_css_class("drag-target");
+            DragAction::MOVE
+        });
+    }
+    {
+        let row_leave = row.clone();
+        target.connect_leave(move |_| {
+            row_leave.remove_css_class("drag-target");
+        });
+    }
+    let ctx = ctx.clone();
+    let row_drop = row.clone();
+    target.connect_drop(move |_, value, _x, _y| {
+        row_drop.remove_css_class("drag-target");
+        let payload = match value.get::<String>() {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
+        let Some(rest) = payload.strip_prefix(BOOKMARK_DRAG_PREFIX) else {
+            return false;
+        };
+        let Ok(src_uuid) = Uuid::parse_str(rest) else {
+            return false;
+        };
+        let src_id = PageId(src_uuid);
+        reorder_bookmark(&ctx, src_id, target_index);
+        ctx.refresh();
+        true
+    });
+    row.add_controller(target);
+}
+
+/// Reorder `src_id` to `target_index` within the notebook's flagged-page list,
+/// then renumber every flagged page's `bookmark_position` densely (0..N).
+fn reorder_bookmark(ctx: &SidebarCtx, src_id: PageId, target_index: u32) {
+    let entries = collect_bookmark_entries(ctx);
+    let Some(src_idx) = entries.iter().position(|(p, _)| p.id == src_id) else {
+        return;
+    };
+    let mut order: Vec<Page> = entries.into_iter().map(|(p, _)| p).collect();
+    let src = order.remove(src_idx);
+    let target = (target_index as usize).min(order.len());
+    order.insert(target, src);
+
+    let mut db = ctx.db.borrow_mut();
+    for (i, mut page) in order.into_iter().enumerate() {
+        let new_pos = i as u32;
+        if page.bookmark_position == new_pos {
+            continue;
+        }
+        page.bookmark_position = new_pos;
+        page.modified_at = Utc::now();
+        if let Err(e) = db.update_page(&page) {
+            tracing::error!("reorder_bookmark: update_page: {}", e);
+        }
+    }
 }
 
 fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
@@ -485,6 +661,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
                         widget_overrides,
                         widget_data: Default::default(),
                         flagged: false,
+                        bookmark_position: 0,
                     };
                     if let Err(e) = ctx_inner.db.borrow_mut().insert_page(&page) {
                         tracing::error!("failed to insert page: {}", e);
@@ -696,6 +873,18 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
             let mut updated = page_btn.clone();
             updated.flagged = !updated.flagged;
             updated.modified_at = Utc::now();
+            // Newly bookmarked pages append at the end of the Bookmarks list;
+            // un-bookmarking resets the position so re-flagging later doesn't
+            // resurrect a stale rank.
+            if updated.flagged {
+                let max = collect_bookmark_entries(&ctx_btn)
+                    .iter()
+                    .map(|(p, _)| p.bookmark_position)
+                    .max();
+                updated.bookmark_position = max.map(|m| m + 1).unwrap_or(0);
+            } else {
+                updated.bookmark_position = 0;
+            }
             if let Err(e) = ctx_btn.db.borrow_mut().update_page(&updated) {
                 tracing::error!("toggle page flag: {}", e);
                 return;
@@ -940,6 +1129,7 @@ fn duplicate_page(ctx: &SidebarCtx, page: &Page, canvas: &DrawingArea) {
         widget_overrides: page.widget_overrides.clone(),
         widget_data: page.widget_data.clone(),
         flagged: page.flagged,
+        bookmark_position: page.bookmark_position,
     };
 
     {

@@ -693,6 +693,7 @@ mod tests {
             widget_overrides: Default::default(),
             widget_data: Default::default(),
             flagged: false,
+            bookmark_position: 0,
         }
     }
 
