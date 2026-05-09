@@ -47,7 +47,7 @@
       "id": "33333333-3333-4333-8333-333333333333",
       "name": "Daily Layout",
       "description": "Sample template with a heading, a checklist, and a small calendar.",
-      "background": { "kind": "Grid", "spacing": 5 },
+      "background": { "kind": "Blank" },
       "size_mm": [215.9, 279.4],
       "tiling": "None",
       "default_viewport": null,

@@ -6,6 +6,7 @@ import "./index.css";
 import { Viewer } from "./pages/Viewer";
 import { Designer } from "./pages/Designer";
 import { Templeter } from "./pages/Templeter";
+import { useUnits } from "./store/unitsStore";
 
 function NavBar() {
   const linkBase =
@@ -43,10 +44,29 @@ function NavBar() {
           Templeter
         </NavLink>
       </nav>
-      <span className="ml-auto text-xs text-slate-400">
+      <UnitsSelector />
+      <span className="ml-3 text-xs text-slate-400">
         WASM mocked · UI scaffolding
       </span>
     </header>
+  );
+}
+
+function UnitsSelector() {
+  const units = useUnits((s) => s.units);
+  const setUnits = useUnits((s) => s.setUnits);
+  return (
+    <label className="ml-auto flex items-center gap-1 text-xs text-slate-600">
+      Units
+      <select
+        value={units}
+        onChange={(e) => setUnits(e.target.value as "mm" | "in")}
+        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+      >
+        <option value="mm">mm</option>
+        <option value="in">inches</option>
+      </select>
+    </label>
   );
 }
 

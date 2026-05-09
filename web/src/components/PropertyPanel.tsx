@@ -2,6 +2,58 @@ import type { ReactNode } from "react";
 
 import type { Color, Widget, WidgetKind } from "@/types";
 import { useDesigner, useSelectedWidget } from "@/store/designerStore";
+import {
+  displayToMm,
+  mmToDisplay,
+  unitsLabel,
+  useUnits,
+  type LengthUnits,
+} from "@/store/unitsStore";
+
+/**
+ * Numeric input that displays + parses values in the active length
+ * unit (mm or inches). The underlying data stays mm — `valueMm` /
+ * `onChangeMm` only see millimetre numbers; the JSX side handles the
+ * conversion so toggling units in the navbar instantly re-renders
+ * every input without rewriting the data.
+ */
+function LengthInput({
+  valueMm,
+  onChangeMm,
+  className,
+  step,
+}: {
+  valueMm: number;
+  onChangeMm: (mm: number) => void;
+  className?: string;
+  step?: number;
+}) {
+  const units = useUnits((s) => s.units);
+  const display = mmToDisplay(valueMm, units);
+  const stepFor = step ?? defaultStep(units);
+  // Round to a sensible number of fractional digits so the React-controlled
+  // input doesn't churn on round-trip conversion.
+  const formatted = units === "in" ? Number(display.toFixed(3)) : display;
+  return (
+    <input
+      type="number"
+      step={stepFor}
+      value={formatted}
+      onChange={(e) => onChangeMm(displayToMm(Number(e.target.value), units))}
+      className={className}
+    />
+  );
+}
+
+function defaultStep(units: LengthUnits): number {
+  return units === "in" ? 0.05 : 0.5;
+}
+
+/** Returns "(mm)" or "(in)" for use in field labels. */
+function useUnitLabel(): string {
+  const units = useUnits((s) => s.units);
+  return `(${unitsLabel(units)})`;
+}
 
 /**
  * Right pane: edit every field of the selected widget. Each kind gets
@@ -13,6 +65,7 @@ export function PropertyPanel() {
   const removeWidget = useDesigner((s) => s.removeWidget);
   const template = useDesigner((s) => s.template);
   const updateTemplateMeta = useDesigner((s) => s.updateTemplateMeta);
+  const unitLbl = useUnitLabel();
 
   if (!widget) {
     return (
@@ -43,26 +96,20 @@ export function PropertyPanel() {
             className={inputCls()}
           />
         </Field>
-        <Field label="Page width (mm)">
-          <input
-            type="number"
-            value={template.size_mm[0]}
-            onChange={(e) =>
-              updateTemplateMeta({
-                size_mm: [Number(e.target.value), template.size_mm[1]],
-              })
+        <Field label={`Page width ${unitLbl}`}>
+          <LengthInput
+            valueMm={template.size_mm[0]}
+            onChangeMm={(v) =>
+              updateTemplateMeta({ size_mm: [v, template.size_mm[1]] })
             }
             className={inputCls()}
           />
         </Field>
-        <Field label="Page height (mm)">
-          <input
-            type="number"
-            value={template.size_mm[1]}
-            onChange={(e) =>
-              updateTemplateMeta({
-                size_mm: [template.size_mm[0], Number(e.target.value)],
-              })
+        <Field label={`Page height ${unitLbl}`}>
+          <LengthInput
+            valueMm={template.size_mm[1]}
+            onChangeMm={(v) =>
+              updateTemplateMeta({ size_mm: [template.size_mm[0], v] })
             }
             className={inputCls()}
           />
@@ -102,39 +149,36 @@ function RectFields({ widget }: { widget: Widget }) {
   function set(k: keyof typeof r, v: number) {
     updateWidget(widget.id, { rect: { ...r, [k]: v } });
   }
+  const unitLbl = useUnitLabel();
   return (
     <fieldset className="rounded border border-slate-200 p-2">
-      <legend className="px-1 text-xs text-slate-500">Rect (mm)</legend>
+      <legend className="px-1 text-xs text-slate-500">Rect {unitLbl}</legend>
       <div className="grid grid-cols-2 gap-2">
         <Field label="x">
-          <input
-            type="number"
-            value={r.x}
-            onChange={(e) => set("x", Number(e.target.value))}
+          <LengthInput
+            valueMm={r.x}
+            onChangeMm={(v) => set("x", v)}
             className={inputCls()}
           />
         </Field>
         <Field label="y">
-          <input
-            type="number"
-            value={r.y}
-            onChange={(e) => set("y", Number(e.target.value))}
+          <LengthInput
+            valueMm={r.y}
+            onChangeMm={(v) => set("y", v)}
             className={inputCls()}
           />
         </Field>
         <Field label="width">
-          <input
-            type="number"
-            value={r.width}
-            onChange={(e) => set("width", Number(e.target.value))}
+          <LengthInput
+            valueMm={r.width}
+            onChangeMm={(v) => set("width", v)}
             className={inputCls()}
           />
         </Field>
         <Field label="height">
-          <input
-            type="number"
-            value={r.height}
-            onChange={(e) => set("height", Number(e.target.value))}
+          <LengthInput
+            valueMm={r.height}
+            onChangeMm={(v) => set("height", v)}
             className={inputCls()}
           />
         </Field>
@@ -179,12 +223,11 @@ function StyleFields({ widget }: { widget: Widget }) {
           )}
         </div>
       </Field>
-      <Field label="Stroke width (mm)">
-        <input
-          type="number"
-          step={0.1}
-          value={s.stroke_width_mm}
-          onChange={(e) => setStrokeWidth(Number(e.target.value))}
+      <Field label={`Stroke width ${useUnitLabel()}`}>
+        <LengthInput
+          valueMm={s.stroke_width_mm}
+          onChangeMm={setStrokeWidth}
+          step={0.05}
           className={inputCls()}
         />
       </Field>
@@ -212,14 +255,10 @@ function KindFields({
               className={`${inputCls()} h-16`}
             />
           </Field>
-          <Field label="Font size (mm)">
-            <input
-              type="number"
-              step={0.5}
-              value={k.font_size_mm}
-              onChange={(e) =>
-                updateKind({ ...k, font_size_mm: Number(e.target.value) })
-              }
+          <Field label={`Font size ${useUnitLabel()}`}>
+            <LengthInput
+              valueMm={k.font_size_mm}
+              onChangeMm={(v) => updateKind({ ...k, font_size_mm: v })}
               className={inputCls()}
             />
           </Field>
@@ -249,14 +288,11 @@ function KindFields({
               className={inputCls()}
             />
           </Field>
-          <Field label="Thickness (mm)">
-            <input
-              type="number"
-              step={0.1}
-              value={k.thickness_mm}
-              onChange={(e) =>
-                updateKind({ ...k, thickness_mm: Number(e.target.value) })
-              }
+          <Field label={`Thickness ${useUnitLabel()}`}>
+            <LengthInput
+              valueMm={k.thickness_mm}
+              onChangeMm={(v) => updateKind({ ...k, thickness_mm: v })}
+              step={0.05}
               className={inputCls()}
             />
           </Field>
@@ -266,14 +302,11 @@ function KindFields({
       return (
         <fieldset className="rounded border border-slate-200 p-2">
           <legend className="px-1 text-xs text-slate-500">Line</legend>
-          <Field label="Thickness (mm)">
-            <input
-              type="number"
-              step={0.1}
-              value={k.thickness_mm}
-              onChange={(e) =>
-                updateKind({ ...k, thickness_mm: Number(e.target.value) })
-              }
+          <Field label={`Thickness ${useUnitLabel()}`}>
+            <LengthInput
+              valueMm={k.thickness_mm}
+              onChangeMm={(v) => updateKind({ ...k, thickness_mm: v })}
+              step={0.05}
               className={inputCls()}
             />
           </Field>
@@ -285,14 +318,10 @@ function KindFields({
       return (
         <fieldset className="rounded border border-slate-200 p-2">
           <legend className="px-1 text-xs text-slate-500">{k.kind}</legend>
-          <Field label="Spacing (mm)">
-            <input
-              type="number"
-              step={0.5}
-              value={k.spacing_mm}
-              onChange={(e) =>
-                updateKind({ ...k, spacing_mm: Number(e.target.value) })
-              }
+          <Field label={`Spacing ${useUnitLabel()}`}>
+            <LengthInput
+              valueMm={k.spacing_mm}
+              onChangeMm={(v) => updateKind({ ...k, spacing_mm: v })}
               className={inputCls()}
             />
           </Field>

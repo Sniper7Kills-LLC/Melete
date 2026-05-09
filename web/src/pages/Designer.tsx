@@ -5,6 +5,12 @@ import { DesignSurface } from "@/components/DesignSurface";
 import { PropertyPanel } from "@/components/PropertyPanel";
 import { SaveModal } from "@/components/SaveModal";
 import { useDesigner } from "@/store/designerStore";
+import {
+  displayToMm,
+  mmToDisplay,
+  unitsLabel,
+  useUnits,
+} from "@/store/unitsStore";
 import { shim } from "@/wasm";
 
 /**
@@ -28,6 +34,9 @@ export function Designer() {
   const setSnap = useDesigner((s) => s.setSnap);
   const showGuides = useDesigner((s) => s.showGuides);
   const setShowGuides = useDesigner((s) => s.setShowGuides);
+  const units = useUnits((s) => s.units);
+  const snapStep = units === "in" ? 0.05 : 1;
+  const snapDisplay = mmToDisplay(snapMm, units);
 
   const [savedToml, setSavedToml] = useState<string | null>(null);
 
@@ -55,14 +64,18 @@ export function Designer() {
         </button>
         <span className="ml-3 text-slate-300">|</span>
         <label className="ml-2 flex items-center gap-1 text-xs text-slate-600">
-          snap (mm)
+          snap ({unitsLabel(units)})
           <input
             type="number"
             min={0}
-            step={1}
-            value={snapMm}
-            onChange={(e) => setSnap(Number(e.target.value))}
-            className="w-14 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs"
+            step={snapStep}
+            value={
+              units === "in"
+                ? Number(snapDisplay.toFixed(2))
+                : snapDisplay
+            }
+            onChange={(e) => setSnap(displayToMm(Number(e.target.value), units))}
+            className="w-16 rounded border border-slate-300 bg-white px-1 py-0.5 text-xs"
           />
         </label>
         <label className="ml-2 flex items-center gap-1 text-xs text-slate-600">

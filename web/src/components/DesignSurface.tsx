@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { NotebookBundle, PageTemplate, Widget, WidgetKindTag } from "@/types";
 import { useDesigner } from "@/store/designerStore";
+import { formatLength, useUnits } from "@/store/unitsStore";
 import { viewer } from "@/wasm";
 
 /**
@@ -33,6 +34,7 @@ export function DesignSurface() {
   const [zoom, setZoom] = useState(2.2); // px/mm
 
   const [pageW, pageH] = template.size_mm;
+  const units = useUnits((s) => s.units);
 
   // ---------------------------------------------------------------------
   // Vello live preview — see #38. We share the same `viewer` singleton
@@ -143,7 +145,8 @@ export function DesignSurface() {
           {template.name || "(unnamed)"}
         </span>
         <span className="text-slate-400">
-          · {pageW} × {pageH} mm · snap {snapMm} mm
+          · {formatLength(pageW, units)} × {formatLength(pageH, units)} · snap{" "}
+          {formatLength(snapMm, units)}
         </span>
         <div className="ml-auto flex items-center gap-2">
           <label className="flex items-center gap-1 text-xs text-slate-600">
@@ -393,8 +396,12 @@ function wrapTemplateInBundle(
   // mm→px scale and centers the page in the canvas. The Rust side's
   // fit-to-canvas fallback would otherwise apply a 0.95 margin and
   // produce widgets that drift away from the SPA's overlay rects.
+  // Substitute a Blank background — the designer's CSS smart-guide
+  // overlay handles grid display, so painting the template's grid
+  // bg through Vello would just produce a confusing double grid.
   const previewTemplate: PageTemplate = {
     ...template,
+    background: { kind: "Blank" },
     default_viewport: {
       center: { x: pageW / 2, y: pageH / 2 },
       zoom: spaZoom,
