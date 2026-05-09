@@ -5,13 +5,21 @@ edition = "2021"
 
 [dependencies]
 journal-core = { path = "../journal-core" }
-journal-canvas = { path = "../journal-canvas" }
+# Pull in just the data types from journal-canvas (`BackgroundConfig`,
+# `GridSettings`) — no GTK/Cairo. Desktop / wasm builds both compile.
+journal-canvas = { path = "../journal-canvas", default-features = false }
 chrono = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
+
+[features]
+# `wasm` is a marker so the `--features wasm` invocation in the WASM
+# build pipeline succeeds. There is no wasm-specific code in this crate
+# today; the data types it touches are already platform-neutral.
+wasm = []
 
 [dev-dependencies]
 tempfile = "3"
