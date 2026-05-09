@@ -9,10 +9,15 @@ use journal_core::{
 };
 use uuid::Uuid;
 
-use crate::backend::{JournalBackend, NotebookStore, PageStore, SectionStore, StrokeStore};
+use crate::backend::{
+    AssetBytes, AssetMeta, BrushRow, BrushStore, JournalBackend, NotebookStore, PageStore,
+    SectionStore, StrokeStore, TemplateRow, TemplateStore,
+};
 use crate::db::Db;
 use crate::error::Result;
-use crate::{notebook_store, page_store, section_store, stroke_store};
+use crate::{
+    brush_store, notebook_store, page_store, section_store, stroke_store, template_catalog_store,
+};
 
 pub struct SqliteBackend {
     db: Db,
@@ -147,6 +152,58 @@ impl StrokeStore for SqliteBackend {
     }
     fn query_strokes_in_rect(&mut self, page_id: PageId, rect: Rect) -> Result<Vec<Stroke>> {
         stroke_store::query_strokes_in_rect(self.db.conn(), page_id, rect)
+    }
+}
+
+impl BrushStore for SqliteBackend {
+    fn list_brushes(&mut self) -> Result<Vec<BrushRow>> {
+        brush_store::list_brushes(self.db.conn())
+    }
+    fn get_brush(&mut self, id: Uuid) -> Result<BrushRow> {
+        brush_store::get_brush(self.db.conn(), id)
+    }
+    fn put_brush(&mut self, row: &BrushRow) -> Result<()> {
+        brush_store::put_brush(self.db.conn(), row)
+    }
+    fn delete_brush(&mut self, id: Uuid) -> Result<()> {
+        brush_store::delete_brush(self.db.conn(), id)
+    }
+}
+
+impl TemplateStore for SqliteBackend {
+    fn list_page_templates(&mut self) -> Result<Vec<TemplateRow>> {
+        template_catalog_store::list_page_templates(self.db.conn())
+    }
+    fn get_page_template(&mut self, id: Uuid) -> Result<TemplateRow> {
+        template_catalog_store::get_page_template(self.db.conn(), id)
+    }
+    fn put_page_template(&mut self, row: &TemplateRow, assets: &[AssetBytes]) -> Result<()> {
+        template_catalog_store::put_page_template(self.db.conn_mut(), row, assets)
+    }
+    fn delete_page_template(&mut self, id: Uuid) -> Result<()> {
+        template_catalog_store::delete_page_template(self.db.conn(), id)
+    }
+    fn list_page_template_assets(&mut self, template_id: Uuid) -> Result<Vec<AssetMeta>> {
+        template_catalog_store::list_page_template_assets(self.db.conn(), template_id)
+    }
+    fn get_page_template_asset(
+        &mut self,
+        template_id: Uuid,
+        name: &str,
+    ) -> Result<Option<AssetBytes>> {
+        template_catalog_store::get_page_template_asset(self.db.conn(), template_id, name)
+    }
+    fn list_notebook_templates(&mut self) -> Result<Vec<TemplateRow>> {
+        template_catalog_store::list_notebook_templates(self.db.conn())
+    }
+    fn get_notebook_template(&mut self, id: Uuid) -> Result<TemplateRow> {
+        template_catalog_store::get_notebook_template(self.db.conn(), id)
+    }
+    fn put_notebook_template(&mut self, row: &TemplateRow) -> Result<()> {
+        template_catalog_store::put_notebook_template(self.db.conn(), row)
+    }
+    fn delete_notebook_template(&mut self, id: Uuid) -> Result<()> {
+        template_catalog_store::delete_notebook_template(self.db.conn(), id)
     }
 }
 

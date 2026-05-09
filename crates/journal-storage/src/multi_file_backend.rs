@@ -34,11 +34,17 @@ use journal_core::{
     Notebook, NotebookId, Page, PageId, PlannerPageAddress, Rect, Section, SectionId, Stroke,
 };
 
-use crate::backend::{JournalBackend, NotebookStore, PageStore, SectionStore, StrokeStore};
+use crate::backend::{
+    AssetBytes, AssetMeta, BrushRow, BrushStore, JournalBackend, NotebookStore, PageStore,
+    SectionStore, StrokeStore, TemplateRow, TemplateStore,
+};
 use crate::error::{Result, StorageError};
 use crate::schema::init_schema;
+use crate::template_migration::{migrate_if_needed, MigrationPaths};
 use crate::util::{blob_to_uuid, uuid_to_blob};
-use crate::{notebook_store, page_store, section_store, stroke_store};
+use crate::{
+    brush_store, notebook_store, page_store, section_store, stroke_store, template_catalog_store,
+};
 
 const INDEX_FILE: &str = "index.db";
 const JOURNALS_DIR: &str = "journals";
@@ -59,15 +65,31 @@ impl MultiFileSqliteBackend {
     /// single-file `journal.db` exists in `root` and `index.db` does not yet,
     /// the legacy file is split into per-notebook files before returning.
     pub fn open(root: &Path) -> Result<Self> {
+        Self::open_with_migration_paths(root, MigrationPaths::xdg_default())
+    }
+
+    /// Like [`Self::open`] but lets the caller (typically tests)
+    /// inject the legacy filesystem layout the template/brush
+    /// migration walks. Production callers should use [`Self::open`],
+    /// which defaults to the XDG layout.
+    pub fn open_with_migration_paths(
+        root: &Path,
+        migration_paths: Option<MigrationPaths>,
+    ) -> Result<Self> {
         std::fs::create_dir_all(root.join(JOURNALS_DIR))
             .map_err(|e| StorageError::InvalidData(format!("create journals dir: {}", e)))?;
 
         let index_path = root.join(INDEX_FILE);
         let need_migrate = !index_path.exists() && root.join(LEGACY_NAME).exists();
 
-        let index = Connection::open(&index_path)?;
+        let mut index = Connection::open(&index_path)?;
         configure(&index)?;
         index.execute_batch(INDEX_SCHEMA)?;
+        init_index_schema(&mut index)?;
+
+        if let Some(paths) = migration_paths.as_ref() {
+            migrate_if_needed(&mut index, paths)?;
+        }
 
         let backend = Self {
             root: root.to_path_buf(),
@@ -338,6 +360,72 @@ CREATE TABLE IF NOT EXISTS notebook_index (
     file_path TEXT NOT NULL,
     created_at TEXT NOT NULL
 );";
+
+// Phase 6.3 catalog schema. Lives in `index.db` next to the existing
+// `notebook_index` so brushes / page templates / notebook templates /
+// page-template assets are addressable independent of any one
+// notebook file. `user_version` on the catalog connection tracks
+// these adds (notebook-content schema stays under each
+// `*.journal` file's own version). Bumping `INDEX_USER_VERSION`
+// adds a new arm here — never edit existing arms in place.
+//
+// `updated_at_sort` mirrors the wire shape the future Amplify
+// (AppSync / DynamoDB) backend will store: Amplify Gen 2 rejects
+// auto-managed `updatedAt` as a GSI sort key, so the model carries
+// an explicit RFC3339 string we control. Keeping the local schema in
+// lockstep means the Amplify impl can map the row → DynamoDB item
+// 1:1 without a translation layer.
+const INDEX_TEMPLATE_SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS brushes (
+    id              BLOB PRIMARY KEY NOT NULL,
+    name            TEXT NOT NULL,
+    body_toml       TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    updated_at_sort TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS page_templates (
+    id              BLOB PRIMARY KEY NOT NULL,
+    name            TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    category        TEXT NOT NULL DEFAULT '',
+    body_toml       TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    updated_at_sort TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS notebook_templates (
+    id              BLOB PRIMARY KEY NOT NULL,
+    name            TEXT NOT NULL,
+    body_toml       TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    updated_at_sort TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS page_template_assets (
+    template_id BLOB NOT NULL REFERENCES page_templates(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    mime        TEXT NOT NULL,
+    sha256      TEXT NOT NULL,
+    bytes       BLOB NOT NULL,
+    PRIMARY KEY (template_id, name)
+);";
+
+const INDEX_USER_VERSION: u32 = 1;
+
+/// Idempotent schema ladder for the `index.db` catalog. Caller has
+/// already executed `INDEX_SCHEMA`; this adds the brush / template
+/// tables on top. Tracked separately from each notebook's
+/// `user_version` because the catalog evolves independently of
+/// notebook content.
+pub fn init_index_schema(conn: &mut Connection) -> Result<()> {
+    let v: u32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if v < 1 {
+        conn.execute_batch(INDEX_TEMPLATE_SCHEMA)?;
+        conn.pragma_update(None, "user_version", INDEX_USER_VERSION)?;
+    }
+    Ok(())
+}
 
 fn configure(conn: &Connection) -> Result<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -643,6 +731,70 @@ impl StrokeStore for MultiFileSqliteBackend {
         self.with_conn(nid, |c| {
             stroke_store::query_strokes_in_rect(c, page_id, rect)
         })
+    }
+}
+
+impl BrushStore for MultiFileSqliteBackend {
+    fn list_brushes(&mut self) -> Result<Vec<BrushRow>> {
+        brush_store::list_brushes(&self.index)
+    }
+
+    fn get_brush(&mut self, id: Uuid) -> Result<BrushRow> {
+        brush_store::get_brush(&self.index, id)
+    }
+
+    fn put_brush(&mut self, row: &BrushRow) -> Result<()> {
+        brush_store::put_brush(&self.index, row)
+    }
+
+    fn delete_brush(&mut self, id: Uuid) -> Result<()> {
+        brush_store::delete_brush(&self.index, id)
+    }
+}
+
+impl TemplateStore for MultiFileSqliteBackend {
+    fn list_page_templates(&mut self) -> Result<Vec<TemplateRow>> {
+        template_catalog_store::list_page_templates(&self.index)
+    }
+
+    fn get_page_template(&mut self, id: Uuid) -> Result<TemplateRow> {
+        template_catalog_store::get_page_template(&self.index, id)
+    }
+
+    fn put_page_template(&mut self, row: &TemplateRow, assets: &[AssetBytes]) -> Result<()> {
+        template_catalog_store::put_page_template(&mut self.index, row, assets)
+    }
+
+    fn delete_page_template(&mut self, id: Uuid) -> Result<()> {
+        template_catalog_store::delete_page_template(&self.index, id)
+    }
+
+    fn list_page_template_assets(&mut self, template_id: Uuid) -> Result<Vec<AssetMeta>> {
+        template_catalog_store::list_page_template_assets(&self.index, template_id)
+    }
+
+    fn get_page_template_asset(
+        &mut self,
+        template_id: Uuid,
+        name: &str,
+    ) -> Result<Option<AssetBytes>> {
+        template_catalog_store::get_page_template_asset(&self.index, template_id, name)
+    }
+
+    fn list_notebook_templates(&mut self) -> Result<Vec<TemplateRow>> {
+        template_catalog_store::list_notebook_templates(&self.index)
+    }
+
+    fn get_notebook_template(&mut self, id: Uuid) -> Result<TemplateRow> {
+        template_catalog_store::get_notebook_template(&self.index, id)
+    }
+
+    fn put_notebook_template(&mut self, row: &TemplateRow) -> Result<()> {
+        template_catalog_store::put_notebook_template(&self.index, row)
+    }
+
+    fn delete_notebook_template(&mut self, id: Uuid) -> Result<()> {
+        template_catalog_store::delete_notebook_template(&self.index, id)
     }
 }
 

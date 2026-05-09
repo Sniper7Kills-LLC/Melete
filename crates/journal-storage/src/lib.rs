@@ -15,18 +15,23 @@ mod util;
 pub mod backend;
 pub mod multi_file_backend;
 pub mod sqlite_backend;
+pub mod template_migration;
 
 // SQLite-specific store modules. Crate-internal: only `SqliteBackend`
 // delegates to them. App and library callers must use the trait surface.
+pub(crate) mod brush_store;
 pub(crate) mod notebook_store;
 pub(crate) mod page_store;
 pub(crate) mod section_store;
 pub(crate) mod stroke_store;
+pub(crate) mod template_catalog_store;
 
 pub use backend::{
-    JournalBackend, NotebookStore, PageStore, PlannerQueries, SectionStore, StrokeStore,
+    AssetBytes, AssetMeta, BrushRow, BrushStore, JournalBackend, NotebookStore, PageStore,
+    PlannerQueries, SectionStore, StrokeStore, TemplateRow, TemplateStore,
 };
 pub use error::{Result, StorageError};
-pub use multi_file_backend::MultiFileSqliteBackend;
+pub use multi_file_backend::{init_index_schema, MultiFileSqliteBackend};
 pub use sqlite_backend::SqliteBackend;
 pub use stroke_codec::{pack_points, unpack_points};
+pub use template_migration::{migrate_if_needed, MigrationPaths};
