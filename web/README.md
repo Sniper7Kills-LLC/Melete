@@ -4,15 +4,29 @@ Static SPA scaffold for the Journal web portal (see `../docs/web-portal.md`).
 This proves out the **viewer** and **page-template designer** UI before
 the WASM bindings to `journal-canvas` / `journal-templates` exist.
 
-> **Status.** The WASM API in `src/wasm/index.ts` is a TypeScript-only
-> mock. A separate agent is generating the real `wasm-bindgen` build
-> against the same `Viewer` and `Shim` interfaces; once it lands, this
-> module's exports get swapped and the rest of the app keeps working
-> unchanged.
+> **Status.** The WASM API in `src/wasm/index.ts` now points at the
+> real `wasm-bindgen` output produced by `bash build-wasm.sh`. If that
+> output is missing the bridges fall back to the original mock impls
+> (visible in the same file) so the SPA keeps booting without WASM —
+> useful while a contributor is iterating on the TS / React side and
+> doesn't want to rebuild Rust on every change.
+
+## Prereqs
+
+```bash
+# One-time:
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.120  # match wasm-bindgen crate
+```
 
 ## Run
 
 ```bash
+# 1. Build the WASM crates and emit wasm-bindgen JS shims
+#    (output → web/src/wasm/generated/{shim,viewer}/)
+bash web/build-wasm.sh
+
+# 2. SPA dev / build
 cd web
 pnpm install   # or `npm install` — works with either
 pnpm dev       # vite dev server on :5173

@@ -1,20 +1,20 @@
 // WASM API surface for the Journal web POC.
 //
-// The real bindings (compiled from `journal-web-shim` + `journal-web-viewer`
-// per docs/web-portal.md §5.3-§5.4) will be slotted in here later. For
-// now this file exposes:
+// This module exposes:
 //
 //   1. `Viewer` interface       — pan/zoom/render API mirroring the
-//                                  desktop's `VelloRenderer`.
+//                                  desktop's `VelloRenderer`. Real impl
+//                                  lives in `journal-web-viewer` (wasm).
 //   2. `Shim` interface          — TOML parse/serialize for designer
-//                                  output.
+//                                  output. Real impl in `journal-web-shim`.
 //   3. `mockViewer()` / `mockShim()` factories returning fake impls
-//      that log and persist enough state for the UI to be developed
-//      without WebAssembly.
+//      that log and persist enough state for the UI to keep working
+//      when the WASM bindings haven't been built yet (e.g. the first
+//      `pnpm dev` before someone runs `bash web/build-wasm.sh`).
 //
-// IMPORTANT for the WASM agent: the interfaces below are the contract.
-// Match these signatures exactly when emitting wasm-bindgen output, or
-// add a thin adapter layer to map. Do not break method names/casing.
+// The real WASM modules are compiled by `web/build-wasm.sh` into
+// `web/src/wasm/generated/{shim,viewer}/journal_web_{shim,viewer}.{js,wasm}`.
+// That directory is gitignored — the binaries are build artefacts.
 
 import type { NotebookBundle, PageTemplate } from "@/types";
 
@@ -45,6 +45,159 @@ export interface Viewer {
 export interface Shim {
   parseTemplateToml(toml: string): PageTemplate;
   serializeTemplateToml(t: PageTemplate): string;
+}
+
+// ---------------------------------------------------------------------
+// Real WASM bindings (lazy-loaded so unbuilt artefacts don't break the SPA)
+// ---------------------------------------------------------------------
+
+/**
+ * Real WASM viewer. Wraps the wasm-bindgen-generated `Viewer` class
+ * from `journal-web-viewer` so it satisfies the TS `Viewer` interface
+ * exactly (the wasm-bindgen output already maps the renamed methods —
+ * `loadNotebook`, `renderPage`, `zoomAt` — via `js_name` attributes).
+ *
+ * Module load is deferred until `init()` is first called. If the WASM
+ * generated bundle is missing (e.g. the developer hasn't run
+ * `bash web/build-wasm.sh`), the loader logs a warning and returns the
+ * mock so the SPA's UI still works on first run.
+ */
+function realViewer(): Viewer {
+  // Lazy box so `import()` only fires once. Falls back to mock on
+  // module-resolve failure (the most common case: generated/ doesn't
+  // exist yet).
+  let inner:
+    | {
+        kind: "real";
+        viewer: {
+          init: (c: HTMLCanvasElement) => Promise<void>;
+          loadNotebook: (bytes: Uint8Array) => void;
+          renderPage: (i: number, w: number, h: number) => void;
+          pan: (dx: number, dy: number) => void;
+          zoomAt: (sx: number, sy: number, factor: number) => void;
+          free?: () => void;
+        };
+      }
+    | { kind: "mock"; viewer: Viewer }
+    | null = null;
+
+  async function ensure(): Promise<void> {
+    if (inner) return;
+    try {
+      // The wasm-bindgen `--target web` output exports a `default`
+      // initializer plus the named class. The init call points the
+      // module at the `.wasm` URL Vite resolves at build time.
+      // Path is built dynamically so TS doesn't try to resolve the
+      // generated file at typecheck (the `generated/` dir is
+      // gitignored and may not exist when `pnpm typecheck` runs).
+      const path = "./generated/viewer/journal_web_viewer.js";
+      const mod: any = await import(/* @vite-ignore */ path);
+      // Default export is the wasm initializer fn.
+      await mod.default();
+      const v = new mod.Viewer();
+      inner = { kind: "real", viewer: v };
+    } catch (e) {
+      console.warn(
+        "[journal-web-viewer] real WASM unavailable, falling back to mock. " +
+          "Run `bash web/build-wasm.sh` to build it.",
+        e,
+      );
+      inner = { kind: "mock", viewer: mockViewer() };
+    }
+  }
+
+  return {
+    async init(canvas: HTMLCanvasElement) {
+      await ensure();
+      if (!inner) return;
+      await inner.viewer.init(canvas);
+    },
+    async loadNotebook(bytes: Uint8Array) {
+      await ensure();
+      if (!inner) return;
+      // Real viewer's `loadNotebook` is sync (it returns
+      // `Result<(), JsValue>` which wasm-bindgen surfaces as a thrown
+      // promise rejection synchronously). The TS interface promises
+      // a Promise so callers can `await`.
+      if (inner.kind === "real") {
+        inner.viewer.loadNotebook(bytes);
+      } else {
+        await inner.viewer.loadNotebook(bytes);
+      }
+    },
+    renderPage(index: number, w: number, h: number) {
+      if (!inner) return;
+      inner.viewer.renderPage(index, w, h);
+    },
+    pan(dx: number, dy: number) {
+      if (!inner) return;
+      inner.viewer.pan(dx, dy);
+    },
+    zoomAt(sx: number, sy: number, factor: number) {
+      if (!inner) return;
+      inner.viewer.zoomAt(sx, sy, factor);
+    },
+  };
+}
+
+/**
+ * Real WASM shim. Lazily resolves on first call and falls back to the
+ * mock if the generated bundle is missing.
+ */
+function realShim(): Shim {
+  let mod: {
+    parse_template_toml: (toml: string) => PageTemplate;
+    serialize_template_toml: (t: PageTemplate) => string;
+  } | null = null;
+  let mockFallback: Shim | null = null;
+
+  // Sync warm-up via `void`-d promise; first invocation may still hit
+  // the not-loaded path and fall through to mock. Designed to be
+  // called eagerly on module import for production builds, lazily in
+  // dev. We keep both bodies tiny so a "shim not loaded yet" error is
+  // visible in the SaveModal preview rather than a silent mock.
+  async function ensure(): Promise<void> {
+    if (mod || mockFallback) return;
+    try {
+      // Dynamic path so TS doesn't try to resolve the gitignored
+      // generated module at typecheck.
+      const path = "./generated/shim/journal_web_shim.js";
+      const m: any = await import(/* @vite-ignore */ path);
+      await m.default();
+      mod = {
+        parse_template_toml: m.parse_template_toml,
+        serialize_template_toml: m.serialize_template_toml,
+      };
+    } catch (e) {
+      console.warn(
+        "[journal-web-shim] real WASM unavailable, falling back to mock. " +
+          "Run `bash web/build-wasm.sh` to build it.",
+        e,
+      );
+      mockFallback = mockShim();
+    }
+  }
+  // Kick off the load eagerly; both paths are non-blocking for the UI.
+  void ensure();
+
+  return {
+    parseTemplateToml(toml: string): PageTemplate {
+      if (mod) return mod.parse_template_toml(toml);
+      if (mockFallback) return mockFallback.parseTemplateToml(toml);
+      throw new Error(
+        "shim WASM not loaded yet — call this after the module resolves, " +
+          "or run bash web/build-wasm.sh.",
+      );
+    },
+    serializeTemplateToml(t: PageTemplate): string {
+      if (mod) return mod.serialize_template_toml(t);
+      if (mockFallback) return mockFallback.serializeTemplateToml(t);
+      throw new Error(
+        "shim WASM not loaded yet — call this after the module resolves, " +
+          "or run bash web/build-wasm.sh.",
+      );
+    },
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -188,8 +341,15 @@ export function mockShim(): Shim {
   };
 }
 
-// Singleton instances. Components import these directly; the WASM
-// agent can swap the factory bodies (or replace this module wholesale)
-// once the bindings exist.
-export const viewer: Viewer = mockViewer();
-export const shim: Shim = mockShim();
+// ---------------------------------------------------------------------
+// Singletons
+// ---------------------------------------------------------------------
+//
+// The `realViewer` / `realShim` factories internally fall back to the
+// mock when the generated WASM bundle isn't present — letting the SPA
+// keep building and running in dev environments where someone hasn't
+// rebuilt the WASM yet. Once the bindings exist, behaviour is
+// indistinguishable from importing them directly.
+
+export const viewer: Viewer = realViewer();
+export const shim: Shim = realShim();

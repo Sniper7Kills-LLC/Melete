@@ -6,6 +6,22 @@ members = [
     "crates/journal-templates",
     "crates/journal-widgets",
     "crates/journal-app",
+    "crates/journal-web-shim",
+    "crates/journal-web-viewer",
+]
+# `default-members` keeps the desktop build (`cargo build` with no
+# package selector) from compiling the WASM crates. Each web crate
+# also compiles cleanly on the host so `cargo build --workspace` and
+# `cargo test --workspace` still cover them — `default-members` just
+# avoids the wgpu / browser-specific code paths from showing up in
+# the desktop binary's link closure by default.
+default-members = [
+    "crates/journal-core",
+    "crates/journal-canvas",
+    "crates/journal-storage",
+    "crates/journal-templates",
+    "crates/journal-widgets",
+    "crates/journal-app",
 ]
 resolver = "2"
 

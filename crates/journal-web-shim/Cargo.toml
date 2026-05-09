@@ -1,0 +1,29 @@
+[package]
+name = "journal-web-shim"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Pure-data WASM bindings for journal-templates TOML round-trip."
+
+[lib]
+# `cdylib` is what wasm-bindgen consumes when targeting wasm32; `rlib`
+# keeps `cargo test` / clippy / native consumers usable for free.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+journal-core = { path = "../journal-core" }
+journal-templates = { path = "../journal-templates", default-features = false, features = ["wasm"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+js-sys = "0.3"
+console_error_panic_hook = { version = "0.1", optional = true }
+
+[features]
+# Off by default so non-wasm cargo test stays slim. The build script
+# turns it on for the `--target wasm32-unknown-unknown` invocation so
+# panics surface in the browser console instead of disappearing.
+default = []
+panic_hook = ["dep:console_error_panic_hook"]

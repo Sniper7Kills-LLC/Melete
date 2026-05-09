@@ -1,0 +1,51 @@
+[package]
+name = "journal-web-viewer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "WASM-bindgen viewer wrapping Vello + WebGPU for the Journal web POC."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+journal-core = { path = "../journal-core" }
+journal-canvas = { path = "../journal-canvas", default-features = false, features = ["vello"] }
+journal-templates = { path = "../journal-templates", default-features = false, features = ["wasm"] }
+journal-widgets = { path = "../journal-widgets" }
+
+# wgpu / vello pull in their own wasm-bindgen + web-sys closures; we
+# also use them directly for the surface plumbing.
+vello = "0.8"
+wgpu = "28"
+
+# Browser bindings.
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Document",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "Element",
+    "GpuCanvasContext",
+] }
+
+# serde for the notebook-bundle JSON envelope.
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-wasm-bindgen = "0.6"
+
+# Logging into the browser console — `tracing` already speaks `log`'s
+# bridge for us, but we keep it minimal: console-shim hooks up via the
+# panic hook for now. Strict logging can be added later.
+console_error_panic_hook = "0.1"
+
+# Pure data types.
+uuid = { workspace = true }
+chrono = { workspace = true }
+
+[features]
+default = []
