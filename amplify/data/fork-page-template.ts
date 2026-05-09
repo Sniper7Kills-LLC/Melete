@@ -15,6 +15,7 @@ type PageTemplateRow = {
   forkedFrom?: string | null;
   forkCount?: number;
   viewCount?: number;
+  updatedAtSort: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -54,6 +55,7 @@ export function response(ctx: Context<ForkArgs>) {
     forkedFrom: source!.id,
     forkCount: 0,
     viewCount: 0,
+    updatedAtSort: now,
     createdAt: now,
     updatedAt: now,
   };
@@ -61,7 +63,7 @@ export function response(ctx: Context<ForkArgs>) {
   ctx.stash.put_new = put<PageTemplateRow>({ key: { id: newId }, item: newRow });
   ctx.stash.update_source = update<PageTemplateRow>({
     key: { id: source!.id },
-    update: { forkCount: operations.increment(1) },
+    update: { forkCount: operations.increment(1), updatedAtSort: now },
   });
   return newRow;
 }

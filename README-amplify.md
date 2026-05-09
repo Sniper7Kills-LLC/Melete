@@ -24,6 +24,19 @@ amplify/
 └── functions/asset-presign/        # presign Lambda (sha256-validated PUT URLs)
 ```
 
+## `updatedAtSort` field — clients must set it
+
+All three models carry a required `updatedAtSort: String!` field that mirrors the
+auto-managed `updatedAt` timestamp. It exists because Amplify Gen 2 won't accept
+the auto-managed `updatedAt` as a GSI sort key, so the `byVisibility / byOwner /
+byCategory` indexes use this explicit field instead. Format is RFC3339 (e.g.
+`util.time.nowISO8601()` from JS resolvers, `chrono::Utc::now().to_rfc3339()`
+from Rust).
+
+- `fork*` and `publish*` resolvers set it server-side on every write.
+- `create*` and `update*` mutations on the models themselves require the
+  client to pass it. The Rust client and the seed-publish CLI both own this.
+
 ## Sandbox workflow
 
 `npx ampx sandbox` provisions a per-developer ephemeral stack and writes

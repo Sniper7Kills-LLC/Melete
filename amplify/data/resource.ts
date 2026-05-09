@@ -4,6 +4,11 @@ import { assetPresign } from '../functions/asset-presign/resource';
 const Visibility = a.enum(['PRIVATE', 'UNLISTED', 'PUBLIC']);
 
 const schema = a.schema({
+  // `updatedAtSort` is an RFC3339 string mirror of `updatedAt`, used as the GSI
+  // sort key so byVisibility/byOwner/byCategory return rows ordered by recency.
+  // Amplify Gen 2 won't accept the auto-managed `updatedAt` field as a sortKey,
+  // so we maintain this explicit field on every write. Clients (Rust + seed-publish
+  // CLI) must set it on create/update; fork* and publish* resolvers set it server-side.
   PageTemplate: a
     .model({
       id: a.id().required(),
@@ -17,11 +22,12 @@ const schema = a.schema({
       forkedFrom: a.id(),
       forkCount: a.integer().default(0),
       viewCount: a.integer().default(0),
+      updatedAtSort: a.string().required(),
     })
     .secondaryIndexes((index) => [
-      index('visibility').queryField('listPageTemplatesByVisibility'),
-      index('owner').queryField('listPageTemplatesByOwner'),
-      index('category').queryField('listPageTemplatesByCategory'),
+      index('visibility').sortKeys(['updatedAtSort']).queryField('listPageTemplatesByVisibility'),
+      index('owner').sortKeys(['updatedAtSort']).queryField('listPageTemplatesByOwner'),
+      index('category').sortKeys(['updatedAtSort']).queryField('listPageTemplatesByCategory'),
     ])
     .authorization((allow) => [
       allow.owner(),
@@ -40,10 +46,11 @@ const schema = a.schema({
       forkedFrom: a.id(),
       forkCount: a.integer().default(0),
       viewCount: a.integer().default(0),
+      updatedAtSort: a.string().required(),
     })
     .secondaryIndexes((index) => [
-      index('visibility').queryField('listNotebookTemplatesByVisibility'),
-      index('owner').queryField('listNotebookTemplatesByOwner'),
+      index('visibility').sortKeys(['updatedAtSort']).queryField('listNotebookTemplatesByVisibility'),
+      index('owner').sortKeys(['updatedAtSort']).queryField('listNotebookTemplatesByOwner'),
     ])
     .authorization((allow) => [
       allow.owner(),
@@ -62,10 +69,11 @@ const schema = a.schema({
       forkedFrom: a.id(),
       forkCount: a.integer().default(0),
       viewCount: a.integer().default(0),
+      updatedAtSort: a.string().required(),
     })
     .secondaryIndexes((index) => [
-      index('visibility').queryField('listBrushesByVisibility'),
-      index('owner').queryField('listBrushesByOwner'),
+      index('visibility').sortKeys(['updatedAtSort']).queryField('listBrushesByVisibility'),
+      index('owner').sortKeys(['updatedAtSort']).queryField('listBrushesByOwner'),
     ])
     .authorization((allow) => [
       allow.owner(),

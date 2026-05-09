@@ -8,6 +8,7 @@ type PageTemplateRow = {
   owner?: string | null;
   visibility: 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
   assets?: unknown;
+  updatedAtSort: string;
 };
 
 export function request(ctx: Context<PublishArgs>) {
@@ -38,9 +39,10 @@ export function response(ctx: Context<PublishArgs>) {
   // protected/{owner}/templates/{id}/assets/{sha256} -> public/templates/{id}/assets/{sha256}.
   // Stubbed until the user installs AWS creds and runs `npx ampx sandbox`.
 
+  const now = util.time.nowISO8601();
   ctx.stash.update_visibility = update<PageTemplateRow>({
     key: { id: row!.id },
-    update: { visibility: target },
+    update: { visibility: target, updatedAtSort: now },
   });
-  return { ...row!, visibility: target };
+  return { ...row!, visibility: target, updatedAtSort: now };
 }

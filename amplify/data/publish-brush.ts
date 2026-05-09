@@ -7,6 +7,7 @@ type BrushRow = {
   id: string;
   owner?: string | null;
   visibility: 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
+  updatedAtSort: string;
 };
 
 export function request(ctx: Context<PublishArgs>) {
@@ -32,9 +33,10 @@ export function response(ctx: Context<PublishArgs>) {
   }
 
   const target = ctx.stash.requestedVisibility as 'PRIVATE' | 'UNLISTED' | 'PUBLIC';
+  const now = util.time.nowISO8601();
   ctx.stash.update_visibility = update<BrushRow>({
     key: { id: row!.id },
-    update: { visibility: target },
+    update: { visibility: target, updatedAtSort: now },
   });
-  return { ...row!, visibility: target };
+  return { ...row!, visibility: target, updatedAtSort: now };
 }
