@@ -124,6 +124,17 @@ impl WidgetRenderer {
         }
     }
 
+    /// Register a fallback font directly with parley's `FontContext` so
+    /// layouts can resolve glyphs even when the host has no system font
+    /// store. Desktop builds rely on fontconfig and don't need this; the
+    /// WASM viewer ships a bundled font and calls this at construction.
+    /// Returns the registered family info (or empty if the data is not a
+    /// recognized font format).
+    pub fn register_fallback_font(&mut self, data: Vec<u8>) {
+        let blob = vello::peniko::Blob::new(std::sync::Arc::new(data));
+        self.font_ctx.collection.register_fonts(blob, None);
+    }
+
     /// Render the "no page selected" placeholder: page-colour fill with a
     /// soft dot-grid backdrop, a centered JOURNAL wordmark underlined in
     /// amber, and the caller-supplied prompt text below. Called by the

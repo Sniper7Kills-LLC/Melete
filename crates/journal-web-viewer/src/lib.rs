@@ -111,6 +111,16 @@ impl Viewer {
         // load_notebook) show in the browser console with a stack
         // trace. Idempotent (`set_once` semantics).
         console_error_panic_hook::set_once();
+
+        // Browsers don't expose system fonts to wgpu/parley the way
+        // fontconfig does on Linux, so we bundle Noto Sans Regular and
+        // register it as the fallback family. Without this, parley's
+        // FontContext returns empty glyph runs on wasm and every
+        // TextBlock / Checklist label / calendar header paints invisibly.
+        let mut widget_renderer = WidgetRenderer::new();
+        let font_data = include_bytes!("../fonts/NotoSans-Regular.ttf").to_vec();
+        widget_renderer.register_fallback_font(font_data);
+
         Viewer {
             inner: None,
             bundle: None,
@@ -119,7 +129,7 @@ impl Viewer {
             transform: None,
             last_size: (0, 0),
             last_index: 0,
-            widget_renderer: WidgetRenderer::new(),
+            widget_renderer,
         }
     }
 
