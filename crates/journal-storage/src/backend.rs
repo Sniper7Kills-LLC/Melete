@@ -86,8 +86,89 @@ pub trait StrokeStore {
     fn query_strokes_in_rect(&mut self, page_id: PageId, rect: Rect) -> Result<Vec<Stroke>>;
 }
 
+// ──────────────────────────── brush + template store ────────────────────────────
+//
+// Phase 6.3 moves the user's brush library and the on-disk page /
+// notebook template directories from loose TOML files under
+// `~/.config` and `~/.local/share` into rows in `index.db`. The
+// trait surfaces below stay backend-agnostic so the future remote
+// (AWS Amplify) impl can fulfill them with AppSync queries.
+
+/// One row in the `brushes` table. `body_toml` is the same TOML
+/// representation that used to live under `~/.config/journal/brushes.toml`
+/// (one entry per brush). `sha256` is a hex digest of `body_toml.as_bytes()`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrushRow {
+    pub id: Uuid,
+    pub name: String,
+    pub body_toml: String,
+    pub sha256: String,
+}
+
+/// One row in either `page_templates` or `notebook_templates`. Both
+/// kinds share this shape — they only differ in which table they live
+/// in and which trait method touches them. `body_toml` is the literal
+/// TOML the loaders already understand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateRow {
+    pub id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub body_toml: String,
+    pub sha256: String,
+}
+
+/// An asset's bytes plus identifying metadata. `name` is the short
+/// `asset:<name>` URI fragment templates use to reference it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssetBytes {
+    pub name: String,
+    pub mime: String,
+    pub sha256: String,
+    pub bytes: Vec<u8>,
+}
+
+/// Asset metadata without the `bytes` payload — for `list_*_assets`
+/// calls so callers don't pull megabytes out of SQLite when they only
+/// need the name list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssetMeta {
+    pub name: String,
+    pub mime: String,
+    pub sha256: String,
+    pub size: u64,
+}
+
+pub trait BrushStore {
+    fn list_brushes(&mut self) -> Result<Vec<BrushRow>>;
+    fn get_brush(&mut self, id: Uuid) -> Result<BrushRow>;
+    fn put_brush(&mut self, row: &BrushRow) -> Result<()>;
+    fn delete_brush(&mut self, id: Uuid) -> Result<()>;
+}
+
+pub trait TemplateStore {
+    fn list_page_templates(&mut self) -> Result<Vec<TemplateRow>>;
+    fn get_page_template(&mut self, id: Uuid) -> Result<TemplateRow>;
+    fn put_page_template(&mut self, row: &TemplateRow, assets: &[AssetBytes]) -> Result<()>;
+    fn delete_page_template(&mut self, id: Uuid) -> Result<()>;
+    fn list_page_template_assets(&mut self, template_id: Uuid) -> Result<Vec<AssetMeta>>;
+    fn get_page_template_asset(
+        &mut self,
+        template_id: Uuid,
+        name: &str,
+    ) -> Result<Option<AssetBytes>>;
+    fn list_notebook_templates(&mut self) -> Result<Vec<TemplateRow>>;
+    fn get_notebook_template(&mut self, id: Uuid) -> Result<TemplateRow>;
+    fn put_notebook_template(&mut self, row: &TemplateRow) -> Result<()>;
+    fn delete_notebook_template(&mut self, id: Uuid) -> Result<()>;
+}
+
 /// One-stop trait for the storage layer. App holds `Rc<RefCell<dyn JournalBackend>>`.
-pub trait JournalBackend: NotebookStore + SectionStore + PageStore + StrokeStore {}
+pub trait JournalBackend:
+    NotebookStore + SectionStore + PageStore + StrokeStore + BrushStore + TemplateStore
+{
+}
 
 /// Convenience marker for date-aware planner queries that the future remote
 /// backend may want to push down (e.g. "give me all Day-addressed pages

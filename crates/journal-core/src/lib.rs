@@ -1,3 +1,4 @@
+pub mod asset_resolver;
 pub mod brush;
 pub mod calendar;
 pub mod notebook;
@@ -9,6 +10,7 @@ pub mod title_format;
 pub mod viewport;
 pub mod widget_data;
 
+pub use asset_resolver::AssetResolver;
 pub use brush::{Brush, BrushLayer, ColorMod, CursorShape, Geometry, TipShape, WidthMode};
 pub use calendar::{CalendarPageAddress, PlannerPageAddress};
 pub use notebook::{Notebook, NotebookId, NotebookKind, Section, SectionId};
@@ -22,9 +24,7 @@ pub use template::{
 };
 pub use title_format::{render as render_title, TitleContext};
 pub use viewport::Viewport;
-pub use widget_data::{
-    Freshness, OnThisDayEvent, RssItem, WeatherDay, WidgetData, WidgetPayload,
-};
+pub use widget_data::{Freshness, OnThisDayEvent, RssItem, WeatherDay, WidgetData, WidgetPayload};
 
 /// A simple 2D point.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]

@@ -3,6 +3,7 @@ use std::path::Path;
 use rusqlite::Connection;
 
 use crate::error::Result;
+use crate::multi_file_backend::init_index_schema;
 use crate::schema::init_schema;
 
 pub struct Db {
@@ -12,20 +13,27 @@ pub struct Db {
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
         // Special-case `:memory:` so callers can hold an in-memory DB via Path API.
-        let conn = if path == Path::new(":memory:") {
+        let mut conn = if path == Path::new(":memory:") {
             Connection::open_in_memory()?
         } else {
             Connection::open(path)?
         };
         Self::configure(&conn)?;
         init_schema(&conn)?;
+        // Single-file backend keeps notebook content + catalog in one
+        // file; the multi-file backend splits them. The catalog
+        // tables (brushes / templates) are required by the trait
+        // surface so callers don't have to know which backend they
+        // hold.
+        init_index_schema(&mut conn)?;
         Ok(Self { conn })
     }
 
     pub fn open_in_memory() -> Result<Self> {
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
         Self::configure(&conn)?;
         init_schema(&conn)?;
+        init_index_schema(&mut conn)?;
         Ok(Self { conn })
     }
 
