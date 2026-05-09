@@ -2063,6 +2063,15 @@ fn draw_text_runs_inner(
     let mut builder = layout_ctx.ranged_builder(font_ctx, text, 1.0, true);
     builder.push_default(StyleProperty::FontSize(font_size));
     builder.push_default(StyleProperty::Brush(brush.clone()));
+    // Prefer Noto Sans (the bundled WASM fallback registers under this
+    // family name) and fall back to the platform's `sans-serif`
+    // generic so desktop builds still pick up Liberation / Inter / DejaVu
+    // Sans via fontconfig. Without an explicit FontStack default,
+    // parley queries `system-ui` which has no resolution on wasm and
+    // returns empty glyph runs.
+    builder.push_default(StyleProperty::FontFamily(parley::FontFamily::Source(
+        std::borrow::Cow::Borrowed("\"Noto Sans\", sans-serif"),
+    )));
     if letter_spacing_px != 0.0 {
         builder.push_default(StyleProperty::LetterSpacing(letter_spacing_px));
     }

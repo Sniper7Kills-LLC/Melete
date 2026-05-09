@@ -42,11 +42,11 @@ export function WidgetPalette() {
   const addWidget = useDesigner((s) => s.addWidget);
 
   return (
-    <div className="flex h-full flex-col gap-2 border-r border-slate-200 bg-white p-3">
+    <div className="flex h-full min-h-0 flex-col gap-2 border-r border-slate-200 bg-white p-3">
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
         Widgets
       </div>
-      <div className="flex flex-col gap-1 overflow-auto">
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         {PALETTE.map((p) => (
           <button
             key={p.tag}

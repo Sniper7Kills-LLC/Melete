@@ -105,11 +105,35 @@ function realViewer(): Viewer {
     }
   }
 
+  // wasm-bindgen futures throw "closure invoked recursively or after
+  // being dropped" if `init` is awaited concurrently — which React
+  // StrictMode triggers in dev because every effect runs twice. We
+  // dedupe in-flight inits so the second call piggybacks on the first.
+  let pendingInit: Promise<void> | null = null;
+  let initBoundCanvas: HTMLCanvasElement | null = null;
+
   return {
     async init(canvas: HTMLCanvasElement) {
-      await ensure();
-      if (!inner) return;
-      await inner.viewer.init(canvas);
+      if (pendingInit) {
+        await pendingInit;
+        return;
+      }
+      if (initBoundCanvas === canvas && inner?.kind === "real") {
+        // Already initialised against this exact canvas — re-binding is
+        // wasteful and (on some browsers) drops the previous wgpu surface.
+        return;
+      }
+      pendingInit = (async () => {
+        await ensure();
+        if (!inner) return;
+        await inner.viewer.init(canvas);
+        initBoundCanvas = canvas;
+      })();
+      try {
+        await pendingInit;
+      } finally {
+        pendingInit = null;
+      }
     },
     async loadNotebook(bytes: Uint8Array) {
       await ensure();
@@ -351,3 +375,13 @@ export function mockShim(): Shim {
 
 export const viewer: Viewer = realViewer();
 export const shim: Shim = realShim();
+
+/**
+ * Factory for an additional Viewer instance. Each canvas needs its own
+ * because `init(canvas)` binds the wgpu surface to a specific element;
+ * the designer route paints into its own canvas alongside the shared
+ * `/` viewer, and both need independent wgpu state.
+ */
+export function createViewer(): Viewer {
+  return realViewer();
+}
