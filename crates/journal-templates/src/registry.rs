@@ -6,7 +6,6 @@ use journal_core::{NotebookTemplate, PageTemplate, TemplateId};
 use crate::builtin::builtin_templates;
 use crate::error::TemplateError;
 use crate::format::{parse_template_toml, template_file_to_page_template};
-use crate::notebook_template_builtin::builtin_notebook_templates;
 
 #[derive(Debug, Default, Clone)]
 pub struct TemplateRegistry {
@@ -103,12 +102,12 @@ impl NotebookTemplateRegistry {
         Self::default()
     }
 
+    /// Built-in notebook templates were stripped from the desktop binary
+    /// (Phase 6.3, issue #48); they live in `tools/seed-data/notebook_templates/`
+    /// for upload to the public catalog. The runtime registry now starts
+    /// empty and is populated only by user-loaded TOML.
     pub fn with_builtins() -> Self {
-        let mut r = Self::new();
-        for t in builtin_notebook_templates() {
-            r.insert(t);
-        }
-        r
+        Self::new()
     }
 
     pub fn insert(&mut self, t: NotebookTemplate) {

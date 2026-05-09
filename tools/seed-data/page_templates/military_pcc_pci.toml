@@ -1,0 +1,1492 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000019"
+name = "PCC / PCI Checklist"
+description = "Pre-combat check / inspection sheet  -  8 sections (weapons, ammo / pyro, optics / lasers, radios, medical, sustainment, personal kit, mission items) with checkbox rows."
+size_mm = [
+    215.9,
+    279.4,
+]
+tiling = "none"
+category = "Military"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c0190001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "PRE-COMBAT CHECK / PRE-COMBAT INSPECTION"
+font_size_mm = 6.0
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 199.9
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190002-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Unit: __________   Mission / DTG: __________   Inspector: __________"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 8.0
+y = 18.0
+width = 199.9
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190046-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 25.0
+width = 97.95
+height = 59.599999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Weapons"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 9.5
+y = 25.5
+width = 94.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190020-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 8.0
+y = 30.5
+width = 97.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190035-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Rifle / SBR  -  clean, function check",
+    "Optic / iron sights zeroed",
+    "Magazines (count and serviceable)",
+    "Sling tight, attached, serviceable",
+    "Cleaning kit",
+]
+
+[widgets.rect]
+x = 9.5
+y = 31.5
+width = 94.95
+height = 53.099999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019005e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 42.12
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019005f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 52.739999999999995
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190060-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 63.36
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190061-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 73.97999999999999
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019004e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 86.6
+width = 97.95
+height = 59.599999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190013-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Ammunition / Pyro"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 9.5
+y = 87.1
+width = 94.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190028-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 8.0
+y = 92.1
+width = 97.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019003d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Basic combat load loaded + serial verified",
+    "Tracer ratio per SOP",
+    "Smoke / signal grenades",
+    "Pyro stowed safe",
+    "Charging handle / chamber clear",
+]
+
+[widgets.rect]
+x = 9.5
+y = 93.1
+width = 94.95
+height = 53.099999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190066-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 103.72
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190067-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 114.33999999999999
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190068-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 124.96
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190069-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 135.57999999999998
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190056-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 148.2
+width = 97.95
+height = 59.599999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019001b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Optics & Lasers"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 9.5
+y = 148.7
+width = 94.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190030-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 8.0
+y = 153.7
+width = 97.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190045-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "NVG / NODs functional, batteries fresh",
+    "Headborne mount torqued",
+    "IR laser zero verified",
+    "Spare batteries (count)",
+    "Bore-sight tool",
+]
+
+[widgets.rect]
+x = 9.5
+y = 154.7
+width = 94.95
+height = 53.099999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019006e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 165.32
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019006f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 175.94
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190070-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 186.56
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190071-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 197.17999999999998
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019005e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 209.79999999999998
+width = 97.95
+height = 59.599999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190023-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Radios / Comms"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 9.5
+y = 210.29999999999998
+width = 94.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190038-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 8.0
+y = 215.29999999999998
+width = 97.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019004d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Primary radio loaded, fill verified",
+    "Alternate freq programmed",
+    "Headset / PTT, retention lanyard",
+    "Antenna serviceable + spare",
+    "Spare battery (count)",
+]
+
+[widgets.rect]
+x = 9.5
+y = 216.29999999999998
+width = 94.95
+height = 53.099999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190076-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 226.92
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190077-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 237.54
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190078-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 248.15999999999997
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190079-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 258.78
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190066-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 109.95
+y = 25.0
+width = 97.95
+height = 59.599999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019002b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Medical"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 111.45
+y = 25.5
+width = 94.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190040-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 109.95
+y = 30.5
+width = 97.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190055-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "IFAK complete, expiration current",
+    "TQ (CAT) accessible, serviceable",
+    "Pressure / gauze dressings",
+    "Combat-pill pack",
+    "9-line MEDEVAC card on person",
+]
+
+[widgets.rect]
+x = 111.45
+y = 31.5
+width = 94.95
+height = 53.099999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019007e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 42.12
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019007f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 52.739999999999995
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190080-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 63.36
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190081-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 73.97999999999999
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019006e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 109.95
+y = 86.6
+width = 97.95
+height = 59.599999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190033-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Water / Sustainment"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 111.45
+y = 87.1
+width = 94.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190048-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 109.95
+y = 92.1
+width = 97.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019005d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Hydration (>=3 L) full",
+    "Snivel kit (snacks, electrolytes)",
+    "Per-mission MREs / chow",
+    "Mission duration food count verified",
+]
+
+[widgets.rect]
+x = 111.45
+y = 93.1
+width = 94.95
+height = 53.099999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190086-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 106.375
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190087-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 119.64999999999999
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190088-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 132.92499999999998
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190075-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 109.95
+y = 148.2
+width = 97.95
+height = 59.599999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019003a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Personal Kit"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 111.45
+y = 148.7
+width = 94.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019004f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 109.95
+y = 153.7
+width = 97.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190064-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Plate carrier  -  plates serial verified",
+    "Helmet retention adjusted",
+    "Knee / elbow pads",
+    "Eye-pro + ear-pro",
+    "Gloves, boots, weather layers",
+]
+
+[widgets.rect]
+x = 111.45
+y = 154.7
+width = 94.95
+height = 53.099999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019008d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 165.32
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019008e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 175.94
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019008f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 186.56
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190090-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 197.17999999999998
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019007d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 109.95
+y = 209.79999999999998
+width = 97.95
+height = 59.599999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190042-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Mission Items"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 111.45
+y = 210.29999999999998
+width = 94.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190057-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 109.95
+y = 215.29999999999998
+width = 97.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c019006c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Map / overlay (current edition)",
+    "Compass + protractor",
+    "Notebook + pen / DTG card",
+    "GPS, fresh batteries",
+    "Mission-specific gear (per OPORD)",
+]
+
+[widgets.rect]
+x = 111.45
+y = 216.29999999999998
+width = 94.95
+height = 53.099999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190095-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 226.92
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190096-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 237.54
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190097-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 248.15999999999997
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0190098-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 110.95
+y = 258.78
+width = 95.95
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

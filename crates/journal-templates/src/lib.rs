@@ -6,22 +6,13 @@ pub mod builtin;
 pub mod canvas_bridge;
 pub mod error;
 pub mod format;
-pub mod notebook_template_builtin;
 pub mod registry;
 pub mod title_format;
 
 pub use builtin::{
-    builtin_templates, BUILTIN_BLANK_ID, BUILTIN_COLLEGE_RULED_ID, BUILTIN_CORNELL_NOTES_ID,
-    BUILTIN_DAILY_PLANNER_ID, BUILTIN_DOTTED_ID, BUILTIN_ENGINEERING_GRAPH_ID,
-    BUILTIN_FRANKLIN_DAILY_ID, BUILTIN_FRANKLIN_WEEKLY_ID, BUILTIN_FULLFOCUS_DAILY_ID,
-    BUILTIN_GRID_ID, BUILTIN_HEX_ID, BUILTIN_ISOMETRIC_ID, BUILTIN_MILITARY_GOTWA_ID,
-    BUILTIN_MILITARY_MEDEVAC_ID, BUILTIN_MILITARY_OPORD_ID, BUILTIN_MILITARY_PACE_ID,
-    BUILTIN_MILITARY_PCC_PCI_ID, BUILTIN_MILITARY_RANGE_CARD_ID, BUILTIN_MILITARY_SALUTE_ID,
-    BUILTIN_MILITARY_UXO_ID, BUILTIN_MONTHLY_GOALS_ID, BUILTIN_MUSIC_STAFF_ID,
-    BUILTIN_QUARTERLY_REVIEW_ID, BUILTIN_RULED_ID, BUILTIN_WIDE_RULED_ID,
-};
-pub use notebook_template_builtin::{
-    builtin_notebook_templates, builtin_yearly_planner, BUILTIN_YEARLY_PLANNER_ID,
+    builtin_templates, BUILTIN_BLANK_ID, BUILTIN_COLLEGE_RULED_ID, BUILTIN_DOTTED_ID,
+    BUILTIN_ENGINEERING_GRAPH_ID, BUILTIN_GRID_ID, BUILTIN_HEX_ID, BUILTIN_ISOMETRIC_ID,
+    BUILTIN_RULED_ID, BUILTIN_WIDE_RULED_ID,
 };
 pub use title_format::{render as render_title, TitleContext};
 
@@ -35,33 +26,12 @@ pub fn is_builtin(id: journal_core::TemplateId) -> bool {
             | BUILTIN_GRID_ID
             | BUILTIN_WIDE_RULED_ID
             | BUILTIN_COLLEGE_RULED_ID
-            | BUILTIN_CORNELL_NOTES_ID
             | BUILTIN_ISOMETRIC_ID
             | BUILTIN_HEX_ID
             | BUILTIN_ENGINEERING_GRAPH_ID
-            | BUILTIN_MUSIC_STAFF_ID
-            | BUILTIN_DAILY_PLANNER_ID
-            | BUILTIN_FULLFOCUS_DAILY_ID
-            | BUILTIN_FRANKLIN_DAILY_ID
-            | BUILTIN_FRANKLIN_WEEKLY_ID
-            | BUILTIN_MONTHLY_GOALS_ID
-            | BUILTIN_QUARTERLY_REVIEW_ID
-            | BUILTIN_MILITARY_MEDEVAC_ID
-            | BUILTIN_MILITARY_RANGE_CARD_ID
-            | BUILTIN_MILITARY_OPORD_ID
-            | BUILTIN_MILITARY_SALUTE_ID
-            | BUILTIN_MILITARY_UXO_ID
-            | BUILTIN_MILITARY_GOTWA_ID
-            | BUILTIN_MILITARY_PACE_ID
-            | BUILTIN_MILITARY_PCC_PCI_ID
     )
 }
 
-/// True if this notebook-template id matches one of the built-in
-/// notebook-template ids.
-pub fn is_builtin_notebook_template(id: journal_core::TemplateId) -> bool {
-    matches!(id.0, BUILTIN_YEARLY_PLANNER_ID)
-}
 pub use canvas_bridge::page_template_to_background_config;
 pub use error::TemplateError;
 pub use format::{
@@ -81,6 +51,65 @@ mod tests {
         let r = TemplateRegistry::with_builtins();
         assert!(!r.is_empty());
         assert!(r.list().iter().any(|t| t.name == "Blank"));
+    }
+
+    #[test]
+    fn builtin_count_is_nine_after_strip() {
+        // Phase 6.3 (issue #48) trimmed the desktop binary to the 9
+        // basic page templates; the stripped set lives in
+        // `tools/seed-data/` for upload to the public catalog.
+        assert_eq!(builtin_templates().len(), 9);
+    }
+
+    #[test]
+    fn stripped_ids_are_not_builtin() {
+        use journal_core::TemplateId;
+        use uuid::uuid;
+        // Each of these used to be a built-in id; after the strip,
+        // `is_builtin` must report false so they round-trip through the
+        // remote catalog instead of being treated as immutable.
+        let stripped: &[uuid::Uuid] = &[
+            uuid!("00000000-0000-0000-0000-000000000005"), // BUILTIN_DAILY_PLANNER_ID
+            uuid!("00000000-0000-0000-0000-000000000006"), // BUILTIN_FULLFOCUS_DAILY_ID
+            uuid!("00000000-0000-0000-0000-000000000007"), // BUILTIN_FRANKLIN_DAILY_ID
+            uuid!("00000000-0000-0000-0000-000000000008"), // BUILTIN_FRANKLIN_WEEKLY_ID
+            uuid!("00000000-0000-0000-0000-000000000009"), // BUILTIN_MONTHLY_GOALS_ID
+            uuid!("00000000-0000-0000-0000-00000000000a"), // BUILTIN_QUARTERLY_REVIEW_ID
+            uuid!("00000000-0000-0000-0000-00000000000d"), // BUILTIN_CORNELL_NOTES_ID
+            uuid!("00000000-0000-0000-0000-000000000011"), // BUILTIN_MUSIC_STAFF_ID
+            uuid!("00000000-0000-0000-0000-000000000012"), // BUILTIN_MILITARY_MEDEVAC_ID
+            uuid!("00000000-0000-0000-0000-000000000013"), // BUILTIN_MILITARY_RANGE_CARD_ID
+            uuid!("00000000-0000-0000-0000-000000000014"), // BUILTIN_MILITARY_OPORD_ID
+            uuid!("00000000-0000-0000-0000-000000000015"), // BUILTIN_MILITARY_SALUTE_ID
+            uuid!("00000000-0000-0000-0000-000000000016"), // BUILTIN_MILITARY_UXO_ID
+            uuid!("00000000-0000-0000-0000-000000000017"), // BUILTIN_MILITARY_GOTWA_ID
+            uuid!("00000000-0000-0000-0000-000000000018"), // BUILTIN_MILITARY_PACE_ID
+            uuid!("00000000-0000-0000-0000-000000000019"), // BUILTIN_MILITARY_PCC_PCI_ID
+        ];
+        for id in stripped {
+            assert!(
+                !is_builtin(TemplateId(*id)),
+                "stripped id {id} should not be reported as builtin"
+            );
+        }
+    }
+
+    #[test]
+    fn kept_ids_are_builtin() {
+        use journal_core::TemplateId;
+        for id in [
+            BUILTIN_BLANK_ID,
+            BUILTIN_DOTTED_ID,
+            BUILTIN_RULED_ID,
+            BUILTIN_GRID_ID,
+            BUILTIN_WIDE_RULED_ID,
+            BUILTIN_COLLEGE_RULED_ID,
+            BUILTIN_ISOMETRIC_ID,
+            BUILTIN_HEX_ID,
+            BUILTIN_ENGINEERING_GRAPH_ID,
+        ] {
+            assert!(is_builtin(TemplateId(id)));
+        }
     }
 
     #[test]

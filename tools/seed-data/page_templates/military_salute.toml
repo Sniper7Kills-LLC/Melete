@@ -1,0 +1,978 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000015"
+name = "SALUTE Report"
+description = "Three SALUTE spot-report blocks per A5 page (Size, Activity, Location, Unit, Time, Equipment). Useful as a tear-off card for patrols."
+size_mm = [
+    148.0,
+    210.0,
+]
+tiling = "none"
+category = "Military"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c0150001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "SALUTE REPORT  (Size / Activity / Location / Unit / Time / Equipment)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 6.0
+y = 6.0
+width = 136.0
+height = 8.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 6.0
+y = 16.0
+width = 136.0
+height = 61.166666666666664
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150014-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Sighting #1"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 7.0
+y = 16.5
+width = 136.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150028-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "S  -  Size"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 21.0
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015005a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 30.044444444444444
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150029-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "A  -  Activity"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 30.444444444444443
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015005b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 39.48888888888889
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015002a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "L  -  Location (grid)"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 39.888888888888886
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015005c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 48.93333333333333
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015002b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "U  -  Unit / dress / markings"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 49.333333333333336
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015005d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 58.37777777777778
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015002c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "T  -  Time (DTG observed)"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 58.77777777777778
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015005e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 67.82222222222222
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015002d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "E  -  Equipment"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 68.22222222222223
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015005f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 77.26666666666667
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 6.0
+y = 78.66666666666666
+width = 136.0
+height = 61.166666666666664
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150015-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Sighting #2"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 7.0
+y = 79.16666666666666
+width = 136.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150032-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "S  -  Size"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 83.66666666666666
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150064-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 92.7111111111111
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150033-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "A  -  Activity"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 93.1111111111111
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150065-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 102.15555555555554
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150034-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "L  -  Location (grid)"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 102.55555555555554
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150066-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 111.59999999999998
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150035-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "U  -  Unit / dress / markings"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 112.0
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150067-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 121.04444444444444
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150036-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "T  -  Time (DTG observed)"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 121.44444444444443
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150068-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 130.48888888888888
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150037-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "E  -  Equipment"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 130.88888888888889
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150069-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 139.93333333333334
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015000c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 6.0
+y = 141.33333333333331
+width = 136.0
+height = 61.166666666666664
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150016-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Sighting #3"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 7.0
+y = 141.83333333333331
+width = 136.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015003c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "S  -  Size"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 146.33333333333331
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015006e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 155.37777777777777
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015003d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "A  -  Activity"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 155.77777777777777
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015006f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 164.82222222222222
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015003e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "L  -  Location (grid)"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 165.2222222222222
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150070-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 174.26666666666665
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c015003f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "U  -  Unit / dress / markings"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 174.66666666666666
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150071-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 183.7111111111111
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150040-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "T  -  Time (DTG observed)"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 184.1111111111111
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150072-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 193.15555555555554
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150041-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "E  -  Equipment"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 7.5
+y = 193.55555555555554
+width = 133.0
+height = 9.444444444444445
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0150073-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 31.0
+y = 202.6
+width = 109.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

@@ -1,0 +1,617 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000016"
+name = "9-Line UXO / IED"
+description = "Standard 9-line unexploded-ordnance / IED report  -  DTG, unit, freq, location, type, NBC, resources, mission impact, recommended priority."
+size_mm = [
+    148.0,
+    210.0,
+]
+tiling = "none"
+category = "Military"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c0160001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "9-LINE UXO / IED REPORT"
+font_size_mm = 6.5
+
+[widgets.rect]
+x = 6.0
+y = 6.0
+width = 136.0
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "1. DTG (date-time group):"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 17.0
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016001e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 22.5
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016003c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 37.37777777777778
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "2. Reporting unit / activity:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 37.77777777777778
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016001f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 43.27777777777778
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016003d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 58.15555555555556
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016000c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "3. Contact frequency / call sign:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 58.55555555555556
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160020-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 64.05555555555556
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016003e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 78.93333333333334
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016000d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "4. Location (grid):"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 79.33333333333334
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160021-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 84.83333333333334
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016003f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 99.71111111111111
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016000e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "5. Type / quantity / configuration (size, shape, markings, fuze):"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 100.11111111111111
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160022-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 105.61111111111111
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160040-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 120.48888888888888
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c016000f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "6. NBC contamination (Y/N + agent):"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 120.88888888888889
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160023-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 126.38888888888889
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160041-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 141.26666666666665
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160010-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "7. Resources threatened (people / equipment / facility):"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 141.66666666666669
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160024-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 147.16666666666669
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160042-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 162.04444444444445
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160011-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "8. Impact on mission:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 162.44444444444446
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160025-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 167.94444444444446
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160043-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 182.82222222222222
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160012-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "9. Recommended priority  -  A immediate / B indirect / C minor / D no threat / Protective measures:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 183.22222222222223
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0160026-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 188.72222222222223
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

@@ -1,0 +1,1047 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000018"
+name = "PACE Plan"
+description = "Communications plan  -  Primary / Alternate / Contingency / Emergency columns over Net, Frequency, Call sign, Authentication, Encryption, and Notes rows."
+size_mm = [
+    279.4,
+    215.9,
+]
+tiling = "none"
+category = "Military"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c0180001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "PACE COMMUNICATIONS PLAN"
+font_size_mm = 7.0
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 263.4
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0180002-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Unit: __________   Op / Mission: __________   DTG effective: __________   Authentication table #: __________"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 8.0
+y = 18.0
+width = 263.4
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800c8-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 26.0
+width = 36.0
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800c9-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 44.0
+y = 26.0
+width = 56.849999999999994
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800ca-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 100.85
+y = 26.0
+width = 56.849999999999994
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800cb-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 157.7
+y = 26.0
+width = 56.849999999999994
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800cc-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 214.54999999999998
+y = 26.0
+width = 56.849999999999994
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800cd-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 35.0
+width = 36.0
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800ce-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 44.0
+y = 35.0
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800cf-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 100.85
+y = 35.0
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d0-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 157.7
+y = 35.0
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d1-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 214.54999999999998
+y = 35.0
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d2-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 63.81666666666666
+width = 36.0
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d3-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 44.0
+y = 63.81666666666666
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d4-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 100.85
+y = 63.81666666666666
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d5-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 157.7
+y = 63.81666666666666
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d6-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 214.54999999999998
+y = 63.81666666666666
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d7-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 92.63333333333333
+width = 36.0
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d8-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 44.0
+y = 92.63333333333333
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800d9-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 100.85
+y = 92.63333333333333
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800da-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 157.7
+y = 92.63333333333333
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800db-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 214.54999999999998
+y = 92.63333333333333
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800dc-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 121.45
+width = 36.0
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800dd-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 44.0
+y = 121.45
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800de-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 100.85
+y = 121.45
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800df-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 157.7
+y = 121.45
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e0-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 214.54999999999998
+y = 121.45
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e1-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 150.26666666666665
+width = 36.0
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e2-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 44.0
+y = 150.26666666666665
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e3-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 100.85
+y = 150.26666666666665
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e4-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 157.7
+y = 150.26666666666665
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e5-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 214.54999999999998
+y = 150.26666666666665
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e6-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 179.08333333333334
+width = 36.0
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.6
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e7-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 44.0
+y = 179.08333333333334
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e8-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 100.85
+y = 179.08333333333334
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800e9-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 157.7
+y = 179.08333333333334
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01800ea-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 214.54999999999998
+y = 179.08333333333334
+width = 56.849999999999994
+height = 28.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.4
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0180009-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Type"
+font_size_mm = 4.5
+
+[widgets.rect]
+x = 10.0
+y = 28.0
+width = 32.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c018000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Primary"
+font_size_mm = 4.5
+
+[widgets.rect]
+x = 46.0
+y = 28.0
+width = 52.849999999999994
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c018000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Alternate"
+font_size_mm = 4.5
+
+[widgets.rect]
+x = 102.85
+y = 28.0
+width = 52.849999999999994
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c018000c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Contingency"
+font_size_mm = 4.5
+
+[widgets.rect]
+x = 159.7
+y = 28.0
+width = 52.849999999999994
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c018000d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Emergency"
+font_size_mm = 4.5
+
+[widgets.rect]
+x = 216.54999999999998
+y = 28.0
+width = 52.849999999999994
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0180046-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Net"
+font_size_mm = 3.6
+
+[widgets.rect]
+x = 10.0
+y = 36.5
+width = 32.0
+height = 25.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0180047-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Frequency"
+font_size_mm = 3.6
+
+[widgets.rect]
+x = 10.0
+y = 65.31666666666666
+width = 32.0
+height = 25.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0180048-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Call sign"
+font_size_mm = 3.6
+
+[widgets.rect]
+x = 10.0
+y = 94.13333333333333
+width = 32.0
+height = 25.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0180049-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Authentication"
+font_size_mm = 3.6
+
+[widgets.rect]
+x = 10.0
+y = 122.95
+width = 32.0
+height = 25.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c018004a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Encryption / KEK"
+font_size_mm = 3.6
+
+[widgets.rect]
+x = 10.0
+y = 151.76666666666665
+width = 32.0
+height = 25.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c018004b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Notes"
+font_size_mm = 3.6
+
+[widgets.rect]
+x = 10.0
+y = 180.58333333333334
+width = 32.0
+height = 25.816666666666666
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

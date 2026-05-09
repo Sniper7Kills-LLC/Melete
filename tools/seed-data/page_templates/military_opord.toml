@@ -1,0 +1,389 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000014"
+name = "5-Paragraph OPORD"
+description = "Operations order skeleton with the five standard paragraphs (Situation, Mission, Execution, Sustainment, Command & Signal) and ruled fill space inside each block."
+size_mm = [
+    215.9,
+    279.4,
+]
+tiling = "none"
+category = "Military"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c0140001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "OPERATION ORDER (OPORD)"
+font_size_mm = 7.0
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 199.9
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0140002-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Unit: __________  OPORD #: ______  DTG: __________  Map / Sheet: __________"
+font_size_mm = 3.2
+
+[widgets.rect]
+x = 8.0
+y = 17.0
+width = 199.9
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c014000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 26.0
+width = 199.9
+height = 49.08
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0140014-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "1. SITUATION  (Enemy / Friendly / Civilian / Attachments-Detachments)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 9.5
+y = 27.0
+width = 196.9
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c014001e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.5
+
+[widgets.rect]
+x = 9.5
+y = 33.0
+width = 196.9
+height = 41.08
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c014000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 75.08
+width = 199.9
+height = 24.54
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0140015-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "2. MISSION"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 9.5
+y = 76.08
+width = 196.9
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c014001f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.5
+
+[widgets.rect]
+x = 9.5
+y = 82.08
+width = 196.9
+height = 16.54
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c014000c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 99.62
+width = 199.9
+height = 73.61999999999999
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0140016-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "3. EXECUTION  (Commander's intent / Concept / Tasks to subordinate units / Coordinating instructions)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 9.5
+y = 100.62
+width = 196.9
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0140020-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.5
+
+[widgets.rect]
+x = 9.5
+y = 106.62
+width = 196.9
+height = 65.61999999999999
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c014000d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 173.24
+width = 199.9
+height = 49.08
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0140017-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "4. SUSTAINMENT  (Logistics / Personnel / Health Service Support)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 9.5
+y = 174.24
+width = 196.9
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0140021-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.5
+
+[widgets.rect]
+x = 9.5
+y = 180.24
+width = 196.9
+height = 41.08
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c014000e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 222.32
+width = 199.9
+height = 49.08
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0140018-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "5. COMMAND & SIGNAL  (Command relationships / Succession / CP locations / Signal / PACE)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 9.5
+y = 223.32
+width = 196.9
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0140022-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.5
+
+[widgets.rect]
+x = 9.5
+y = 229.32
+width = 196.9
+height = 41.08
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

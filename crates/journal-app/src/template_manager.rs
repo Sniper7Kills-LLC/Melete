@@ -10,10 +10,7 @@ use journal_canvas::{paint_with_widgets, ViewportTransform};
 use journal_core::{
     BackgroundType, NotebookTemplate, PageTemplate, Point, Rect, TemplateId, TilingMode, Viewport,
 };
-use journal_templates::{
-    is_builtin, is_builtin_notebook_template, serialize_template_toml,
-    template_file_from_page_template,
-};
+use journal_templates::{is_builtin, serialize_template_toml, template_file_from_page_template};
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -387,54 +384,45 @@ fn build_notebook_template_row(
     text_col.append(&desc_lbl);
     row.append(&text_col);
 
-    if !is_builtin_notebook_template(t.id) {
-        // Edit button — opens the stack-page editor (falling back to modal if
-        // the opener hasn't been registered yet).
-        let edit_btn = Button::from_icon_name("document-edit-symbolic");
-        edit_btn.set_tooltip_text(Some("Edit template"));
-        let template_for_edit = t.clone();
-        let state_for_edit = state.clone();
-        let list_for_edit = list.clone();
-        let parent_for_edit = parent.clone();
-        let close_for_edit = close_manager.clone();
-        edit_btn.connect_clicked(move |_| {
-            open_nb_editor(
-                &parent_for_edit,
-                state_for_edit.clone(),
-                Some(template_for_edit.clone()),
-                list_for_edit.clone(),
-                parent_for_edit.clone(),
-                close_for_edit.clone(),
-            );
-        });
-        row.append(&edit_btn);
+    // Notebook templates are user-owned (Phase 6.3 stripped the built-ins),
+    // so every row gets edit + delete affordances.
+    let edit_btn = Button::from_icon_name("document-edit-symbolic");
+    edit_btn.set_tooltip_text(Some("Edit template"));
+    let template_for_edit = t.clone();
+    let state_for_edit = state.clone();
+    let list_for_edit = list.clone();
+    let parent_for_edit = parent.clone();
+    let close_for_edit = close_manager.clone();
+    edit_btn.connect_clicked(move |_| {
+        open_nb_editor(
+            &parent_for_edit,
+            state_for_edit.clone(),
+            Some(template_for_edit.clone()),
+            list_for_edit.clone(),
+            parent_for_edit.clone(),
+            close_for_edit.clone(),
+        );
+    });
+    row.append(&edit_btn);
 
-        let del = Button::from_icon_name("edit-delete-symbolic");
-        del.set_tooltip_text(Some("Delete template"));
-        del.add_css_class("destructive-action");
-        let tid = t.id;
-        let state_for_del = state.clone();
-        let list_for_del = list.clone();
-        let parent_for_del = parent.clone();
-        let close_for_del = close_manager.clone();
-        del.connect_clicked(move |_| {
-            delete_notebook_template(tid, state_for_del.clone());
-            refresh_notebook_template_list(
-                &list_for_del,
-                state_for_del.clone(),
-                &parent_for_del,
-                close_for_del.clone(),
-            );
-        });
-        row.append(&del);
-    } else {
-        let badge = Label::builder()
-            .label("built-in")
-            .halign(Align::End)
-            .build();
-        badge.add_css_class("dim-label");
-        row.append(&badge);
-    }
+    let del = Button::from_icon_name("edit-delete-symbolic");
+    del.set_tooltip_text(Some("Delete template"));
+    del.add_css_class("destructive-action");
+    let tid = t.id;
+    let state_for_del = state.clone();
+    let list_for_del = list.clone();
+    let parent_for_del = parent.clone();
+    let close_for_del = close_manager.clone();
+    del.connect_clicked(move |_| {
+        delete_notebook_template(tid, state_for_del.clone());
+        refresh_notebook_template_list(
+            &list_for_del,
+            state_for_del.clone(),
+            &parent_for_del,
+            close_for_del.clone(),
+        );
+    });
+    row.append(&del);
 
     row
 }

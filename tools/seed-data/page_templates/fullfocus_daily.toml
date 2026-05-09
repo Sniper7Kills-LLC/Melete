@@ -1,0 +1,79 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000006"
+name = "Full Focus Daily"
+description = "Full Focus Planner-style daily page: Big Three priorities, hourly schedule, and after-action checklist."
+size_mm = [
+    215.9,
+    279.4,
+]
+tiling = "none"
+category = "Daily Planner"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "a0000006-0001-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "big_three"
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 199.9
+height = 83.82
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000006-0002-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "daily_appointments"
+start_hour = 7
+end_hour = 19
+
+[widgets.rect]
+x = 8.0
+y = 99.82
+width = 119.94
+height = 171.57999999999998
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000006-0003-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = ["After-action review"]
+
+[widgets.rect]
+x = 135.94
+y = 99.82
+width = 71.96000000000001
+height = 171.57999999999998
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

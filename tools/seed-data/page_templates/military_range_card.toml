@@ -1,0 +1,1006 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000013"
+name = "Range Card"
+description = "DA 5517-style fighting-position sector sketch with weapon position, magnetic-N marker, sector limits, six numbered TRPs, and a remarks / dead-space block."
+size_mm = [
+    215.9,
+    279.4,
+]
+tiling = "none"
+category = "Military"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c0130001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "RANGE CARD"
+font_size_mm = 7.5
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 199.9
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Unit:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 9.0
+y = 19.5
+width = 47.975
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130014-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 9.0
+y = 30.0
+width = 47.975
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Position #:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 58.975
+y = 19.5
+width = 47.975
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130015-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 58.975
+y = 30.0
+width = 47.975
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013000c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Date:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 108.95
+y = 19.5
+width = 47.975
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130016-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 108.95
+y = 30.0
+width = 47.975
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013000d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "DTG:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 158.925
+y = 19.5
+width = 47.975
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130017-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 158.925
+y = 30.0
+width = 47.975
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013001e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 19.0
+width = 199.9
+height = 12.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130029-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 57.975
+y = 19.0
+width = 0.0
+height = 12.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013002a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 107.95
+y = 19.0
+width = 0.0
+height = 12.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013002b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.2
+
+[widgets.rect]
+x = 157.925
+y = 19.0
+width = 0.0
+height = 12.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130032-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 35.0
+width = 199.9
+height = 130.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130033-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 106.45
+y = 157.5
+width = 3.0
+height = 3.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[widgets.style.fill_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130034-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "WP"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 89.95
+y = 154.5
+width = 16.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013003c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 191.9
+y = 41.0
+width = 0.0
+height = 14.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013003d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "N"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 189.9
+y = 36.0
+width = 8.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013005a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "range_arcs"
+rings = 3
+interval_m = 100
+sweep_deg = 180.0
+sector_deg = 90.0
+
+[widgets.rect]
+x = 10.0
+y = 37.0
+width = 195.9
+height = 122.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130062-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "LL"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 11.0
+y = 154.0
+width = 14.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130063-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "RL"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 192.9
+y = 154.0
+width = 12.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130046-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "TRP"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 9.5
+y = 172.5
+width = 16.990000000000002
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130047-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Description"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 29.490000000000002
+y = 172.5
+width = 86.955
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130048-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Distance (m)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 119.445
+y = 172.5
+width = 36.980000000000004
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130049-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Azimuth (mils)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 159.425
+y = 172.5
+width = 46.975
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130051-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "1"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 10.0
+y = 180.0
+width = 16.990000000000002
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130052-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "2"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 10.0
+y = 187.5
+width = 16.990000000000002
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130053-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "3"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 10.0
+y = 195.0
+width = 16.990000000000002
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130054-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "4"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 10.0
+y = 202.5
+width = 16.990000000000002
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130055-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "5"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 10.0
+y = 210.0
+width = 16.990000000000002
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130056-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "6"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 10.0
+y = 217.5
+width = 16.990000000000002
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130064-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "rectangle"
+
+[widgets.rect]
+x = 8.0
+y = 171.0
+width = 199.9
+height = 52.5
+
+[widgets.style]
+stroke_width_mm = 0.5
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013006f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 27.990000000000002
+y = 171.0
+width = 0.0
+height = 52.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130070-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 117.945
+y = 171.0
+width = 0.0
+height = 52.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130071-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 157.925
+y = 171.0
+width = 0.0
+height = 52.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130079-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 8.0
+y = 178.5
+width = 199.9
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013007a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 8.0
+y = 186.0
+width = 199.9
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013007b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 8.0
+y = 193.5
+width = 199.9
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013007c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 8.0
+y = 201.0
+width = 199.9
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013007d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 8.0
+y = 208.5
+width = 199.9
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c013007e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 8.0
+y = 216.0
+width = 199.9
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0130082-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.5
+
+[widgets.rect]
+x = 8.0
+y = 178.5
+width = 199.9
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01300c8-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Remarks / dead space:"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 8.0
+y = 229.5
+width = 199.9
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01300c9-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 6.0
+
+[widgets.rect]
+x = 8.0
+y = 235.0
+width = 199.9
+height = 36.39999999999998
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

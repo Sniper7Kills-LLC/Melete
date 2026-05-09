@@ -1,0 +1,215 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-00000000000d"
+name = "Cornell Notes"
+description = "Cornell note-taking layout: cue column, note area, summary band."
+size_mm = [
+    215.9,
+    279.4,
+]
+tiling = "none"
+category = "Note-taking"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "a000000d-0001-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Topic ____________   Date ____________"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 6.0
+y = 4.0
+width = 203.9
+height = 10.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a000000d-0002-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 0.0
+y = 14.0
+width = 215.9
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a000000d-0003-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 58.0
+y = 14.0
+width = 0.0
+height = 215.39999999999998
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a000000d-0004-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.4
+
+[widgets.rect]
+x = 0.0
+y = 229.39999999999998
+width = 215.9
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a000000d-0005-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Cues / Questions"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 4.0
+y = 17.0
+width = 50.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a000000d-0006-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Notes"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 62.0
+y = 17.0
+width = 30.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a000000d-0007-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 7.0
+
+[widgets.rect]
+x = 60.0
+y = 23.0
+width = 153.9
+height = 204.39999999999998
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a000000d-0008-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Summary"
+font_size_mm = 3.8
+
+[widgets.rect]
+x = 4.0
+y = 232.39999999999998
+width = 30.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a000000d-0009-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 7.0
+
+[widgets.rect]
+x = 4.0
+y = 238.39999999999998
+width = 207.9
+height = 38.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
