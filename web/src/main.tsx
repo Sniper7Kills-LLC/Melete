@@ -5,6 +5,7 @@ import { BrowserRouter, Link, NavLink, Route, Routes } from "react-router-dom";
 import "./index.css";
 import { Viewer } from "./pages/Viewer";
 import { Designer } from "./pages/Designer";
+import { Templeter } from "./pages/Templeter";
 
 function NavBar() {
   const linkBase =
@@ -33,6 +34,14 @@ function NavBar() {
         >
           Designer
         </NavLink>
+        <NavLink
+          to="/templeter"
+          className={({ isActive }) =>
+            `${linkBase} ${isActive ? linkActive : "text-slate-700"}`
+          }
+        >
+          Templeter
+        </NavLink>
       </nav>
       <span className="ml-auto text-xs text-slate-400">
         WASM mocked · UI scaffolding
@@ -52,6 +61,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Viewer />} />
             <Route path="/designer" element={<Designer />} />
+            <Route path="/templeter" element={<Templeter />} />
             <Route
               path="*"
               element={

@@ -114,16 +114,16 @@ export function Viewer() {
 
         <div className="ml-4 flex items-center gap-1 text-sm">
           <span className="text-slate-500">Pan:</span>
-          <button onClick={() => panBy(-30, 0)} className={btn()}>
+          <button onClick={() => panBy(30, 0)} className={btn()}>
             ←
           </button>
-          <button onClick={() => panBy(30, 0)} className={btn()}>
+          <button onClick={() => panBy(-30, 0)} className={btn()}>
             →
           </button>
-          <button onClick={() => panBy(0, -30)} className={btn()}>
+          <button onClick={() => panBy(0, 30)} className={btn()}>
             ↑
           </button>
-          <button onClick={() => panBy(0, 30)} className={btn()}>
+          <button onClick={() => panBy(0, -30)} className={btn()}>
             ↓
           </button>
         </div>
