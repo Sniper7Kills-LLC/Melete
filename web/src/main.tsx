@@ -7,6 +7,7 @@ import { Viewer } from "./pages/Viewer";
 import { Designer } from "./pages/Designer";
 import { Templeter } from "./pages/Templeter";
 import { Tooler } from "./pages/Tooler";
+import { Gallery } from "./pages/Gallery";
 import { useUnits } from "./store/unitsStore";
 
 function NavBar() {
@@ -52,6 +53,14 @@ function NavBar() {
         >
           Tooler
         </NavLink>
+        <NavLink
+          to="/gallery"
+          className={({ isActive }) =>
+            `${linkBase} ${isActive ? linkActive : "text-slate-700"}`
+          }
+        >
+          Gallery
+        </NavLink>
       </nav>
       <UnitsSelector />
       <span className="ml-3 text-xs text-slate-400">
@@ -92,6 +101,7 @@ function App() {
             <Route path="/designer" element={<Designer />} />
             <Route path="/templeter" element={<Templeter />} />
             <Route path="/tooler" element={<Tooler />} />
+            <Route path="/gallery" element={<Gallery />} />
             <Route
               path="*"
               element={
