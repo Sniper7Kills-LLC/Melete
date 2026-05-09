@@ -72,7 +72,7 @@ export const DEFAULT_NOTEBOOK_TEMPLATE: NotebookTemplate = {
   section_title_formats: {
     year: "{year}",
     month: "{month_name} {year}",
-    week: "Week of {date}",
+    week: "Week {week} {year}",
   },
   entry_options: {},
 };

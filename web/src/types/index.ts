@@ -139,7 +139,26 @@ export type WidgetKind =
       interval_m: number;
       sweep_deg: number;
       sector_deg: number;
-    };
+    }
+  // Fetch-backed widgets — render from a per-page WidgetData payload
+  // populated by the desktop's fetcher. Surfaced on the web for
+  // schema parity; the SPA's designer palette deliberately doesn't
+  // expose them since the fetch path doesn't exist on the web yet.
+  | {
+      kind: "weather";
+      lat: number;
+      lon: number;
+      location_label: string;
+      days: number;
+    }
+  | { kind: "quote"; source: string }
+  | { kind: "bible_verse"; reference: string; translation: string }
+  | { kind: "sunrise"; lat: number; lon: number }
+  | { kind: "moon_phase" }
+  | { kind: "on_this_day"; lang: string; max_events: number }
+  | { kind: "word_of_day"; lang: string }
+  | { kind: "rss_headline"; url: string; count: number }
+  | { kind: "astronomy"; lat: number; lon: number };
 
 /** Discriminator union of every `WidgetKind.kind` value. */
 export type WidgetKindTag = WidgetKind["kind"];
@@ -214,6 +233,9 @@ export interface Page {
   modified_at: string;
   widget_overrides: Record<string, unknown>;
   widget_data: Record<string, unknown>;
+  /** Bookmark / flag toggle from the desktop sidebar. `serde(default)`
+   * on the Rust side accepts older bundles without the field. */
+  flagged?: boolean;
 }
 
 // ---------------------------------------------------------------------

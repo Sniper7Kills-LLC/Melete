@@ -87,6 +87,30 @@ export function defaultKindFor(tag: WidgetKindTag): WidgetKind {
         sweep_deg: 180,
         sector_deg: 60,
       };
+    case "weather":
+      return {
+        kind: "weather",
+        lat: 0,
+        lon: 0,
+        location_label: "",
+        days: 3,
+      };
+    case "quote":
+      return { kind: "quote", source: "zen" };
+    case "bible_verse":
+      return { kind: "bible_verse", reference: "random", translation: "kjv" };
+    case "sunrise":
+      return { kind: "sunrise", lat: 0, lon: 0 };
+    case "moon_phase":
+      return { kind: "moon_phase" };
+    case "on_this_day":
+      return { kind: "on_this_day", lang: "en", max_events: 5 };
+    case "word_of_day":
+      return { kind: "word_of_day", lang: "en" };
+    case "rss_headline":
+      return { kind: "rss_headline", url: "", count: 5 };
+    case "astronomy":
+      return { kind: "astronomy", lat: 0, lon: 0 };
   }
 }
 
