@@ -15,11 +15,16 @@ export function Viewer() {
   const [bundle, setBundle] = useState<NotebookBundle | null>(null);
   const [pageIndex, setPageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [webgpuMissing, setWebgpuMissing] = useState(false);
   const [ready, setReady] = useState(false);
 
   // Load bundle once on mount.
   useEffect(() => {
     let cancelled = false;
+    const hasWebGpu =
+      typeof navigator !== "undefined" && "gpu" in navigator;
+    if (!hasWebGpu) setWebgpuMissing(true);
+
     fetch("/sample-notebook.json")
       .then((r) => {
         if (!r.ok) throw new Error(`Fetch failed: ${r.status}`);
@@ -33,9 +38,17 @@ export function Viewer() {
         ) as NotebookBundle;
         setBundle(parsed);
 
+        if (!hasWebGpu) return;
+
         const c = canvasRef.current;
         if (!c) return;
-        await viewer.init(c);
+        try {
+          await viewer.init(c);
+        } catch (e) {
+          console.warn("[viewer] WebGPU init failed:", e);
+          if (!cancelled) setWebgpuMissing(true);
+          return;
+        }
         await viewer.loadNotebook(bytes);
         setReady(true);
       })
@@ -149,7 +162,44 @@ export function Viewer() {
           // (matches the docs/web-portal.md §5.4 read-only constraint).
           style={{ touchAction: "none", userSelect: "none" }}
         />
-        {!ready && !error && (
+        {webgpuMissing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-100/95 p-8">
+            <div className="max-w-md rounded-lg border border-amber-300 bg-amber-50 px-6 py-5 text-amber-900 shadow-sm">
+              <div className="text-base font-semibold">
+                WebGPU required
+              </div>
+              <div className="mt-2 text-sm leading-relaxed">
+                The viewer renders strokes via wgpu/Vello on a WebGPU
+                surface. Your browser doesn't expose{" "}
+                <code className="rounded bg-amber-100 px-1">
+                  navigator.gpu
+                </code>{" "}
+                or no compatible GPU adapter is available.
+              </div>
+              <ul className="mt-3 list-disc pl-5 text-sm">
+                <li>
+                  Chrome / Edge 113+ on Linux: enable{" "}
+                  <code className="rounded bg-amber-100 px-1">
+                    chrome://flags/#enable-unsafe-webgpu
+                  </code>
+                  .
+                </li>
+                <li>
+                  Firefox: set{" "}
+                  <code className="rounded bg-amber-100 px-1">
+                    dom.webgpu.enabled
+                  </code>{" "}
+                  in <code>about:config</code>, restart.
+                </li>
+                <li>
+                  Headless / VM environments may have no GPU adapter
+                  even with the flag on.
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
+        {!ready && !error && !webgpuMissing && (
           <div className="absolute inset-0 flex items-center justify-center text-slate-500">
             loading…
           </div>

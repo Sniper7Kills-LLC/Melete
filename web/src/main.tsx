@@ -43,7 +43,9 @@ function NavBar() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <div className="flex h-full flex-col">
         <NavBar />
         <main className="flex-1 overflow-hidden">
