@@ -1,0 +1,124 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000009"
+name = "Monthly Goals"
+description = "Monthly overview with calendar, top-12 goals, and reflection space."
+size_mm = [
+    215.9,
+    279.4,
+]
+tiling = "none"
+category = "Monthly Planner"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "a0000009-0001-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "{month_name} {year}"
+font_size_mm = 9.0
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 199.9
+height = 12.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000009-0002-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "calendar_month"
+
+[widgets.rect]
+x = 8.0
+y = 28.0
+width = 95.95
+height = 133.87
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000009-0003-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "priority_list"
+count = 12
+
+[widgets.rect]
+x = 111.95
+y = 28.0
+width = 95.95
+height = 133.87
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000009-0004-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Reflection / Notes"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 8.0
+y = 169.87
+width = 199.9
+height = 6.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000009-0005-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 8.0
+
+[widgets.rect]
+x = 8.0
+y = 175.87
+width = 199.9
+height = 95.52999999999997
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

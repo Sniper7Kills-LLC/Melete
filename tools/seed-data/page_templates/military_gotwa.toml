@@ -1,0 +1,372 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000017"
+name = "GOTWA Brief"
+description = "Pocket-card leader's leave-behind brief  -  Going, Others, Time, What-if-I-don't-return, Actions on contact."
+size_mm = [
+    105.0,
+    148.0,
+]
+tiling = "none"
+category = "Military"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c0170001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "GOTWA BRIEF"
+font_size_mm = 5.5
+
+[widgets.rect]
+x = 5.0
+y = 5.0
+width = 95.0
+height = 7.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0170002-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Leader leave-behind brief  -  leave a copy with the second-in-charge."
+font_size_mm = 2.7
+
+[widgets.rect]
+x = 5.0
+y = 12.5
+width = 95.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c017000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "G  -  where I am Going"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 5.0
+y = 18.0
+width = 95.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0170014-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 4.0
+
+[widgets.rect]
+x = 7.0
+y = 22.5
+width = 93.0
+height = 19.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c017001e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 5.0
+y = 42.6
+width = 95.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c017000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "O  -  Others I'm taking with me"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 5.0
+y = 43.0
+width = 95.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0170015-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 4.0
+
+[widgets.rect]
+x = 7.0
+y = 47.5
+width = 93.0
+height = 19.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c017001f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 5.0
+y = 67.6
+width = 95.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c017000c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "T  -  Time I'll be gone (return NLT)"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 5.0
+y = 68.0
+width = 95.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0170016-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 4.0
+
+[widgets.rect]
+x = 7.0
+y = 72.5
+width = 93.0
+height = 19.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0170020-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 5.0
+y = 92.6
+width = 95.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c017000d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "W  -  What if I don't return (escalation / next leader)"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 5.0
+y = 93.0
+width = 95.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0170017-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 4.0
+
+[widgets.rect]
+x = 7.0
+y = 97.5
+width = 93.0
+height = 19.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0170021-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 5.0
+y = 117.6
+width = 95.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c017000e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "A  -  Actions on enemy contact"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 5.0
+y = 118.0
+width = 95.0
+height = 4.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0170018-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 4.0
+
+[widgets.rect]
+x = 7.0
+y = 122.5
+width = 93.0
+height = 19.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

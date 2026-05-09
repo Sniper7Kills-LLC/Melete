@@ -1,0 +1,171 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000005"
+name = "Daily Planner"
+description = "Daily planner: date header, Big Three priorities, water + move tally rows, reflection lines, and a 6-22h appointment schedule."
+size_mm = [
+    215.9,
+    279.4,
+]
+tiling = "none"
+category = "Daily Planner"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c0050001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "{weekday} {month_name} {day}, {year}"
+font_size_mm = 8.0
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 199.9
+height = 12.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0050002-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "big_three"
+
+[widgets.rect]
+x = 8.0
+y = 28.0
+width = 95.95
+height = 70.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0050003-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "tally"
+label = "Water"
+count = 8
+
+[widgets.rect]
+x = 111.95
+y = 28.0
+width = 95.95
+height = 14.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0050004-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "tally"
+label = "Move"
+count = 6
+
+[widgets.rect]
+x = 111.95
+y = 44.0
+width = 95.95
+height = 14.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0050005-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Reflection"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 111.95
+y = 60.0
+width = 95.95
+height = 5.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0050006-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 7.0
+
+[widgets.rect]
+x = 111.95
+y = 65.5
+width = 95.95
+height = 32.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0050007-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "daily_appointments"
+start_hour = 6
+end_hour = 22
+
+[widgets.rect]
+x = 8.0
+y = 106.0
+width = 199.9
+height = 165.39999999999998
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

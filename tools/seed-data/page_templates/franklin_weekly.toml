@@ -1,0 +1,372 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000008"
+name = "Franklin Weekly"
+description = "Franklin Planner-style weekly spread: weekly compass on the left, day-by-day notes on the right."
+size_mm = [
+    215.9,
+    279.4,
+]
+tiling = "none"
+category = "Weekly Planner"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "a0000008-0001-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Week {week}  -  {month_name} {year}"
+font_size_mm = 7.0
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 199.9
+height = 12.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-0002-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "weekly_compass"
+
+[widgets.rect]
+x = 8.0
+y = 28.0
+width = 95.95
+height = 243.39999999999998
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-1000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Mon"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 111.95
+y = 28.0
+width = 95.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-2000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 6.0
+
+[widgets.rect]
+x = 111.95
+y = 33.0
+width = 95.95
+height = 29.771428571428565
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-1001-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Tue"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 111.95
+y = 62.771428571428565
+width = 95.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-2001-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 6.0
+
+[widgets.rect]
+x = 111.95
+y = 67.77142857142857
+width = 95.95
+height = 29.771428571428565
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-1002-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Wed"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 111.95
+y = 97.54285714285713
+width = 95.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-2002-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 6.0
+
+[widgets.rect]
+x = 111.95
+y = 102.54285714285713
+width = 95.95
+height = 29.771428571428565
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-1003-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Thu"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 111.95
+y = 132.3142857142857
+width = 95.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-2003-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 6.0
+
+[widgets.rect]
+x = 111.95
+y = 137.3142857142857
+width = 95.95
+height = 29.771428571428565
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-1004-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Fri"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 111.95
+y = 167.08571428571426
+width = 95.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-2004-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 6.0
+
+[widgets.rect]
+x = 111.95
+y = 172.08571428571426
+width = 95.95
+height = 29.771428571428565
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-1005-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Sat"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 111.95
+y = 201.85714285714283
+width = 95.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-2005-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 6.0
+
+[widgets.rect]
+x = 111.95
+y = 206.85714285714283
+width = 95.95
+height = 29.771428571428565
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-1006-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Sun"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 111.95
+y = 236.62857142857138
+width = 95.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "a0000008-2006-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 6.0
+
+[widgets.rect]
+x = 111.95
+y = 241.62857142857138
+width = 95.95
+height = 29.771428571428565
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

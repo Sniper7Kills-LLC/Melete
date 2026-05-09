@@ -1,0 +1,617 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-000000000012"
+name = "9-Line MEDEVAC"
+description = "Standard 9-line medical evacuation request  -  location, frequency, patient precedence, special equipment, patients by type, security at PZ, method of marking, nationality, NBC."
+size_mm = [
+    148.0,
+    210.0,
+]
+tiling = "none"
+category = "Military"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c0120001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "9-LINE MEDEVAC REQUEST"
+font_size_mm = 6.5
+
+[widgets.rect]
+x = 6.0
+y = 6.0
+width = 136.0
+height = 9.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "1. Location of pickup (grid):"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 17.0
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012001e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 22.5
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012003c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 37.37777777777778
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "2. Frequency / call sign:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 37.77777777777778
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012001f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 43.27777777777778
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012003d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 58.15555555555556
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012000c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "3. Patient precedence  -  A urgent / B urgent-surgical / C priority / D routine / E convenience:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 58.55555555555556
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120020-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 64.05555555555556
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012003e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 78.93333333333334
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012000d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "4. Special equipment  -  A none / B hoist / C extraction / D ventilator:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 79.33333333333334
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120021-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 84.83333333333334
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012003f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 99.71111111111111
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012000e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "5. Patients by type  -  L# litter / A# ambulatory:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 100.11111111111111
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120022-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 105.61111111111111
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120040-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 120.48888888888888
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c012000f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "6. Security at PZ  -  N none / P possible / E enemy / X escort required:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 120.88888888888889
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120023-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 126.38888888888889
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120041-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 141.26666666666665
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120010-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "7. Method of marking  -  A panels / B pyro / C smoke / D none / E other:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 141.66666666666669
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120024-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 147.16666666666669
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120042-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 162.04444444444445
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120011-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "8. Patient nationality / status  -  A US mil / B US civ / C non-US mil / D non-US civ / E EPW:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 162.44444444444446
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120025-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 167.94444444444446
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120043-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "line"
+thickness_mm = 0.3
+
+[widgets.rect]
+x = 6.0
+y = 182.82222222222222
+width = 136.0
+height = 0.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120012-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "9. NBC contamination (N/B/C) / terrain description:"
+font_size_mm = 3.0
+
+[widgets.rect]
+x = 6.0
+y = 183.22222222222223
+width = 136.0
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c0120026-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 5.0
+
+[widgets.rect]
+x = 9.0
+y = 188.72222222222223
+width = 133.0
+height = 14.277777777777779
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
