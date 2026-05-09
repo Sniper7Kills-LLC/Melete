@@ -292,6 +292,17 @@ fn cycle_color_slot(state: &SharedState) {
     };
 }
 
+/// Returns true when the gesture's current event came from a touchscreen.
+/// Used to keep `GestureDrag` from drawing strokes during a two-finger
+/// pinch — GTK4 synthesizes a primary-button press from the first touch
+/// contact, so without this filter `attach_mouse` would race with the
+/// `GestureZoom` controller in `attach_pan_zoom`.
+fn drag_event_is_touch(g: &gtk4::GestureDrag) -> bool {
+    g.current_event_device()
+        .map(|d| d.source() == gtk4::gdk::InputSource::Touchscreen)
+        .unwrap_or(false)
+}
+
 pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
     let area: gtk4::Widget = area_in.clone().upcast();
     let area = &area;
@@ -302,7 +313,10 @@ pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
     {
         let state = state.clone();
         let area = area.clone();
-        gesture.connect_drag_begin(move |_g, x, y| {
+        gesture.connect_drag_begin(move |g, x, y| {
+            if drag_event_is_touch(g) {
+                return;
+            }
             handle_begin(&state, x, y, 0.5, 0.0, 0.0);
             area.queue_draw();
         });
@@ -312,6 +326,9 @@ pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
         let state = state.clone();
         let area = area.clone();
         gesture.connect_drag_update(move |g, dx, dy| {
+            if drag_event_is_touch(g) {
+                return;
+            }
             if let Some((sx, sy)) = g.start_point() {
                 handle_motion(&state, sx + dx, sy + dy, 0.5, 0.0, 0.0, &area);
                 area.queue_draw();
@@ -322,7 +339,10 @@ pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
     {
         let state = state.clone();
         let area = area.clone();
-        gesture.connect_drag_end(move |_g, _dx, _dy| {
+        gesture.connect_drag_end(move |g, _dx, _dy| {
+            if drag_event_is_touch(g) {
+                return;
+            }
             handle_end(&state);
             area.queue_draw();
         });
@@ -453,11 +473,22 @@ pub fn attach_pan_zoom(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
         });
     }
     {
+        let state = state.clone();
         let last_scale = last_scale.clone();
         let last_center = last_center.clone();
         let start_center = start_center.clone();
         let mode = mode.clone();
         zoom.connect_begin(move |g, _| {
+            // Defensive: discard any stroke or lasso that started a frame
+            // before the second finger was recognized so it can't commit
+            // when the pinch ends.
+            {
+                let mut s = state.borrow_mut();
+                s.current_stroke = None;
+                s.pointer_drawing = false;
+                s.lasso_active = false;
+                s.lasso_points.clear();
+            }
             last_scale.set(1.0);
             let c = g.bounding_box_center();
             last_center.set(c);
