@@ -433,8 +433,10 @@ fn build_scene(
 ) {
     let world_to_screen = world_to_screen_affine(transform);
 
-    // 1) Page colour fill — covers entire viewport (light fieldbook cream).
-    let bg_color = PColor::from_rgba8(244, 239, 226, 255);
+    // 1) Page colour fill — covers entire viewport. White on the web
+    //    so the cream tone doesn't clash with the SPA's slate chrome;
+    //    desktop keeps its cream paper via journal-canvas.
+    let bg_color = PColor::from_rgba8(255, 255, 255, 255);
     scene.fill(
         Fill::NonZero,
         Affine::IDENTITY,

@@ -179,19 +179,22 @@ export function DesignSurface() {
           style={{
             width: pageW * zoom,
             height: pageH * zoom,
-            backgroundImage: showGuides
-              ? `linear-gradient(to right, rgba(99,102,241,0.06) 1px, transparent 1px),
-                 linear-gradient(to bottom, rgba(99,102,241,0.06) 1px, transparent 1px)`
-              : undefined,
-            backgroundSize: showGuides
-              ? `${snapMm * zoom}px ${snapMm * zoom}px`
-              : undefined,
           }}
         >
           <canvas
             ref={previewCanvasRef}
             className="pointer-events-none absolute inset-0 h-full w-full"
           />
+          {showGuides && (
+            <div
+              className="pointer-events-none absolute inset-0"
+              style={{
+                backgroundImage: `linear-gradient(to right, rgba(99,102,241,0.35) 1px, transparent 1px),
+                                  linear-gradient(to bottom, rgba(99,102,241,0.35) 1px, transparent 1px)`,
+                backgroundSize: `${snapMm * zoom}px ${snapMm * zoom}px`,
+              }}
+            />
+          )}
           {previewError && (
             <div className="pointer-events-none absolute right-2 top-2 max-w-xs rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900 shadow-sm">
               <div className="font-semibold">Preview unavailable</div>
