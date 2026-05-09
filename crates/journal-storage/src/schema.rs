@@ -170,6 +170,17 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         }
         conn.pragma_update(None, "user_version", 7)?;
     }
+    if v < 8 {
+        // Per-page bookmark/flag toggle — surfaces flagged pages in the
+        // notebook sidebar's "Bookmarks" panel for quick navigation.
+        if !column_exists(conn, "pages", "flagged")? {
+            conn.execute(
+                "ALTER TABLE pages ADD COLUMN flagged INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        conn.pragma_update(None, "user_version", 8)?;
+    }
     Ok(())
 }
 

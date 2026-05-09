@@ -258,10 +258,145 @@ fn refresh_sections(
         is_planner,
     };
 
+    // Bookmarks panel (only renders when at least one flagged page exists in
+    // the notebook). Walks every section + iterates list_pages so flagged
+    // pages from any depth surface in one flat list.
+    if let Some(bookmarks) = build_bookmarks_panel(&ctx) {
+        sections_box.append(&bookmarks);
+    }
+
     for section in roots {
         let row = build_section_row(&ctx, section, 0);
         sections_box.append(&row);
     }
+}
+
+/// Build a collapsible "Bookmarks" expander listing every flagged page in the
+/// notebook. Returns `None` when no flagged pages exist (so the panel hides
+/// itself). Defaults to collapsed; clicking a row navigates to the page.
+fn build_bookmarks_panel(ctx: &SidebarCtx) -> Option<GtkBox> {
+    // Walk the section tree depth-first, collecting (page, section_name) for
+    // every flagged page across every section depth.
+    let mut entries: Vec<(Page, String)> = Vec::new();
+    {
+        let mut db = ctx.db.borrow_mut();
+        let mut stack: Vec<Section> = match db.list_root_sections(ctx.notebook_id) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("bookmarks: list_root_sections: {}", e);
+                return None;
+            }
+        };
+        while let Some(section) = stack.pop() {
+            match db.list_pages(section.id) {
+                Ok(pages) => {
+                    for p in pages {
+                        if p.flagged {
+                            entries.push((p, section.name.clone()));
+                        }
+                    }
+                }
+                Err(e) => tracing::error!("bookmarks: list_pages: {}", e),
+            }
+            match db.list_child_sections(section.id) {
+                Ok(children) => stack.extend(children),
+                Err(e) => tracing::error!("bookmarks: list_child_sections: {}", e),
+            }
+        }
+    }
+
+    if entries.is_empty() {
+        return None;
+    }
+
+    // Sort by page name (falling back to "Page N") for a stable list.
+    entries.sort_by(|a, b| {
+        let an = if a.0.name.is_empty() {
+            format!("Page {}", a.0.position + 1)
+        } else {
+            a.0.name.clone()
+        };
+        let bn = if b.0.name.is_empty() {
+            format!("Page {}", b.0.position + 1)
+        } else {
+            b.0.name.clone()
+        };
+        an.to_lowercase().cmp(&bn.to_lowercase())
+    });
+
+    let wrapper = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(0)
+        .build();
+    wrapper.add_css_class("bookmarks-panel");
+
+    let expander = Expander::builder()
+        .label(&format!("Bookmarks ({})", entries.len()))
+        .expanded(false)
+        .build();
+
+    let list = gtk4::ListBox::new();
+    list.add_css_class("navigation-sidebar");
+    list.set_selection_mode(gtk4::SelectionMode::None);
+
+    for (page, section_name) in entries {
+        let row_box = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(6)
+            .margin_top(2)
+            .margin_bottom(2)
+            .margin_start(6)
+            .margin_end(6)
+            .build();
+        let star = gtk4::Image::from_icon_name("starred-symbolic");
+        star.set_pixel_size(12);
+        row_box.append(&star);
+
+        let name_text = if !page.name.is_empty() {
+            page.name.clone()
+        } else {
+            format!("Page {}", page.position + 1)
+        };
+        let name_label = Label::builder()
+            .label(&name_text)
+            .halign(gtk4::Align::Start)
+            .hexpand(true)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
+            .build();
+        row_box.append(&name_label);
+
+        let section_label = Label::builder()
+            .label(&section_name)
+            .halign(gtk4::Align::End)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
+            .build();
+        section_label.add_css_class("dim-label");
+        section_label.add_css_class("caption");
+        row_box.append(&section_label);
+
+        let row = gtk4::ListBoxRow::new();
+        row.set_child(Some(&row_box));
+        row.set_activatable(true);
+
+        // Click → navigate. Use connect_activated on the ListBox below; we
+        // store the page on the row's activatable signal via a closure.
+        let state = ctx.state.clone();
+        let canvas = ctx.canvas.clone();
+        let page_for_nav = page.clone();
+        let click = GestureClick::new();
+        click.set_button(gtk4::gdk::BUTTON_PRIMARY);
+        click.connect_released(move |_, _, _, _| {
+            load_page(&state, &page_for_nav, &canvas);
+        });
+        row.add_controller(click);
+        row.set_cursor_from_name(Some("pointer"));
+
+        list.append(&row);
+    }
+
+    expander.set_child(Some(&list));
+    wrapper.append(&expander);
+    Some(wrapper)
 }
 
 fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
@@ -349,6 +484,7 @@ fn build_section_row(ctx: &SidebarCtx, section: Section, depth: u32) -> GtkBox {
                         name: String::new(),
                         widget_overrides,
                         widget_data: Default::default(),
+                        flagged: false,
                     };
                     if let Err(e) = ctx_inner.db.borrow_mut().insert_page(&page) {
                         tracing::error!("failed to insert page: {}", e);
@@ -534,6 +670,42 @@ fn build_page_row(ctx: &SidebarCtx, page: &Page, list_index: u32) -> GtkBox {
     name_stack.add_named(&entry, Some("edit"));
     name_stack.set_visible_child_name("label");
     row.append(&name_stack);
+
+    // Subtle flag/bookmark toggle on the trailing edge. Filled star when
+    // flagged, hollow star otherwise. The `flat` style class strips the
+    // default button chrome so it reads as an icon, not a chip.
+    {
+        let icon_name = if page.flagged {
+            "starred-symbolic"
+        } else {
+            "non-starred-symbolic"
+        };
+        let flag_btn = Button::from_icon_name(icon_name);
+        flag_btn.add_css_class("flat");
+        flag_btn.add_css_class("page-flag-toggle");
+        flag_btn.set_valign(gtk4::Align::Center);
+        flag_btn.set_focus_on_click(false);
+        flag_btn.set_tooltip_text(Some(if page.flagged {
+            "Remove bookmark"
+        } else {
+            "Bookmark page"
+        }));
+        let ctx_btn = ctx.clone();
+        let page_btn = page.clone();
+        flag_btn.connect_clicked(move |_| {
+            let mut updated = page_btn.clone();
+            updated.flagged = !updated.flagged;
+            updated.modified_at = Utc::now();
+            if let Err(e) = ctx_btn.db.borrow_mut().update_page(&updated) {
+                tracing::error!("toggle page flag: {}", e);
+                return;
+            }
+            // Refresh the whole sidebar so both this row's icon and the
+            // top-of-sidebar Bookmarks panel re-sync.
+            ctx_btn.refresh();
+        });
+        row.append(&flag_btn);
+    }
 
     // Single click → load page; double-click → enter inline-rename mode.
     {
@@ -767,6 +939,7 @@ fn duplicate_page(ctx: &SidebarCtx, page: &Page, canvas: &DrawingArea) {
         name: new_name,
         widget_overrides: page.widget_overrides.clone(),
         widget_data: page.widget_data.clone(),
+        flagged: page.flagged,
     };
 
     {

@@ -7,7 +7,7 @@ use crate::error::{Result, StorageError};
 use crate::util::{blob_to_uuid, uuid_to_blob};
 
 const PAGE_COLUMNS: &str =
-    "id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json";
+    "id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json, flagged";
 
 pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
     let template_blob = page.template_id.map(|t| uuid_to_blob(t.0));
@@ -17,9 +17,10 @@ pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
     };
     let overrides_json = serde_json::to_string(&page.widget_overrides)?;
     let widget_data_json = serde_json::to_string(&page.widget_data)?;
+    let flagged: i64 = if page.flagged { 1 } else { 0 };
     conn.execute(
-        "INSERT INTO pages (id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO pages (id, section_id, position, template_id, planner_address_json, created_at, modified_at, name, widget_overrides_json, widget_data_json, flagged)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             uuid_to_blob(page.id.0),
             uuid_to_blob(page.section_id.0),
@@ -31,6 +32,7 @@ pub fn insert_page(conn: &Connection, page: &Page) -> Result<()> {
             page.name,
             overrides_json,
             widget_data_json,
+            flagged,
         ],
     )?;
     Ok(())
@@ -88,10 +90,11 @@ pub fn update_page(conn: &Connection, page: &Page) -> Result<()> {
     };
     let overrides_json = serde_json::to_string(&page.widget_overrides)?;
     let widget_data_json = serde_json::to_string(&page.widget_data)?;
+    let flagged: i64 = if page.flagged { 1 } else { 0 };
     let updated = conn.execute(
         "UPDATE pages SET section_id = ?2, position = ?3, template_id = ?4,
             planner_address_json = ?5, created_at = ?6, modified_at = ?7, name = ?8,
-            widget_overrides_json = ?9, widget_data_json = ?10
+            widget_overrides_json = ?9, widget_data_json = ?10, flagged = ?11
          WHERE id = ?1",
         params![
             uuid_to_blob(page.id.0),
@@ -104,6 +107,7 @@ pub fn update_page(conn: &Connection, page: &Page) -> Result<()> {
             page.name,
             overrides_json,
             widget_data_json,
+            flagged,
         ],
     )?;
     if updated == 0 {
@@ -208,6 +212,7 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
     let widget_data_json: String = row
         .get::<_, Option<String>>(9)?
         .unwrap_or_else(|| "{}".into());
+    let flagged_int: i64 = row.get::<_, Option<i64>>(10)?.unwrap_or(0);
     Ok((|| {
         let template_id = match template_blob {
             Some(b) => Some(TemplateId(blob_to_uuid(&b)?)),
@@ -232,6 +237,7 @@ fn row_to_page(row: &rusqlite::Row<'_>) -> rusqlite::Result<Result<Page>> {
             name,
             widget_overrides,
             widget_data,
+            flagged: flagged_int != 0,
         })
     })())
 }
@@ -285,6 +291,7 @@ mod tests {
             name: String::new(),
             widget_overrides: Default::default(),
             widget_data: Default::default(),
+            flagged: false,
         }
     }
 
@@ -342,6 +349,37 @@ mod tests {
         update_page(db.conn(), &updated).unwrap();
         let got = get_page(db.conn(), updated.id).unwrap();
         assert_eq!(got.name, "Renamed");
+    }
+
+    #[test]
+    fn page_flagged_round_trips() {
+        let (db, sid) = setup();
+        // Default flag is false on insert.
+        let p = make_page(sid, 0);
+        insert_page(db.conn(), &p).unwrap();
+        let got = get_page(db.conn(), p.id).unwrap();
+        assert!(!got.flagged);
+
+        // Set the flag and persist via update_page.
+        let mut updated = got;
+        updated.flagged = true;
+        update_page(db.conn(), &updated).unwrap();
+        let got = get_page(db.conn(), updated.id).unwrap();
+        assert!(got.flagged);
+
+        // Toggle off again.
+        let mut cleared = got;
+        cleared.flagged = false;
+        update_page(db.conn(), &cleared).unwrap();
+        let got = get_page(db.conn(), cleared.id).unwrap();
+        assert!(!got.flagged);
+
+        // Insert path with an explicitly flagged page.
+        let mut p2 = make_page(sid, 1);
+        p2.flagged = true;
+        insert_page(db.conn(), &p2).unwrap();
+        let got = get_page(db.conn(), p2.id).unwrap();
+        assert!(got.flagged);
     }
 
     #[test]

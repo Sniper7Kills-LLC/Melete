@@ -108,6 +108,8 @@ pub struct PageStub {
     pub widget_overrides: serde_json::Value,
     #[serde(default)]
     pub widget_data: serde_json::Value,
+    #[serde(default)]
+    pub flagged: bool,
 }
 
 /// `PageTemplate` as the web envelope serializes it. Internally-tagged
