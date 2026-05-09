@@ -97,18 +97,25 @@ pub trait StrokeStore {
 /// One row in the `brushes` table. `body_toml` is the same TOML
 /// representation that used to live under `~/.config/journal/brushes.toml`
 /// (one entry per brush). `sha256` is a hex digest of `body_toml.as_bytes()`.
+///
+/// `updated_at_sort` mirrors the explicit RFC3339 sort-key the future
+/// Amplify (AppSync / DynamoDB) backend uses: Amplify Gen 2 rejects
+/// auto-managed `updatedAt` as a GSI sort key, so both impls carry an
+/// explicit string. Empty / non-RFC3339 values sort as "epoch".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrushRow {
     pub id: Uuid,
     pub name: String,
     pub body_toml: String,
     pub sha256: String,
+    pub updated_at_sort: String,
 }
 
 /// One row in either `page_templates` or `notebook_templates`. Both
 /// kinds share this shape — they only differ in which table they live
 /// in and which trait method touches them. `body_toml` is the literal
-/// TOML the loaders already understand.
+/// TOML the loaders already understand. See [`BrushRow`] for
+/// `updated_at_sort` semantics.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TemplateRow {
     pub id: Uuid,
@@ -117,6 +124,7 @@ pub struct TemplateRow {
     pub category: String,
     pub body_toml: String,
     pub sha256: String,
+    pub updated_at_sort: String,
 }
 
 /// An asset's bytes plus identifying metadata. `name` is the short

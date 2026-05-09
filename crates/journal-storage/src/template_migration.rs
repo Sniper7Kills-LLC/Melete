@@ -23,6 +23,7 @@
 
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
@@ -136,6 +137,7 @@ struct LegacyBrushLibrary {
 }
 
 fn migrate_brushes(conn: &Connection, path: &Path) -> Result<usize> {
+    let updated_at_sort = file_mtime_rfc3339(path);
     let text = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -188,6 +190,7 @@ fn migrate_brushes(conn: &Connection, path: &Path) -> Result<usize> {
             name,
             body_toml,
             sha256: sha,
+            updated_at_sort: updated_at_sort.clone(),
         };
         if let Err(e) = brush_store::put_brush(conn, &row) {
             tracing::warn!("insert brush {}: {}", id, e);
@@ -227,6 +230,7 @@ fn migrate_page_templates(conn: &Connection, dir: &Path) -> Result<usize> {
 /// the file was skipped (parse error etc.), `Err` if the SQL itself
 /// failed (caller propagates and rolls back).
 fn migrate_one_page_template(conn: &Connection, dir: &Path, path: &Path) -> Result<bool> {
+    let updated_at_sort = file_mtime_rfc3339(path);
     let raw = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -271,6 +275,7 @@ fn migrate_one_page_template(conn: &Connection, dir: &Path, path: &Path) -> Resu
         category,
         body_toml,
         sha256: sha,
+        updated_at_sort,
     };
     template_catalog_store::put_page_template_in(conn, &row, &assets)?;
     Ok(true)
@@ -396,6 +401,7 @@ fn migrate_notebook_templates(conn: &Connection, dir: &Path) -> Result<usize> {
         if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
+        let updated_at_sort = file_mtime_rfc3339(&path);
         let raw = match std::fs::read_to_string(&path) {
             Ok(s) => s,
             Err(e) => {
@@ -433,6 +439,7 @@ fn migrate_notebook_templates(conn: &Connection, dir: &Path) -> Result<usize> {
             category: String::new(),
             body_toml,
             sha256: sha,
+            updated_at_sort,
         };
         if let Err(e) = template_catalog_store::put_notebook_template(conn, &row) {
             tracing::warn!("insert notebook template {}: {}", id, e);
@@ -457,4 +464,49 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
     hex::encode(hasher.finalize())
+}
+
+/// File mtime as an RFC3339 string for the `updated_at_sort`
+/// column. Falls back to "now" when the OS doesn't expose mtime
+/// (rare on Linux but possible on remote / virtual filesystems).
+/// `updated_at_sort` is a sort key for a future Amplify GSI, so
+/// stable ordering across migrations matters more than exact
+/// fidelity to the original create time.
+fn file_mtime_rfc3339(path: &Path) -> String {
+    let mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    match mtime {
+        Some(t) => DateTime::<Utc>::from(t).to_rfc3339(),
+        None => Utc::now().to_rfc3339(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_mtime_rfc3339_handles_missing_file() {
+        // Non-existent path → "now" fallback. Just check we get a
+        // parseable RFC3339 string back, not the empty string.
+        let s = file_mtime_rfc3339(Path::new("/nonexistent/path/that/should/not/exist"));
+        assert!(DateTime::parse_from_rfc3339(&s).is_ok(), "got {:?}", s);
+    }
+
+    #[test]
+    fn file_mtime_rfc3339_uses_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a");
+        std::fs::write(&p, b"x").unwrap();
+        let s = file_mtime_rfc3339(&p);
+        let parsed = DateTime::parse_from_rfc3339(&s).expect("parses RFC3339");
+        let now = Utc::now();
+        // mtime should be very recent — within the last hour is
+        // plenty for a no-op smoke check.
+        let diff = now.signed_duration_since(parsed.with_timezone(&Utc));
+        assert!(
+            diff.num_seconds().abs() < 3600,
+            "delta {}s",
+            diff.num_seconds()
+        );
+    }
 }

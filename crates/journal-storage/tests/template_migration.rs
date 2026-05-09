@@ -399,6 +399,7 @@ fn put_brush_upserts() {
         name: "v1".into(),
         body_toml: body_v1.clone(),
         sha256: sha256_hex(body_v1.as_bytes()),
+        updated_at_sort: String::new(),
     })
     .unwrap();
 
@@ -408,6 +409,7 @@ fn put_brush_upserts() {
         name: "v2".into(),
         body_toml: body_v2.clone(),
         sha256: sha256_hex(body_v2.as_bytes()),
+        updated_at_sort: "2030-01-01T00:00:00Z".into(),
     })
     .unwrap();
 
@@ -415,6 +417,35 @@ fn put_brush_upserts() {
     assert_eq!(listed.len(), 1, "upsert, not a second row");
     assert_eq!(listed[0].name, "v2");
     assert_eq!(listed[0].body_toml, body_v2);
+    assert_eq!(
+        listed[0].updated_at_sort, "2030-01-01T00:00:00Z",
+        "explicit updated_at_sort must round-trip on upsert"
+    );
+}
+
+#[test]
+fn put_brush_defaults_updated_at_sort_to_now() {
+    let root = tmpdir();
+    fs::create_dir_all(root.path().join("journals")).unwrap();
+    let mut be = MultiFileSqliteBackend::open_with_migration_paths(root.path(), None).unwrap();
+
+    let id = Uuid::new_v4();
+    let body = "name = \"x\"".to_string();
+    be.put_brush(&BrushRow {
+        id,
+        name: "x".into(),
+        body_toml: body.clone(),
+        sha256: sha256_hex(body.as_bytes()),
+        updated_at_sort: String::new(),
+    })
+    .unwrap();
+    let listed = be.list_brushes().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(&listed[0].updated_at_sort).is_ok(),
+        "blank updated_at_sort should default to a parseable RFC3339, got {:?}",
+        listed[0].updated_at_sort
+    );
 }
 
 #[test]
@@ -480,13 +511,15 @@ fn migration_inside_transaction_partial_failure_atomic() {
     let dummy_id = Uuid::new_v4();
     let updated_at = chrono::Utc::now().to_rfc3339();
     conn.execute(
-        "INSERT INTO brushes (id, name, body_toml, sha256, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+        "INSERT INTO brushes (id, name, body_toml, sha256, updated_at, updated_at_sort)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
         rusqlite::params![
             dummy_id.as_bytes().to_vec(),
             "preseed",
             "x",
             "y",
-            updated_at
+            updated_at,
+            updated_at,
         ],
     )
     .unwrap();
@@ -521,6 +554,7 @@ fn template_row_round_trip() {
         category: "cat".into(),
         body_toml: body.clone(),
         sha256: sha256_hex(body.as_bytes()),
+        updated_at_sort: "2030-06-01T00:00:00Z".into(),
     };
     be.put_page_template(
         &row,
@@ -550,10 +584,55 @@ fn template_row_round_trip() {
         category: String::new(),
         body_toml: nb_body.clone(),
         sha256: sha256_hex(nb_body.as_bytes()),
+        updated_at_sort: "2030-06-01T00:00:00Z".into(),
     };
     be.put_notebook_template(&nb_row).unwrap();
     let got = be.get_notebook_template(nb_id).unwrap();
     assert_eq!(got, nb_row);
+}
+
+#[test]
+fn migration_populates_updated_at_sort_from_file_mtime() {
+    let root = tmpdir();
+    let cfg = tmpdir();
+    let data = tmpdir();
+    write(&cfg.path().join("brushes.toml"), &brushes_toml());
+    write(
+        &data.path().join("templates").join("a.toml"),
+        &page_template_toml(TPL_ID_A, "PageA"),
+    );
+    write(
+        &data.path().join("notebook_templates").join("nt.toml"),
+        &notebook_template_toml(),
+    );
+
+    let paths = paths_for(cfg.path(), data.path());
+    let mut be =
+        MultiFileSqliteBackend::open_with_migration_paths(root.path(), Some(paths)).unwrap();
+
+    // Every row migrated from a real file should carry a parseable
+    // RFC3339 string drawn from the file's mtime.
+    for b in be.list_brushes().unwrap() {
+        chrono::DateTime::parse_from_rfc3339(&b.updated_at_sort).unwrap_or_else(|_| {
+            panic!("brush updated_at_sort not RFC3339: {:?}", b.updated_at_sort)
+        });
+    }
+    for t in be.list_page_templates().unwrap() {
+        chrono::DateTime::parse_from_rfc3339(&t.updated_at_sort).unwrap_or_else(|_| {
+            panic!(
+                "page template updated_at_sort not RFC3339: {:?}",
+                t.updated_at_sort
+            )
+        });
+    }
+    for t in be.list_notebook_templates().unwrap() {
+        chrono::DateTime::parse_from_rfc3339(&t.updated_at_sort).unwrap_or_else(|_| {
+            panic!(
+                "notebook template updated_at_sort not RFC3339: {:?}",
+                t.updated_at_sort
+            )
+        });
+    }
 }
 
 #[allow(dead_code)]

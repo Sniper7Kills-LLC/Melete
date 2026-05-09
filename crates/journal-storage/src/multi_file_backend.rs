@@ -368,29 +368,39 @@ CREATE TABLE IF NOT EXISTS notebook_index (
 // these adds (notebook-content schema stays under each
 // `*.journal` file's own version). Bumping `INDEX_USER_VERSION`
 // adds a new arm here — never edit existing arms in place.
+//
+// `updated_at_sort` mirrors the wire shape the future Amplify
+// (AppSync / DynamoDB) backend will store: Amplify Gen 2 rejects
+// auto-managed `updatedAt` as a GSI sort key, so the model carries
+// an explicit RFC3339 string we control. Keeping the local schema in
+// lockstep means the Amplify impl can map the row → DynamoDB item
+// 1:1 without a translation layer.
 const INDEX_TEMPLATE_SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS brushes (
-    id          BLOB PRIMARY KEY NOT NULL,
-    name        TEXT NOT NULL,
-    body_toml   TEXT NOT NULL,
-    sha256      TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    id              BLOB PRIMARY KEY NOT NULL,
+    name            TEXT NOT NULL,
+    body_toml       TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    updated_at_sort TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS page_templates (
-    id           BLOB PRIMARY KEY NOT NULL,
-    name         TEXT NOT NULL,
-    description  TEXT NOT NULL DEFAULT '',
-    category     TEXT NOT NULL DEFAULT '',
-    body_toml    TEXT NOT NULL,
-    sha256       TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
+    id              BLOB PRIMARY KEY NOT NULL,
+    name            TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    category        TEXT NOT NULL DEFAULT '',
+    body_toml       TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    updated_at_sort TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS notebook_templates (
-    id           BLOB PRIMARY KEY NOT NULL,
-    name         TEXT NOT NULL,
-    body_toml    TEXT NOT NULL,
-    sha256       TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
+    id              BLOB PRIMARY KEY NOT NULL,
+    name            TEXT NOT NULL,
+    body_toml       TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    updated_at      TEXT NOT NULL,
+    updated_at_sort TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS page_template_assets (
     template_id BLOB NOT NULL REFERENCES page_templates(id) ON DELETE CASCADE,

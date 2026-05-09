@@ -3,10 +3,12 @@
 //! thin wrapper over these.
 //!
 //! Schema (see `multi_file_backend::INDEX_TEMPLATE_SCHEMA`):
-//! - `page_templates(id, name, description, category, body_toml, sha256, updated_at)`
-//! - `notebook_templates(id, name, body_toml, sha256, updated_at)` —
-//!   no description / category column; notebook templates carry that
-//!   metadata inside their body if they need it.
+//! - `page_templates(id, name, description, category, body_toml,
+//!   sha256, updated_at, updated_at_sort)`
+//! - `notebook_templates(id, name, body_toml, sha256, updated_at,
+//!   updated_at_sort)` — no description / category column;
+//!   notebook templates carry that metadata inside their body if
+//!   they need it.
 //! - `page_template_assets(template_id, name, mime, sha256, bytes)`
 //!   with `ON DELETE CASCADE` from `page_templates`.
 
@@ -21,7 +23,7 @@ use crate::util::{blob_to_uuid, uuid_to_blob};
 
 pub(crate) fn list_page_templates(conn: &Connection) -> Result<Vec<TemplateRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, category, body_toml, sha256
+        "SELECT id, name, description, category, body_toml, sha256, updated_at_sort
          FROM page_templates ORDER BY name COLLATE NOCASE ASC",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -31,11 +33,12 @@ pub(crate) fn list_page_templates(conn: &Connection) -> Result<Vec<TemplateRow>>
         let cat: String = r.get(3)?;
         let body: String = r.get(4)?;
         let sha: String = r.get(5)?;
-        Ok((id, name, desc, cat, body, sha))
+        let uas: String = r.get(6)?;
+        Ok((id, name, desc, cat, body, sha, uas))
     })?;
     let mut out = Vec::new();
     for r in rows {
-        let (id, name, description, category, body_toml, sha256) = r?;
+        let (id, name, description, category, body_toml, sha256, updated_at_sort) = r?;
         out.push(TemplateRow {
             id: blob_to_uuid(&id)?,
             name,
@@ -43,6 +46,7 @@ pub(crate) fn list_page_templates(conn: &Connection) -> Result<Vec<TemplateRow>>
             category,
             body_toml,
             sha256,
+            updated_at_sort,
         });
     }
     Ok(out)
@@ -51,7 +55,7 @@ pub(crate) fn list_page_templates(conn: &Connection) -> Result<Vec<TemplateRow>>
 pub(crate) fn get_page_template(conn: &Connection, id: Uuid) -> Result<TemplateRow> {
     let row = conn
         .query_row(
-            "SELECT name, description, category, body_toml, sha256
+            "SELECT name, description, category, body_toml, sha256, updated_at_sort
              FROM page_templates WHERE id = ?1",
             params![uuid_to_blob(id)],
             |r| {
@@ -60,7 +64,8 @@ pub(crate) fn get_page_template(conn: &Connection, id: Uuid) -> Result<TemplateR
                 let cat: String = r.get(2)?;
                 let body: String = r.get(3)?;
                 let sha: String = r.get(4)?;
-                Ok((name, desc, cat, body, sha))
+                let uas: String = r.get(5)?;
+                Ok((name, desc, cat, body, sha, uas))
             },
         )
         .map_err(|e| match e {
@@ -74,6 +79,7 @@ pub(crate) fn get_page_template(conn: &Connection, id: Uuid) -> Result<TemplateR
         category: row.2,
         body_toml: row.3,
         sha256: row.4,
+        updated_at_sort: row.5,
     })
 }
 
@@ -100,16 +106,23 @@ pub(crate) fn put_page_template_in(
     assets: &[AssetBytes],
 ) -> Result<()> {
     let updated_at = chrono::Utc::now().to_rfc3339();
+    let updated_at_sort = if row.updated_at_sort.is_empty() {
+        updated_at.clone()
+    } else {
+        row.updated_at_sort.clone()
+    };
     conn.execute(
-        "INSERT INTO page_templates (id, name, description, category, body_toml, sha256, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        "INSERT INTO page_templates
+            (id, name, description, category, body_toml, sha256, updated_at, updated_at_sort)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(id) DO UPDATE SET
              name = excluded.name,
              description = excluded.description,
              category = excluded.category,
              body_toml = excluded.body_toml,
              sha256 = excluded.sha256,
-             updated_at = excluded.updated_at",
+             updated_at = excluded.updated_at,
+             updated_at_sort = excluded.updated_at_sort",
         params![
             uuid_to_blob(row.id),
             row.name,
@@ -117,7 +130,8 @@ pub(crate) fn put_page_template_in(
             row.category,
             row.body_toml,
             row.sha256,
-            updated_at
+            updated_at,
+            updated_at_sort,
         ],
     )?;
     // Replace the asset set wholesale — `put` is the canonical "this
@@ -214,7 +228,7 @@ pub(crate) fn get_page_template_asset(
 
 pub(crate) fn list_notebook_templates(conn: &Connection) -> Result<Vec<TemplateRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, body_toml, sha256
+        "SELECT id, name, body_toml, sha256, updated_at_sort
          FROM notebook_templates ORDER BY name COLLATE NOCASE ASC",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -222,11 +236,12 @@ pub(crate) fn list_notebook_templates(conn: &Connection) -> Result<Vec<TemplateR
         let name: String = r.get(1)?;
         let body: String = r.get(2)?;
         let sha: String = r.get(3)?;
-        Ok((id, name, body, sha))
+        let uas: String = r.get(4)?;
+        Ok((id, name, body, sha, uas))
     })?;
     let mut out = Vec::new();
     for r in rows {
-        let (id, name, body_toml, sha256) = r?;
+        let (id, name, body_toml, sha256, updated_at_sort) = r?;
         out.push(TemplateRow {
             id: blob_to_uuid(&id)?,
             name,
@@ -234,6 +249,7 @@ pub(crate) fn list_notebook_templates(conn: &Connection) -> Result<Vec<TemplateR
             category: String::new(),
             body_toml,
             sha256,
+            updated_at_sort,
         });
     }
     Ok(out)
@@ -242,13 +258,15 @@ pub(crate) fn list_notebook_templates(conn: &Connection) -> Result<Vec<TemplateR
 pub(crate) fn get_notebook_template(conn: &Connection, id: Uuid) -> Result<TemplateRow> {
     let row = conn
         .query_row(
-            "SELECT name, body_toml, sha256 FROM notebook_templates WHERE id = ?1",
+            "SELECT name, body_toml, sha256, updated_at_sort
+             FROM notebook_templates WHERE id = ?1",
             params![uuid_to_blob(id)],
             |r| {
                 let name: String = r.get(0)?;
                 let body: String = r.get(1)?;
                 let sha: String = r.get(2)?;
-                Ok((name, body, sha))
+                let uas: String = r.get(3)?;
+                Ok((name, body, sha, uas))
             },
         )
         .map_err(|e| match e {
@@ -262,25 +280,34 @@ pub(crate) fn get_notebook_template(conn: &Connection, id: Uuid) -> Result<Templ
         category: String::new(),
         body_toml: row.1,
         sha256: row.2,
+        updated_at_sort: row.3,
     })
 }
 
 pub(crate) fn put_notebook_template(conn: &Connection, row: &TemplateRow) -> Result<()> {
     let updated_at = chrono::Utc::now().to_rfc3339();
+    let updated_at_sort = if row.updated_at_sort.is_empty() {
+        updated_at.clone()
+    } else {
+        row.updated_at_sort.clone()
+    };
     conn.execute(
-        "INSERT INTO notebook_templates (id, name, body_toml, sha256, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO notebook_templates
+            (id, name, body_toml, sha256, updated_at, updated_at_sort)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(id) DO UPDATE SET
              name = excluded.name,
              body_toml = excluded.body_toml,
              sha256 = excluded.sha256,
-             updated_at = excluded.updated_at",
+             updated_at = excluded.updated_at,
+             updated_at_sort = excluded.updated_at_sort",
         params![
             uuid_to_blob(row.id),
             row.name,
             row.body_toml,
             row.sha256,
-            updated_at
+            updated_at,
+            updated_at_sort,
         ],
     )?;
     Ok(())
