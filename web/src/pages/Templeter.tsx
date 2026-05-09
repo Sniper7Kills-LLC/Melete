@@ -60,6 +60,9 @@ export function Templeter() {
   const [tpl, setTpl] = useState<NotebookTemplate>(() => ({
     ...DEFAULT_NOTEBOOK_TEMPLATE,
     id: crypto.randomUUID(),
+    // Seed with one empty Mon-Sun daily slot so the planner produces
+    // something out of the box — drag a page template onto it to fill.
+    daily_slots: [{ days: [...WEEKDAYS], templates: [] }],
   }));
 
   function update(patch: Partial<NotebookTemplate>) {
