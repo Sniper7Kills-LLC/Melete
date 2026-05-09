@@ -267,7 +267,3 @@ function WidgetGlyph({ widget, stroke }: { widget: Widget; stroke: string }) {
 function colorCss(c: { r: number; g: number; b: number; a: number }): string {
   return `rgba(${c.r},${c.g},${c.b},${c.a / 255})`;
 }
-
-// Re-export for tests; defaultKindFor isn't used here but the module
-// hierarchy lints if unused imports are present.
-void defaultKindFor;

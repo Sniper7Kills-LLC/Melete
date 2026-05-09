@@ -28,12 +28,10 @@ export default defineConfig({
     sourcemap: true,
     target: "es2022",
   },
-  // wasm-bindgen output uses native ESM dynamic imports; Vite's worker
-  // helper / pre-bundler doesn't need to crawl `generated/` to find them.
-  optimizeDeps: {
-    exclude: [
-      "@/wasm/generated/shim/journal_web_shim.js",
-      "@/wasm/generated/viewer/journal_web_viewer.js",
-    ],
-  },
+  // wasm-bindgen output is emitted by `bash web/build-wasm.sh` into
+  // `web/public/wasm/{shim,viewer}/`. Vite serves `public/` at the
+  // site root so the runtime dynamic imports use absolute `/wasm/...`
+  // URLs and skip the bundler entirely — the .wasm + .js stay as raw
+  // static assets.
+  assetsInclude: ["**/*.wasm"],
 });
