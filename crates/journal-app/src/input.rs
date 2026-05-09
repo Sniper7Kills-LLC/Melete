@@ -292,15 +292,17 @@ fn cycle_color_slot(state: &SharedState) {
     };
 }
 
-/// Returns true when the gesture's current event came from a touchscreen.
-/// Used to keep `GestureDrag` from drawing strokes during a two-finger
-/// pinch — GTK4 synthesizes a primary-button press from the first touch
-/// contact, so without this filter `attach_mouse` would race with the
-/// `GestureZoom` controller in `attach_pan_zoom`.
-fn drag_event_is_touch(g: &gtk4::GestureDrag) -> bool {
-    g.current_event_device()
-        .map(|d| d.source() == gtk4::gdk::InputSource::Touchscreen)
-        .unwrap_or(false)
+thread_local! {
+    /// True between `GestureZoom::begin` and `GestureZoom::end`. While a
+    /// pinch is active, `attach_mouse`'s drag handlers stop forwarding
+    /// motion so the first finger can't extend / erase / lasso during a
+    /// two-finger gesture. One-finger touch still draws because the flag
+    /// is only flipped once the second finger lands.
+    static PINCH_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn pinch_active() -> bool {
+    PINCH_ACTIVE.with(|c| c.get())
 }
 
 pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
@@ -313,8 +315,8 @@ pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
     {
         let state = state.clone();
         let area = area.clone();
-        gesture.connect_drag_begin(move |g, x, y| {
-            if drag_event_is_touch(g) {
+        gesture.connect_drag_begin(move |_g, x, y| {
+            if pinch_active() {
                 return;
             }
             handle_begin(&state, x, y, 0.5, 0.0, 0.0);
@@ -326,7 +328,7 @@ pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
         let state = state.clone();
         let area = area.clone();
         gesture.connect_drag_update(move |g, dx, dy| {
-            if drag_event_is_touch(g) {
+            if pinch_active() {
                 return;
             }
             if let Some((sx, sy)) = g.start_point() {
@@ -339,8 +341,8 @@ pub fn attach_mouse(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
     {
         let state = state.clone();
         let area = area.clone();
-        gesture.connect_drag_end(move |g, _dx, _dy| {
-            if drag_event_is_touch(g) {
+        gesture.connect_drag_end(move |_g, _dx, _dy| {
+            if pinch_active() {
                 return;
             }
             handle_end(&state);
@@ -404,67 +406,37 @@ pub fn attach_pan_zoom(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
     }
     area.add_controller(pan);
 
-    #[derive(Clone, Copy, PartialEq)]
-    enum GestureMode {
-        Undecided,
-        Pan,
-        Zoom,
-    }
-
     let zoom = GestureZoom::new();
     let last_scale: Rc<Cell<f64>> = Rc::new(Cell::new(1.0));
     let last_center: Rc<Cell<Option<(f64, f64)>>> = Rc::new(Cell::new(None));
-    let start_center: Rc<Cell<Option<(f64, f64)>>> = Rc::new(Cell::new(None));
-    let mode: Rc<Cell<GestureMode>> = Rc::new(Cell::new(GestureMode::Undecided));
-
-    const PAN_THRESHOLD_PX: f64 = 12.0;
-    const ZOOM_THRESHOLD: f64 = 0.08;
 
     {
         let state = state.clone();
         let area = area.clone();
         let last_scale = last_scale.clone();
         let last_center = last_center.clone();
-        let start_center = start_center.clone();
-        let mode = mode.clone();
         zoom.connect_scale_changed(move |g, scale| {
             let (cx, cy) = match g.bounding_box_center() {
                 Some(c) => c,
                 None => return,
             };
 
-            if mode.get() == GestureMode::Undecided {
-                let scale_delta = (scale - 1.0).abs();
-                let center_drift = match start_center.get() {
-                    Some((sx, sy)) => ((cx - sx).powi(2) + (cy - sy).powi(2)).sqrt(),
-                    None => 0.0,
-                };
-                if scale_delta > ZOOM_THRESHOLD {
-                    mode.set(GestureMode::Zoom);
-                } else if center_drift > PAN_THRESHOLD_PX {
-                    mode.set(GestureMode::Pan);
+            // Apply pan and zoom simultaneously each frame instead of
+            // picking a mode. The old mode-picker latched to Pan when
+            // pinching-in because center drift hit 12 px before scale
+            // delta hit 8% (hand geometry), so zoom-out was unreliable.
+            let mut s = state.borrow_mut();
+            if let Some((px, py)) = last_center.get() {
+                let dx = cx - px;
+                let dy = cy - py;
+                if dx.abs() > 0.0 || dy.abs() > 0.0 {
+                    s.transform.pan(dx, dy);
                 }
             }
-
-            let mut s = state.borrow_mut();
-            match mode.get() {
-                GestureMode::Pan => {
-                    if let Some((px, py)) = last_center.get() {
-                        let dx = cx - px;
-                        let dy = cy - py;
-                        if dx.abs() > 0.0 || dy.abs() > 0.0 {
-                            s.transform.pan(dx, dy);
-                        }
-                    }
-                }
-                GestureMode::Zoom => {
-                    let prev = last_scale.get();
-                    let factor = scale / prev;
-                    if (factor - 1.0).abs() > 1e-6 {
-                        s.transform.zoom_at((cx, cy), factor);
-                    }
-                }
-                GestureMode::Undecided => {}
+            let prev = last_scale.get();
+            let factor = scale / prev;
+            if (factor - 1.0).abs() > 1e-6 {
+                s.transform.zoom_at((cx, cy), factor);
             }
 
             last_scale.set(scale);
@@ -476,34 +448,32 @@ pub fn attach_pan_zoom(area_in: &impl IsA<gtk4::Widget>, state: SharedState) {
         let state = state.clone();
         let last_scale = last_scale.clone();
         let last_center = last_center.clone();
-        let start_center = start_center.clone();
-        let mode = mode.clone();
         zoom.connect_begin(move |g, _| {
-            // Defensive: discard any stroke or lasso that started a frame
-            // before the second finger was recognized so it can't commit
-            // when the pinch ends.
+            // Second finger landed — promote any in-flight one-finger
+            // gesture to a pinch by aborting whatever the first finger was
+            // doing and silencing further drag events for its duration.
+            PINCH_ACTIVE.with(|c| c.set(true));
             {
                 let mut s = state.borrow_mut();
                 s.current_stroke = None;
                 s.pointer_drawing = false;
                 s.lasso_active = false;
                 s.lasso_points.clear();
+                s.selection_drag_start = None;
+                s.selection_resize_handle = None;
+                s.selection_resize_start = None;
+                s.selection_resize_bbox_orig = None;
             }
             last_scale.set(1.0);
             let c = g.bounding_box_center();
             last_center.set(c);
-            start_center.set(c);
-            mode.set(GestureMode::Undecided);
         });
     }
     {
         let last_center = last_center.clone();
-        let start_center = start_center.clone();
-        let mode = mode.clone();
         zoom.connect_end(move |_, _| {
+            PINCH_ACTIVE.with(|c| c.set(false));
             last_center.set(None);
-            start_center.set(None);
-            mode.set(GestureMode::Undecided);
         });
     }
     area.add_controller(zoom);
