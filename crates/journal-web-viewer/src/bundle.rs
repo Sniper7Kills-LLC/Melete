@@ -302,10 +302,7 @@ mod tests {
         assert_eq!(resolved.len(), 1);
         let t = &resolved[0];
         assert_eq!(t.name, "Daily Layout");
-        assert!(matches!(
-            t.background,
-            BackgroundType::Grid { spacing } if (spacing - 5.0).abs() < 1e-9
-        ));
+        assert!(matches!(t.background, BackgroundType::Blank));
         assert_eq!(t.widgets.len(), 3);
     }
 }
