@@ -492,9 +492,14 @@ function DailySlotCard({
  * horizontally — never vertically — so the editor stays compact.
  */
 function DesktopSidebarMock({ tpl }: { tpl: NotebookTemplate }) {
-  // Collapse adjacent weekdays sharing the same daily-slot owner so a
-  // [Sat, Sun] slot renders once as "Sat–Sun ×1" instead of twice.
-  // The owner lookup matches the desktop's `weekday_owner` table.
+  // For each weekday Mon-Sun, gather templates from EVERY daily slot
+  // that includes that weekday (in slot order). A Monday listed in two
+  // slots gets both slots' templates stacked. Then collapse adjacent
+  // weekdays whose template lists are identical so a Mon-Fri slot
+  // renders once as "Mon–Fri" instead of five identical columns. This
+  // diverges from the desktop's first-owner-wins preview (which is a
+  // visual simplification); the actual planner runtime emits one page
+  // per matching slot, which is what we mirror here.
   const dayOrder: Weekday[] = [
     "Mon",
     "Tue",
@@ -504,25 +509,22 @@ function DesktopSidebarMock({ tpl }: { tpl: NotebookTemplate }) {
     "Sat",
     "Sun",
   ];
-  const weekdayOwner: (number | null)[] = Array(7).fill(null);
-  tpl.daily_slots.forEach((slot, idx) => {
-    slot.days.forEach((d) => {
-      const wIdx = dayOrder.indexOf(d);
-      if (wIdx >= 0 && weekdayOwner[wIdx] === null) {
-        weekdayOwner[wIdx] = idx;
-      }
-    });
+  const perDay: Uuid[][] = dayOrder.map((d) => {
+    const out: Uuid[] = [];
+    for (const slot of tpl.daily_slots) {
+      if (!slot.days.includes(d)) continue;
+      out.push(...slot.templates);
+    }
+    return out;
   });
-  const collapsed: { label: string; ids: Uuid[] }[] = [];
+  const collapsed: { label: string; days: number; ids: Uuid[] }[] = [];
   let wi = 0;
   while (wi < 7) {
-    const owner = weekdayOwner[wi];
     let wj = wi + 1;
-    while (wj < 7 && weekdayOwner[wj] === owner) wj++;
+    while (wj < 7 && sameIds(perDay[wj], perDay[wi])) wj++;
     const label =
       wj - wi === 1 ? dayOrder[wi] : `${dayOrder[wi]}–${dayOrder[wj - 1]}`;
-    const ids = owner !== null ? tpl.daily_slots[owner].templates : [];
-    collapsed.push({ label, ids });
+    collapsed.push({ label, days: wj - wi, ids: perDay[wi] });
     wi = wj;
   }
 
@@ -566,7 +568,11 @@ function DesktopSidebarMock({ tpl }: { tpl: NotebookTemplate }) {
               key={`${c.label}-${i}`}
               className="flex items-stretch gap-2"
             >
-              <SectionGroup label={c.label} repeats="×1" ids={c.ids} />
+              <SectionGroup
+                label={c.label}
+                repeats={`×${c.days}`}
+                ids={c.ids}
+              />
               {i < collapsed.length - 1 && <StripDivider />}
             </span>
           ))}
@@ -627,6 +633,14 @@ function MiniPagePreview({ templateId }: { templateId: Uuid }) {
       </div>
     </div>
   );
+}
+
+function sameIds(a: Uuid[], b: Uuid[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 function MiniEmpty() {

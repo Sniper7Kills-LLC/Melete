@@ -182,7 +182,22 @@ export interface ExampleTemplate {
   swatch: string;
 }
 
+function blankTemplate(): PageTemplate {
+  return {
+    id: uuid("e0b1ankb1ank"),
+    name: "Blank",
+    description: "Empty A4 page — no widgets. Useful as a divider.",
+    background: { kind: "Blank" },
+    size_mm: A4,
+    tiling: "None",
+    default_viewport: null,
+    category: "Blank",
+    widgets: [],
+  };
+}
+
 export const EXAMPLE_TEMPLATES: ExampleTemplate[] = [
+  { template: blankTemplate(), swatch: "from-slate-100 to-slate-200" },
   { template: yearStartTemplate(), swatch: "from-rose-100 to-rose-200" },
   { template: quarterlyTemplate(), swatch: "from-amber-100 to-amber-200" },
   { template: monthlyTemplate(), swatch: "from-emerald-100 to-emerald-200" },
