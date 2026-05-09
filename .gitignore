@@ -18,3 +18,9 @@ Thumbs.db
 
 # Claude Code local state
 .claude/
+
+# Amplify Gen 2
+node_modules/
+.amplify/
+amplify_outputs.json
+amplifyconfiguration.json
