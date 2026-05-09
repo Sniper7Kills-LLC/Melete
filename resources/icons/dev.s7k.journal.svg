@@ -1,21 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <!--
-    Adwaita-style app icon. 128px logical canvas, subject inside the
-    safe area (16px margin all round). Rounded-square base plate with
-    a subtle vertical gradient + 1px inner highlight; closed notebook
-    cover sits on top with an amber bookmark ribbon and an inked
-    page-edge shadow underneath. Palette matches the in-app
+    Adwaita-friendly app icon. Transparent canvas (no background plate)
+    with a closed notebook + bookmark ribbon + pen. Scaled to fill the
+    128px canvas with ~6px breathing room. Palette matches the in-app
     fieldbook chrome (indigo + amber on page-cream).
   -->
   <defs>
-    <linearGradient id="plateFill" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#f7f1e1"/>
-      <stop offset="1" stop-color="#e9dfc6"/>
-    </linearGradient>
-    <linearGradient id="plateFillDark" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#3a3d6e"/>
-      <stop offset="1" stop-color="#2a2c52"/>
-    </linearGradient>
     <linearGradient id="cover" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#4a4d80"/>
       <stop offset="1" stop-color="#33365e"/>
@@ -33,10 +23,10 @@
       <stop offset="1" stop-color="#ece2c5"/>
     </linearGradient>
     <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur in="SourceAlpha" stdDeviation="1.4"/>
-      <feOffset dx="0" dy="1.2" result="offsetblur"/>
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.6"/>
+      <feOffset dx="0" dy="1.6"/>
       <feComponentTransfer>
-        <feFuncA type="linear" slope="0.32"/>
+        <feFuncA type="linear" slope="0.34"/>
       </feComponentTransfer>
       <feMerge>
         <feMergeNode/>
@@ -45,69 +35,55 @@
     </filter>
   </defs>
 
-  <!-- Base plate: rounded square with paper-cream gradient. -->
-  <rect x="8" y="8" width="112" height="112" rx="22" ry="22"
-        fill="url(#plateFill)"/>
-  <!-- Inner 1px highlight for depth at the top. -->
-  <rect x="8.5" y="8.5" width="111" height="111" rx="21.5" ry="21.5"
-        fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="1"/>
-  <!-- Plate edge — subtle indigo border. -->
-  <rect x="8" y="8" width="112" height="112" rx="22" ry="22"
-        fill="none" stroke="#3a3d6e" stroke-opacity="0.18" stroke-width="1.5"/>
-
-  <!-- Page block (peeking from under the cover). Drawn first so the
-       cover sits on top and casts a subtle shadow line where they meet. -->
+  <!-- Page block — peeks out top + right of the cover. -->
   <g filter="url(#softShadow)">
-    <rect x="32" y="28" width="62" height="76" rx="3" ry="3"
-          fill="url(#page)" stroke="#c8b98a" stroke-width="0.8"/>
-    <!-- Faint ruled lines on the visible page edge. -->
-    <line x1="40" y1="44" x2="86" y2="44" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.2"/>
-    <line x1="40" y1="56" x2="86" y2="56" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.2"/>
-    <line x1="40" y1="68" x2="86" y2="68" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.2"/>
-    <line x1="40" y1="80" x2="74" y2="80" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.2"/>
+    <rect x="22" y="10" width="92" height="100" rx="4" ry="4"
+          fill="url(#page)" stroke="#c8b98a" stroke-width="1"/>
+    <line x1="36" y1="32" x2="106" y2="32" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
+    <line x1="36" y1="46" x2="106" y2="46" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
+    <line x1="36" y1="60" x2="106" y2="60" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
+    <line x1="36" y1="74" x2="106" y2="74" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
+    <line x1="36" y1="88" x2="86"  y2="88" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
   </g>
 
-  <!-- Cover (the closed front of the notebook), offset slightly so
-       the page block is visible at the top + right edge. -->
+  <!-- Cover — offset down + left so the page peeks out. -->
   <g filter="url(#softShadow)">
-    <rect x="28" y="32" width="58" height="76" rx="5" ry="5"
+    <rect x="14" y="16" width="88" height="100" rx="6" ry="6"
           fill="url(#cover)"/>
-    <!-- Diagonal highlight on the cover. -->
-    <rect x="28" y="32" width="58" height="76" rx="5" ry="5"
+    <rect x="14" y="16" width="88" height="100" rx="6" ry="6"
           fill="url(#coverShine)"/>
-    <!-- Spine edge: a darker vertical band on the left of the cover. -->
-    <rect x="28" y="32" width="6" height="76" rx="2" ry="2"
+    <!-- Spine band on the left. -->
+    <rect x="14" y="16" width="9" height="100" rx="3" ry="3"
           fill="#262849"/>
-    <!-- Wordmark rule: an amber editorial rule across the cover. -->
-    <rect x="40" y="58" width="34" height="3" rx="1" ry="1" fill="#e8b94a"/>
-    <!-- Wordmark dot (J initial) — single amber square monogram. -->
-    <rect x="40" y="44" width="11" height="11" rx="2" ry="2" fill="#e8b94a"/>
-    <text x="42" y="53.4" font-family="Iowan Old Style, Charter, Cambria, Liberation Serif, serif"
-          font-size="10" font-weight="700" fill="#262849" letter-spacing="0">J</text>
+    <!-- Editorial rule. -->
+    <rect x="34" y="58" width="50" height="4" rx="1.5" ry="1.5" fill="#e8b94a"/>
+    <!-- Amber J monogram. -->
+    <rect x="34" y="36" width="18" height="18" rx="3" ry="3" fill="#e8b94a"/>
+    <text x="37.5" y="51"
+          font-family="Iowan Old Style, Charter, Cambria, Liberation Serif, serif"
+          font-size="16" font-weight="700" fill="#262849">J</text>
   </g>
 
-  <!-- Bookmark ribbon hanging out the bottom of the cover. -->
-  <g>
-    <rect x="74" y="32" width="6" height="84" fill="url(#ribbon)"/>
-    <!-- V-notch tail at the ribbon bottom. -->
-    <polygon points="74,116 77,110 80,116" fill="url(#plateFill)"/>
-  </g>
+  <!--
+    Bookmark ribbon — drops from the top of the cover, V-notch tail
+    below the cover. Single polygon: top-left → top-right → down the
+    right edge → into the V → down the left edge.
+  -->
+  <polygon points="84,16 93,16 93,124 88.5,116 84,124" fill="url(#ribbon)"/>
 
-  <!-- Pen laid diagonally across the bottom-right corner of the plate. -->
-  <g filter="url(#softShadow)">
-    <!-- Pen barrel: amber with gradient. -->
-    <rect x="58" y="92" width="48" height="8" rx="2.5" ry="2.5"
-          transform="rotate(-30 82 96)"
+  <!--
+    Pen — laid diagonally across the lower-right. Geometry tuned so
+    the rotated tip + cap stay inside the 128px viewBox.
+  -->
+  <g filter="url(#softShadow)" transform="rotate(-26 86 102)">
+    <rect x="58" y="98" width="56" height="9" rx="3" ry="3"
           fill="url(#ribbon)"/>
-    <!-- Pen clip on the upper side. -->
-    <rect x="86" y="86.2" width="14" height="2.2" rx="1" ry="1"
-          transform="rotate(-30 93 87.3)"
+    <rect x="92" y="92.5" width="16" height="3" rx="1.2" ry="1.2"
           fill="#7a5a18"/>
-    <!-- Pen tip (dark indigo cone). -->
-    <polygon points="58,92 58,100 50.5,100.6"
-             transform="rotate(-30 82 96)"
-             fill="#262849"/>
-    <!-- Tip ink-dot accent. -->
-    <circle cx="49.5" cy="103" r="1.6" fill="#262849"/>
+    <polygon points="58,98 58,107 50,107.5" fill="#262849"/>
+    <rect x="108" y="97" width="3" height="11" fill="#7a5a18"/>
   </g>
+
+  <!-- Ink dot beneath the rotated pen tip. -->
+  <circle cx="40" cy="120" r="2" fill="#262849"/>
 </svg>
