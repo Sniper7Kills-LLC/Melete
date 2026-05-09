@@ -90,8 +90,7 @@ function realViewer(): Viewer {
       // Path is built dynamically so TS doesn't try to resolve the
       // generated file at typecheck (the `generated/` dir is
       // gitignored and may not exist when `pnpm typecheck` runs).
-      const path = "/wasm/viewer/journal_web_viewer.js";
-      const mod: any = await import(/* @vite-ignore */ path);
+      const mod: any = await import("./generated/viewer/journal_web_viewer.js");
       // Default export is the wasm initializer fn.
       await mod.default();
       const v = new mod.Viewer();
@@ -161,8 +160,7 @@ function realShim(): Shim {
     try {
       // Dynamic path so TS doesn't try to resolve the gitignored
       // generated module at typecheck.
-      const path = "/wasm/shim/journal_web_shim.js";
-      const m: any = await import(/* @vite-ignore */ path);
+      const m: any = await import("./generated/shim/journal_web_shim.js");
       await m.default();
       mod = {
         parse_template_toml: m.parse_template_toml,

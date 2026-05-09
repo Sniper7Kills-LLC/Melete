@@ -6,6 +6,8 @@
   "description": "Journal web POC — view-only viewer + page-template designer. Vite + React + TS, mock WASM stub.",
   "scripts": {
     "dev": "vite",
+    "wasm": "bash build-wasm.sh",
+    "prebuild": "bash build-wasm.sh",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview"

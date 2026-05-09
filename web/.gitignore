@@ -7,4 +7,4 @@ dist/
 
 # wasm-bindgen output — produced by `bash web/build-wasm.sh`. Do not
 # commit; the .wasm + bindings are reproducible build artefacts.
-public/wasm/
+src/wasm/generated/
