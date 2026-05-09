@@ -1,14 +1,25 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Link, NavLink, Route, Routes } from "react-router-dom";
+import { Amplify } from "aws-amplify";
 
 import "./index.css";
+import { amplifyOutputs, isStubBackend } from "./amplify-config";
 import { Viewer } from "./pages/Viewer";
 import { Designer } from "./pages/Designer";
 import { Templeter } from "./pages/Templeter";
 import { Tooler } from "./pages/Tooler";
 import { Gallery } from "./pages/Gallery";
+import { Public } from "./pages/Public";
+import { My } from "./pages/My";
 import { useUnits } from "./store/unitsStore";
+
+// Configure Amplify before any GraphQL or auth call. The stub falls in
+// when there's no real `amplify_outputs.json` at the repo root; in that
+// case the Public/My pages render a "Backend not configured" banner and
+// skip live network calls.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Amplify accepts the wide outputs shape
+Amplify.configure(amplifyOutputs as any);
 
 function NavBar() {
   const linkBase =
@@ -61,10 +72,26 @@ function NavBar() {
         >
           Gallery
         </NavLink>
+        <NavLink
+          to="/public"
+          className={({ isActive }) =>
+            `${linkBase} ${isActive ? linkActive : "text-slate-700"}`
+          }
+        >
+          Public
+        </NavLink>
+        <NavLink
+          to="/my"
+          className={({ isActive }) =>
+            `${linkBase} ${isActive ? linkActive : "text-slate-700"}`
+          }
+        >
+          My
+        </NavLink>
       </nav>
       <UnitsSelector />
       <span className="ml-3 text-xs text-slate-400">
-        WASM mocked · UI scaffolding
+        {isStubBackend ? "Backend: stub" : "Backend: live"}
       </span>
     </header>
   );
@@ -102,6 +129,8 @@ function App() {
             <Route path="/templeter" element={<Templeter />} />
             <Route path="/tooler" element={<Tooler />} />
             <Route path="/gallery" element={<Gallery />} />
+            <Route path="/public" element={<Public />} />
+            <Route path="/my" element={<My />} />
             <Route
               path="*"
               element={
