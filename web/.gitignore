@@ -8,3 +8,8 @@ dist/
 # wasm-bindgen output — produced by `bash web/build-wasm.sh`. Do not
 # commit; the .wasm + bindings are reproducible build artefacts.
 src/wasm/generated/
+
+# Symlink (or real copy) of repo-root amplify_outputs.json. Vite's
+# project root is `web/` and `import.meta.glob` can't see files above
+# the root, so `amplify-config.ts` reads through this path instead.
+amplify_outputs.json

@@ -1,6 +1,13 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Link, NavLink, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  Link,
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+} from "react-router-dom";
 import { Amplify } from "aws-amplify";
 
 import "./index.css";
@@ -10,7 +17,6 @@ import { Designer } from "./pages/Designer";
 import { Templeter } from "./pages/Templeter";
 import { Tooler } from "./pages/Tooler";
 import { Gallery } from "./pages/Gallery";
-import { Public } from "./pages/Public";
 import { My } from "./pages/My";
 import { useUnits } from "./store/unitsStore";
 
@@ -73,14 +79,6 @@ function NavBar() {
           Gallery
         </NavLink>
         <NavLink
-          to="/public"
-          className={({ isActive }) =>
-            `${linkBase} ${isActive ? linkActive : "text-slate-700"}`
-          }
-        >
-          Public
-        </NavLink>
-        <NavLink
           to="/my"
           className={({ isActive }) =>
             `${linkBase} ${isActive ? linkActive : "text-slate-700"}`
@@ -129,7 +127,9 @@ function App() {
             <Route path="/templeter" element={<Templeter />} />
             <Route path="/tooler" element={<Tooler />} />
             <Route path="/gallery" element={<Gallery />} />
-            <Route path="/public" element={<Public />} />
+            {/* Legacy /public path collapsed into /gallery — keep a
+                redirect so any external links / bookmarks survive. */}
+            <Route path="/public" element={<Navigate to="/gallery" replace />} />
             <Route path="/my" element={<My />} />
             <Route
               path="*"
