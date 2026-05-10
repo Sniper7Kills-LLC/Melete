@@ -20,6 +20,8 @@ mod input;
 mod notebook_template_creator;
 mod onboarding;
 mod pdf_export;
+#[cfg(feature = "remote")]
+mod remote_browser;
 mod settings_dialogs;
 mod shortcuts;
 mod state;

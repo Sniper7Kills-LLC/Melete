@@ -399,6 +399,22 @@ fn build_menu_button(
     }
     vbox.append(&tool_editor_btn);
 
+    // Browse public catalog — only when the `remote` feature is on.
+    #[cfg(feature = "remote")]
+    {
+        let browse_btn = Button::with_label("Browse public catalog…");
+        {
+            let parent = parent.clone();
+            let state = state.clone();
+            let popover_clone = popover.clone();
+            browse_btn.connect_clicked(move |_| {
+                popover_clone.popdown();
+                crate::remote_browser::open_browser(&parent, state.clone());
+            });
+        }
+        vbox.append(&browse_btn);
+    }
+
     {
         let tool_btn = tool_btn.clone();
         dev_check.connect_toggled(move |btn| {
