@@ -1,5 +1,6 @@
-use std::path::PathBuf;
 use std::rc::Rc;
+
+use anyhow::Context;
 
 use gtk4::prelude::*;
 use gtk4::{
@@ -10,7 +11,7 @@ use journal_canvas::{paint_with_widgets, ViewportTransform};
 use journal_core::{
     BackgroundType, NotebookTemplate, PageTemplate, Point, Rect, TemplateId, TilingMode, Viewport,
 };
-use journal_templates::{is_builtin, serialize_template_toml, template_file_from_page_template};
+use journal_templates::is_builtin;
 use std::collections::HashSet;
 use uuid::Uuid;
 
@@ -429,30 +430,7 @@ fn build_notebook_template_row(
 
 fn delete_notebook_template(id: TemplateId, state: SharedState) {
     let s = state.borrow();
-    let removed = {
-        let mut reg = s.notebook_templates.borrow_mut();
-        reg.remove(id)
-    };
-    if removed.is_none() {
-        return;
-    }
-    if let Some(dir) = notebook_templates_dir() {
-        let p = dir.join(format!("{}.toml", id.0));
-        if p.exists() {
-            if let Err(e) = std::fs::remove_file(&p) {
-                tracing::warn!("remove notebook template file {:?}: {}", p, e);
-            }
-        }
-    }
-}
-
-fn notebook_templates_dir() -> Option<PathBuf> {
-    let base = dirs::data_dir().or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))?;
-    Some(base.join("journal").join("notebook_templates"))
-}
-
-fn pdfs_dir() -> Option<PathBuf> {
-    Some(templates_dir()?.join("pdfs"))
+    crate::template_io::delete_notebook_template(&s.backend, &s.notebook_templates, id.0);
 }
 
 fn run_pdf_import(
@@ -513,20 +491,20 @@ fn run_pdf_import(
     );
 }
 
-fn pdf_page_count(path: &std::path::Path) -> u32 {
+fn pdf_page_count_from_bytes(bytes: &[u8]) -> u32 {
     #[cfg(feature = "pdf")]
     {
+        use gtk4::glib;
         use poppler::Document;
-        if let Ok(abs) = path.canonicalize() {
-            let uri = format!("file://{}", abs.display());
-            if let Ok(doc) = Document::from_file(&uri, None) {
-                let n = doc.n_pages();
-                if n > 0 {
-                    return n as u32;
-                }
+        let g_bytes = glib::Bytes::from(bytes);
+        if let Ok(doc) = Document::from_bytes(&g_bytes, None) {
+            let n = doc.n_pages();
+            if n > 0 {
+                return n as u32;
             }
         }
     }
+    let _ = bytes;
     1
 }
 
@@ -539,21 +517,19 @@ fn import_pdf(
     close_manager: Rc<dyn Fn()>,
 ) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
-    let pdf_dir = pdfs_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
-    std::fs::create_dir_all(&pdf_dir)?;
-    let dst = pdf_dir.join(format!("{}.pdf", id));
-    std::fs::copy(src, &dst)?;
+    let bytes = std::fs::read(src)
+        .with_context(|| format!("read {}", src.display()))?;
+    let bytes = Rc::new(bytes);
 
-    let n_pages = pdf_page_count(&dst);
+    let n_pages = pdf_page_count_from_bytes(&bytes);
     let name = src
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("PDF")
         .to_string();
-    let dst_str = dst.to_string_lossy().to_string();
 
     if n_pages <= 1 {
-        finalize_pdf_template(id, name, dst_str, 0, state.clone());
+        finalize_pdf_template(id, name, &bytes, 0, state.clone());
         refresh_list(&list, state, parent, open_editor, close_manager);
         return Ok(());
     }
@@ -563,7 +539,7 @@ fn import_pdf(
         parent,
         id,
         name,
-        dst_str,
+        bytes,
         n_pages,
         state,
         list,
@@ -573,13 +549,20 @@ fn import_pdf(
     Ok(())
 }
 
-fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: SharedState) {
+fn finalize_pdf_template(
+    id: Uuid,
+    name: String,
+    bytes: &[u8],
+    page: u32,
+    state: SharedState,
+) {
+    let asset_name = format!("{}.pdf", id);
     let template = PageTemplate {
         id: journal_core::TemplateId(id),
         name: name.clone(),
         description: format!("PDF page {}", page + 1),
         background: BackgroundType::Pdf {
-            path: dst.clone(),
+            path: format!("asset:{}", asset_name),
             page,
         },
         size_mm: (215.9, 279.4),
@@ -588,41 +571,27 @@ fn finalize_pdf_template(id: Uuid, name: String, dst: String, page: u32, state: 
         widgets: Vec::new(),
         category: "Imported".into(),
     };
-
-    let tdir = match templates_dir() {
-        Some(d) => d,
-        None => {
-            tracing::error!("could not resolve data dir");
-            return;
-        }
-    };
-    if let Err(e) = std::fs::create_dir_all(&tdir) {
-        tracing::error!("create templates dir: {}", e);
-        return;
-    }
-    let toml_path = tdir.join(format!("{}.toml", id));
-    let file = template_file_from_page_template(&template);
-    match serialize_template_toml(&file) {
-        Ok(text) => {
-            if let Err(e) = std::fs::write(&toml_path, text) {
-                tracing::error!("write template toml: {}", e);
-                return;
-            }
-        }
-        Err(e) => {
-            tracing::error!("serialize template: {}", e);
-            return;
-        }
-    }
+    let asset = crate::template_io::asset_bytes_from_file(
+        asset_name,
+        "application/pdf",
+        bytes.to_vec(),
+    );
     let s = state.borrow();
-    s.templates.borrow_mut().insert(template);
+    if let Err(e) = crate::template_io::put_page_template(
+        &s.backend,
+        &s.templates,
+        &template,
+        &[asset],
+    ) {
+        tracing::error!("persist pdf template {}: {:#}", id, e);
+    }
 }
 
 fn show_pdf_page_picker(
     parent: &ApplicationWindow,
     id: Uuid,
     name: String,
-    dst: String,
+    bytes: Rc<Vec<u8>>,
     n_pages: u32,
     state: SharedState,
     list: Rc<ListBox>,
@@ -688,7 +657,7 @@ fn show_pdf_page_picker(
         let close_manager = close_manager.clone();
         ok_btn.connect_clicked(move |_| {
             let page = (spin.value() as u32).saturating_sub(1);
-            finalize_pdf_template(id, name.clone(), dst.clone(), page, state.clone());
+            finalize_pdf_template(id, name.clone(), &bytes, page, state.clone());
             refresh_list(
                 &list,
                 state.clone(),
@@ -957,40 +926,7 @@ fn describe(bg: &BackgroundType) -> String {
 
 fn delete_template(id: TemplateId, state: SharedState) {
     let s = state.borrow();
-    let removed = {
-        let mut reg = s.templates.borrow_mut();
-        reg.remove(id)
-    };
-    if removed.is_none() {
-        return;
-    }
-    let dir = match templates_dir() {
-        Some(d) => d,
-        None => return,
-    };
-    let toml_path = dir.join(format!("{}.toml", id.0));
-    if toml_path.exists() {
-        if let Err(e) = std::fs::remove_file(&toml_path) {
-            tracing::warn!("failed to remove template file {:?}: {}", toml_path, e);
-        }
-    }
-    if let Some(BackgroundType::Image { path }) = removed.as_ref().map(|t| &t.background) {
-        let p = PathBuf::from(path);
-        if p.starts_with(&dir) && p.exists() {
-            if let Err(e) = std::fs::remove_file(&p) {
-                tracing::warn!("failed to remove template image {:?}: {}", p, e);
-            }
-        }
-    }
-}
-
-fn templates_dir() -> Option<PathBuf> {
-    let base = dirs::data_dir().or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))?;
-    Some(base.join("journal").join("templates"))
-}
-
-fn images_dir() -> Option<PathBuf> {
-    Some(templates_dir()?.join("images"))
+    crate::template_io::delete_page_template(&s.backend, &s.templates, id.0);
 }
 
 fn run_import(
@@ -1060,11 +996,8 @@ fn import_image(src: &std::path::Path, state: SharedState) -> anyhow::Result<()>
         .and_then(|e| e.to_str())
         .unwrap_or("img")
         .to_lowercase();
-
-    let img_dir = images_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
-    std::fs::create_dir_all(&img_dir)?;
-    let dst_image = img_dir.join(format!("{}.{}", id, ext));
-    std::fs::copy(src, &dst_image)?;
+    let bytes = std::fs::read(src).with_context(|| format!("read {}", src.display()))?;
+    let asset_name = format!("{}.{}", id, ext);
 
     let name = src
         .file_stem()
@@ -1077,7 +1010,7 @@ fn import_image(src: &std::path::Path, state: SharedState) -> anyhow::Result<()>
         name,
         description: format!("Imported from {}", src.display()),
         background: BackgroundType::Image {
-            path: dst_image.to_string_lossy().to_string(),
+            path: format!("asset:{}", asset_name),
         },
         size_mm: (215.9, 279.4),
         tiling: TilingMode::None,
@@ -1085,18 +1018,22 @@ fn import_image(src: &std::path::Path, state: SharedState) -> anyhow::Result<()>
         widgets: Vec::new(),
         category: "Imported".into(),
     };
-
-    let tdir = templates_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
-    std::fs::create_dir_all(&tdir)?;
-    let toml_path = tdir.join(format!("{}.toml", id));
-    let file = template_file_from_page_template(&template);
-    let toml_text =
-        serialize_template_toml(&file).map_err(|e| anyhow::anyhow!("serialize template: {}", e))?;
-    std::fs::write(&toml_path, toml_text)?;
-
+    let mime = mime_for_ext(&ext);
+    let asset = crate::template_io::asset_bytes_from_file(asset_name, mime, bytes);
     let s = state.borrow();
-    s.templates.borrow_mut().insert(template);
-    Ok(())
+    crate::template_io::put_page_template(&s.backend, &s.templates, &template, &[asset])
+}
+
+fn mime_for_ext(ext: &str) -> &'static str {
+    match ext {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "tif" | "tiff" => "image/tiff",
+        _ => "application/octet-stream",
+    }
 }
 
 fn show_error(parent: &ApplicationWindow, message: &str) {

@@ -22,6 +22,7 @@ mod settings_dialogs;
 mod shortcuts;
 mod state;
 mod template_creator;
+mod template_io;
 mod template_manager;
 #[cfg(feature = "vello")]
 mod template_preview;
@@ -567,20 +568,6 @@ fn open_backend() -> Result<MultiFileSqliteBackend> {
         .with_context(|| format!("open multi-file backend at {:?}", dir))
 }
 
-fn load_templates() -> TemplateRegistry {
-    let mut reg = TemplateRegistry::with_builtins();
-    if let Ok(dir) = data_dir() {
-        let tdir = dir.join("templates");
-        if tdir.exists() {
-            match reg.load_dir(&tdir) {
-                Ok(n) => tracing::info!("loaded {} user templates from {:?}", n, tdir),
-                Err(e) => tracing::warn!("failed to load templates from {:?}: {}", tdir, e),
-            }
-        }
-    }
-    reg
-}
-
 fn build_ui(app: &adw::Application) -> Result<()> {
     load_css();
 
@@ -595,17 +582,9 @@ fn build_ui(app: &adw::Application) -> Result<()> {
     }
 
     let backend: Rc<RefCell<dyn JournalBackend>> = Rc::new(RefCell::new(open_backend()?));
-    let templates = Rc::new(RefCell::new(load_templates()));
-    let mut nb_reg = NotebookTemplateRegistry::with_builtins();
-    if let Ok(dir) = data_dir() {
-        let nbtdir = dir.join("notebook_templates");
-        match nb_reg.load_dir(&nbtdir) {
-            Ok(n) if n > 0 => tracing::info!("loaded {} notebook templates from {:?}", n, nbtdir),
-            Ok(_) => {}
-            Err(e) => tracing::warn!("load notebook templates failed: {}", e),
-        }
-    }
-    let notebook_templates = Rc::new(RefCell::new(nb_reg));
+    let templates = Rc::new(RefCell::new(TemplateRegistry::with_builtins()));
+    let notebook_templates = Rc::new(RefCell::new(NotebookTemplateRegistry::with_builtins()));
+    template_io::hydrate_registries_from_backend(&backend, &templates, &notebook_templates);
     let state = state::new_shared_state(backend, templates, notebook_templates);
     state::reload_placeholder(&state);
     state::load_tool_settings_from_config(&state);
