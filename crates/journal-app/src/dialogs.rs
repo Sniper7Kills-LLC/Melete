@@ -17,10 +17,20 @@ use uuid::Uuid;
 use crate::state::SharedState;
 
 /// Persist a notebook template via the backend and refresh the
-/// in-memory registry. Replaces the prior fs-write path.
-pub(crate) fn persist_notebook_template(state: &SharedState, t: &journal_core::NotebookTemplate) {
+/// in-memory registry. Returns `Err` on failure so editor saves can
+/// surface it; non-editor callers may `let _ =` to preserve the
+/// previous fire-and-forget behavior. Errors are also logged
+/// internally so log-only callers don't lose the diagnostic.
+pub(crate) fn persist_notebook_template(
+    state: &SharedState,
+    t: &journal_core::NotebookTemplate,
+) -> anyhow::Result<()> {
     let s = state.borrow();
-    crate::template_io::put_notebook_template(&s.backend, &s.notebook_templates, t);
+    let res = crate::template_io::put_notebook_template(&s.backend, &s.notebook_templates, t);
+    if let Err(e) = &res {
+        tracing::warn!("persist_notebook_template {}: {:#}", t.id.0, e);
+    }
+    res
 }
 
 fn modal(parent: &ApplicationWindow, title: &str) -> Window {
@@ -617,7 +627,7 @@ pub fn prompt_new_planner(
             clone.grouping = grouping;
             clone.page_title_format = page_title_format;
             let new_id = clone.id;
-            persist_notebook_template(&state, &clone);
+            let _ = persist_notebook_template(&state, &clone);
 
             (on_ok)(PlannerChoice {
                 name,
@@ -1032,7 +1042,7 @@ pub fn prompt_notebook_template_editor(
                     .map(|e| e.entry_options.clone())
                     .unwrap_or_default(),
             };
-            persist_notebook_template(&state, &nt);
+            let _ = persist_notebook_template(&state, &nt);
             (on_save)(id);
             win.close();
         });

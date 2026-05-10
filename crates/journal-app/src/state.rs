@@ -390,13 +390,15 @@ pub fn activate_tool_preset(state: &SharedState, tool: Tool, preset_name: &str) 
             s.pen.base_width = p.settings.default_base_width;
         }
     }
-    persist_tool_state(state);
+    let _ = persist_tool_state(state);
 }
 
 /// Persist the current preset list + active preset map + flat
-/// tool_settings snapshot + per-tool palettes to disk. Called whenever
-/// the user edits a preset or switches the active one.
-pub fn persist_tool_state(state: &SharedState) {
+/// tool_settings snapshot + per-tool palettes to disk. Returns `Err`
+/// on config-save failure so editor save handlers can keep the editor
+/// open instead of auto-closing on failed saves (#22). Non-editor
+/// callers may `let _ =` to keep the previous fire-and-forget shape.
+pub fn persist_tool_state(state: &SharedState) -> anyhow::Result<()> {
     let mut cfg = crate::config::load();
     let s = state.borrow();
     cfg.tool_settings = s.tool_settings.clone();
@@ -410,9 +412,10 @@ pub fn persist_tool_state(state: &SharedState) {
         .map(|(k, b)| (k.clone(), b.id))
         .collect();
     drop(s);
-    if let Err(e) = crate::config::save(&cfg) {
+    crate::config::save(&cfg).map_err(|e| {
         tracing::warn!("persist tool state: {e}");
-    }
+        anyhow::anyhow!("save config: {e}")
+    })
 }
 
 /// Resolve `cfg.tool_brush_assignments` (key→Uuid) against built-in

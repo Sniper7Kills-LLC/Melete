@@ -516,7 +516,7 @@ fn rebuild_brush_picker(
                     };
                 }
             }
-            crate::state::persist_tool_state(&state_c);
+            let _ = crate::state::persist_tool_state(&state_c);
             pop_c.popdown();
         });
         container.append(&btn);
@@ -550,7 +550,7 @@ fn rebuild_brush_picker(
                 s.tool_brushes.remove(key);
                 s.active_brush_recipe = None;
             }
-            crate::state::persist_tool_state(&state_c);
+            let _ = crate::state::persist_tool_state(&state_c);
             pop_c.popdown();
         });
     }
@@ -652,7 +652,7 @@ fn build_palette_popover(
                     entry.push(color);
                 }
             }
-            crate::state::persist_tool_state(&state_c);
+            let _ = crate::state::persist_tool_state(&state_c);
             popover_c.popdown();
         });
     }

@@ -532,7 +532,7 @@ fn download_into_local(
                         "parse downloaded notebook template: {e:#}"
                     ))
                 })?;
-            crate::template_io::put_notebook_template(
+            let _ = crate::template_io::put_notebook_template(
                 &s_state.backend,
                 &s_state.notebook_templates,
                 &template,
@@ -589,7 +589,7 @@ fn edit_into_local(kind: Kind, id: uuid::Uuid, state: SharedState) -> Result<(),
             })?;
             {
                 let s_state = state.borrow();
-                crate::template_io::put_notebook_template(
+                let _ = crate::template_io::put_notebook_template(
                     &s_state.backend,
                     &s_state.notebook_templates,
                     &template,

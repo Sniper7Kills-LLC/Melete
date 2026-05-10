@@ -430,6 +430,11 @@ pub fn init_index_schema(conn: &mut Connection) -> Result<()> {
 fn configure(conn: &Connection) -> Result<()> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
+    // Wait up to 5s when another writer holds the DB lock instead of
+    // failing instantly with SQLITE_BUSY. Notebook files are intended
+    // to be single-process today; this is the safety net for a
+    // second instance accidentally opening the same .journal file.
+    conn.busy_timeout(std::time::Duration::from_millis(5000))?;
     Ok(())
 }
 

@@ -117,27 +117,23 @@ pub fn hydrate_registries_from_backend(
 }
 
 /// Persist a notebook template to backend, then re-insert the new
-/// version into the in-memory registry so the UI sees it
-/// immediately. Errors are logged, not propagated, to match the
-/// fire-and-forget semantics the old fs-write path had.
+/// Persist a notebook template via the backend and refresh the
+/// in-memory registry. Returns `Err` on serialize / backend failure
+/// so editor save handlers can keep the editor open instead of
+/// auto-closing on failed saves (#22).
 pub fn put_notebook_template(
     backend: &Rc<RefCell<dyn JournalBackend>>,
     nb_reg: &Rc<RefCell<NotebookTemplateRegistry>>,
     t: &NotebookTemplate,
-) {
-    match notebook_template_to_row(t) {
-        Ok(row) => {
-            if let Err(e) = backend.borrow_mut().put_notebook_template(&row) {
-                tracing::warn!("put_notebook_template {}: {:#}", t.id.0, e);
-                return;
-            }
-        }
-        Err(e) => {
-            tracing::warn!("serialize notebook template {}: {:#}", t.id.0, e);
-            return;
-        }
-    }
+) -> Result<()> {
+    let row = notebook_template_to_row(t)
+        .map_err(|e| anyhow::anyhow!("serialize notebook template {}: {:#}", t.id.0, e))?;
+    backend
+        .borrow_mut()
+        .put_notebook_template(&row)
+        .map_err(|e| anyhow::anyhow!("put_notebook_template {}: {:#}", t.id.0, e))?;
     nb_reg.borrow_mut().insert(t.clone());
+    Ok(())
 }
 
 pub fn delete_notebook_template(

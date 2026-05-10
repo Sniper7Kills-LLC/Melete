@@ -49,15 +49,28 @@ pub struct NamedToolSettings {
     pub settings: ToolSettings,
 }
 
+/// Single source of truth for settable tools and their stable
+/// config-key strings. Both `settable_tools()` and `tool_key()` derive
+/// from this list, so the two can never drift. Adding a new settable
+/// tool means appending one row here.
+const SETTABLE: &[(Tool, &str)] = &[
+    (Tool::Pen, "pen"),
+    (Tool::Pencil, "pencil"),
+    (Tool::Highlighter, "highlighter"),
+    (Tool::Paintbrush, "paintbrush"),
+    (Tool::SprayCan, "spraycan"),
+    (Tool::Calligraphy, "calligraphy"),
+];
+
 /// Built-in defaults: every settable tool starts with a single preset
 /// named "Default" matching its built-in `default_settings_for`. Users
 /// add more presets via the Tool Options popup.
 pub fn default_presets_map() -> std::collections::HashMap<String, Vec<NamedToolSettings>> {
-    settable_tools()
+    SETTABLE
         .iter()
-        .map(|t| {
+        .map(|(t, k)| {
             (
-                tool_key(*t).unwrap().to_string(),
+                (*k).to_string(),
                 vec![NamedToolSettings {
                     name: "Default".into(),
                     settings: default_settings_for(*t),
@@ -70,35 +83,20 @@ pub fn default_presets_map() -> std::collections::HashMap<String, Vec<NamedToolS
 /// Built-in default active-preset map: every tool's active preset
 /// starts at "Default".
 pub fn default_active_preset_map() -> std::collections::HashMap<String, String> {
-    settable_tools()
+    SETTABLE
         .iter()
-        .map(|t| (tool_key(*t).unwrap().to_string(), "Default".to_string()))
+        .map(|(_, k)| ((*k).to_string(), "Default".to_string()))
         .collect()
 }
 
 /// Stable string key for each settable tool. Tools without settings
 /// (Eraser, Selection) return `None` and are not surfaced in the UI.
 pub fn tool_key(tool: Tool) -> Option<&'static str> {
-    Some(match tool {
-        Tool::Pen => "pen",
-        Tool::Pencil => "pencil",
-        Tool::Highlighter => "highlighter",
-        Tool::Paintbrush => "paintbrush",
-        Tool::SprayCan => "spraycan",
-        Tool::Calligraphy => "calligraphy",
-        _ => return None,
-    })
+    SETTABLE.iter().find_map(|(t, k)| (*t == tool).then_some(*k))
 }
 
-pub fn settable_tools() -> &'static [Tool] {
-    &[
-        Tool::Pen,
-        Tool::Pencil,
-        Tool::Highlighter,
-        Tool::Paintbrush,
-        Tool::SprayCan,
-        Tool::Calligraphy,
-    ]
+pub fn settable_tools() -> Vec<Tool> {
+    SETTABLE.iter().map(|(t, _)| *t).collect()
 }
 
 /// Pretty label for a tool — used by the settings dialog.
@@ -175,8 +173,8 @@ pub fn default_settings_for(tool: Tool) -> ToolSettings {
 /// their built-in defaults). Used as the initial state when no user
 /// overrides are present in the config.
 pub fn default_settings_map() -> HashMap<String, ToolSettings> {
-    settable_tools()
+    SETTABLE
         .iter()
-        .map(|t| (tool_key(*t).unwrap().to_string(), default_settings_for(*t)))
+        .map(|(t, k)| ((*k).to_string(), default_settings_for(*t)))
         .collect()
 }

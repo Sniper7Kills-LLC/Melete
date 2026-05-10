@@ -20,6 +20,12 @@ pub enum StorageError {
     #[error("unsupported stroke blob version: {0}")]
     UnsupportedBlobVersion(u8),
 
+    /// On-disk schema's `user_version` is newer than this build knows
+    /// how to handle. Means a newer build of the app touched this
+    /// notebook; downgrading would silently drop columns / data.
+    #[error("notebook schema is newer than supported (db={db}, max={max}); please upgrade the app")]
+    SchemaTooNew { db: i32, max: i32 },
+
     #[error("empty stroke blob")]
     EmptyBlob,
 

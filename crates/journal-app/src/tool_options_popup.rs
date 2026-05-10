@@ -1037,7 +1037,7 @@ fn add_palette_section(body: &GtkBox, state: &SharedState, tool: Tool) {
                 .entry(key.clone())
                 .or_default()
                 .push(bytes);
-            crate::state::persist_tool_state(&state);
+            let _ = crate::state::persist_tool_state(&state);
             render_swatches(&row, &state, &key, tool);
         });
     }
@@ -1097,7 +1097,7 @@ fn add_palette_section(body: &GtkBox, state: &SharedState, tool: Tool) {
                         }
                     }
                 }
-                crate::state::persist_tool_state(&state);
+                let _ = crate::state::persist_tool_state(&state);
                 // Trigger a rebuild by re-rendering the parent FlowBox.
                 if let Some(b) = btn_weak.upgrade() {
                     if let Some(parent) = b.parent() {
@@ -1134,7 +1134,7 @@ fn spin(min: f64, max: f64, step: f64, digits: u32, val: f64) -> SpinButton {
 }
 
 fn persist(state: &SharedState) {
-    crate::state::persist_tool_state(state);
+    let _ = crate::state::persist_tool_state(state);
 }
 
 const PEN_SHAPES: &[(&str, PenShape)] = &[

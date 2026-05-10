@@ -871,7 +871,11 @@ pub fn build_editor_view(
         let indicator = saved_indicator.clone();
         save_btn.connect_clicked(move |_| {
             let t = es.borrow().template.clone();
-            crate::dialogs::persist_notebook_template(&state, &t);
+            if let Err(e) = crate::dialogs::persist_notebook_template(&state, &t) {
+                tracing::error!("save notebook template: {:#}", e);
+                indicator.set_label("Save failed");
+                return;
+            }
             indicator.set_label("Saved \u{2713}");
             let on_done = on_done.clone();
             gtk4::glib::timeout_add_local_once(std::time::Duration::from_millis(450), move || {

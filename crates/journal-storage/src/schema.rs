@@ -89,8 +89,22 @@ BEGIN
     DELETE FROM strokes_rtree WHERE id = OLD.rowid;
 END;";
 
+/// Highest `user_version` this build knows how to read/write. The
+/// migration ladder below tops out at this number. Bumping the ladder
+/// requires bumping this constant in the same commit so the
+/// forward-version guard stays in sync.
+pub const MAX_SUPPORTED_USER_VERSION: i32 = 10;
+
 pub fn init_schema(conn: &Connection) -> Result<()> {
     let v: i32 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if v > MAX_SUPPORTED_USER_VERSION {
+        // A newer build wrote this DB. Stop before any ALTER would
+        // silently drop columns the future schema relies on.
+        return Err(crate::error::StorageError::SchemaTooNew {
+            db: v,
+            max: MAX_SUPPORTED_USER_VERSION,
+        });
+    }
     if v < 1 {
         conn.execute_batch(&format!(
             "{}{}{}{}{}{}{}{}{}{}{}",

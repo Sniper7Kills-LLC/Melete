@@ -557,7 +557,7 @@ pub fn build_editor_view(
             if let Err(e) = brush_library::save(&backend, &snap) {
                 tracing::warn!("brush library save: {e}");
             }
-            crate::state::persist_tool_state(&state_outer);
+            let _ = crate::state::persist_tool_state(&state_outer);
             // Snap editor to Pen built-in.
             editor_state.borrow_mut().brush =
                 brush_library::built_ins().into_iter().next().unwrap();
@@ -733,7 +733,13 @@ pub fn build_editor_view(
                 }
             }
             drop(s);
-            crate::state::persist_tool_state(&state_outer);
+            if let Err(e) = crate::state::persist_tool_state(&state_outer) {
+                tracing::error!("save brush settings: {:#}", e);
+                // Tool editor has no inline indicator — keep the
+                // editor open and let the user retry. Don't call
+                // on_done; closing would discard the user's work.
+                return;
+            }
             (on_done)();
         });
     }
