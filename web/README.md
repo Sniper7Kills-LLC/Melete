@@ -2,12 +2,14 @@
 
 Vite + React + TypeScript SPA that hosts:
 
-- **Viewer / Designer / Templeter / Tooler / Gallery** — the original
-  WASM-backed POC views (mocked WASM bridge until `bash build-wasm.sh`
-  is run).
-- **Public** — anonymous browse of public page templates, notebook
+- **Viewer / Designer / Templeter / Tooler** — WASM-backed POC views.
+  `Designer` authors page templates, `Templeter` authors notebook
+  templates, `Tooler` authors brushes. WASM bridge falls back to a
+  mock until `bash build-wasm.sh` is run.
+- **Gallery** — anonymous browse of public page templates, notebook
   templates, and brushes from the Amplify Gen 2 backend, served via
-  AppSync API-key auth mode.
+  AppSync API-key auth mode. Falls back to a hardcoded sample set
+  when the backend is in stub mode.
 - **My** — authenticated view of the signed-in user's own templates,
   served via Cognito User Pool JWT.
 
@@ -59,8 +61,9 @@ trick, so:
 - Real outputs present at repo root → `isStubBackend === false`, live
   network calls go to AppSync.
 - No file present → falls back to `web/src/amplify-outputs.stub.json`,
-  `isStubBackend === true`, and the Public/My pages render a "Backend
-  not configured" banner.
+  `isStubBackend === true`, and Gallery / My render a "Backend not
+  configured" banner. Gallery additionally falls back to a hardcoded
+  sample list so the UI is still useful for local dev.
 
 This means **the web build always succeeds** even on a fresh checkout
 without AWS credentials. You just won't get live data until you run the
@@ -72,31 +75,29 @@ sandbox.
 `@aws-amplify/ui-react` with email login. The email + Sign Out are
 shown in the page header once authenticated.
 
-The Amplify Data client (`web/src/amplify-client.ts`) is shared — its
-`Schema` type comes from `amplify/data/resource.ts` so all GraphQL calls
-are fully typed.
+The Amplify Data client (`web/src/amplify-client.ts`) is shared. It
+mirrors the **public read shape** of the three models locally instead
+of importing `Schema` from `amplify/data/resource.ts` — the Amplify
+backend deps aren't installed under `web/node_modules`, and pulling
+them in just to typecheck the web bundle would entangle the two
+builds.
 
 Auth modes used:
 
-- **Public page**: `authMode: 'apiKey'` for `*.list({ filter: { visibility: { eq: 'PUBLIC' } } })`.
-- **My page**: default `userPool` for `*.listByOwner({ owner: <sub> })`.
+- **Gallery**: `authMode: 'apiKey'` for `*.list({ filter: { visibility: { eq: 'PUBLIC' } } })`.
+- **My**: default `userPool` for `*.listByOwner({ owner: <sub> })`.
 
 ## Routes
 
-| Path                  | Component               | Auth          | Purpose                                                       |
-| --------------------- | ----------------------- | ------------- | ------------------------------------------------------------- |
-| `/`                   | `pages/Viewer.tsx`      | none          | (existing) Loads `public/sample-notebook.json` into WASM viewer. |
-| `/designer`           | `pages/Designer.tsx`    | none          | (existing) Drag-drop page-template designer (mock WASM).      |
-| `/templeter`          | `pages/Templeter.tsx`   | none          | (existing) Templete editor UI scaffolding.                    |
-| `/tooler`             | `pages/Tooler.tsx`      | none          | (existing) Tool/brush editor UI scaffolding.                  |
-| `/gallery`            | `pages/Gallery.tsx`     | none          | (existing) Static gallery preview.                            |
-| `/public`             | `pages/Public.tsx`      | API key       | **NEW.** Anonymous browse of `visibility = PUBLIC` rows for page templates, notebook templates, and brushes. |
-| `/my`                 | `pages/My.tsx`          | Cognito (UI)  | **NEW.** Signed-in user's own templates and brushes.          |
-
-Designer placeholders (empty for now) live at:
-
-- `src/designer/page/README.md` — entry contract for the future Amplify-backed page-template designer (#10).
-- `src/designer/notebook/README.md` — entry contract for the notebook-template designer (#11).
+| Path          | Component             | Auth          | Purpose                                                                                                |
+| ------------- | --------------------- | ------------- | ------------------------------------------------------------------------------------------------------ |
+| `/`           | `pages/Viewer.tsx`    | none          | Loads `public/sample-notebook.json` into WASM viewer.                                                  |
+| `/designer`   | `pages/Designer.tsx`  | none          | Drag-drop page-template designer.                                                                      |
+| `/templeter`  | `pages/Templeter.tsx` | none          | Notebook-template (planner-structure) designer.                                                        |
+| `/tooler`     | `pages/Tooler.tsx`    | none          | Brush composition designer.                                                                            |
+| `/gallery`    | `pages/Gallery.tsx`   | API key       | Anonymous browse of `visibility = PUBLIC` rows for page templates, notebook templates, and brushes.    |
+| `/public`     | (redirect)            | —             | Legacy alias — redirects to `/gallery`.                                                                |
+| `/my`         | `pages/My.tsx`        | Cognito (UI)  | Signed-in user's own templates and brushes.                                                            |
 
 ## Layout
 
@@ -105,27 +106,31 @@ src/
   main.tsx                    # router + nav shell + Amplify.configure()
   amplify-config.ts           # outputs loader (real → stub fallback)
   amplify-outputs.stub.json   # fallback config when sandbox not running
-  amplify-client.ts           # shared generateClient<Schema>() instance
+  amplify-client.ts           # shared generateClient<Schema>() instance + row types
   index.css                   # tailwind imports
-  types/index.ts              # TS mirrors of journal-core types
-  wasm/index.ts               # Viewer / Shim interfaces + mock impls
-  store/designerStore.ts      # zustand store + undo/redo
-  designer/
-    page/README.md            # placeholder for #10
-    notebook/README.md        # placeholder for #11
+  types/                      # TS mirrors of journal-core / journal-templates types
+    index.ts
+    brush.ts
+    notebook-template.ts
+    example-templates.ts      # hardcoded fallback library used by Gallery in stub mode
+  wasm/
+    index.ts                  # Viewer / Shim interfaces + lazy real-WASM loader + mocks
+    generated/                # gitignored — wasm-bindgen output from build-wasm.sh
+  store/
+    designerStore.ts          # zustand store + undo/redo for Designer
+    unitsStore.ts             # mm/in toggle persisted to localStorage
   pages/
     Viewer.tsx
     Designer.tsx
     Templeter.tsx
     Tooler.tsx
     Gallery.tsx
-    Public.tsx                # NEW
-    My.tsx                    # NEW
+    My.tsx
   components/
-    WidgetPalette.tsx
-    DesignSurface.tsx
-    PropertyPanel.tsx
-    SaveModal.tsx
+    WidgetPalette.tsx         # used by Designer
+    DesignSurface.tsx         # used by Designer
+    PropertyPanel.tsx         # used by Designer
+    SaveModal.tsx             # used by Designer
 public/
   sample-notebook.json        # NotebookBundle envelope (see web-portal.md §5.4)
 ```
@@ -148,18 +153,22 @@ interface Viewer {
 interface Shim {
   parseTemplateToml(toml: string): PageTemplate;
   serializeTemplateToml(t: PageTemplate): string;
+  parseBrushToml(toml: string): Brush;
+  serializeBrushToml(b: Brush): string;
 }
 ```
 
 The TS types in `src/types` are byte-faithful to `crates/journal-core` —
 field names, casing, and discriminator tags all match what `serde`
-emits. The WASM agent should not need to invent any new shape.
+emits.
 
 ## What's intentionally still missing
 
-- Marketplace UI (issue #8) — fork buttons, search, categories.
-- The Amplify-aware page + notebook designers (issues #10 / #11).
-- Real asset thumbnail rendering — current Public list shows id +
-  name + description only; no image previews.
+- Fork / Edit / Publish actions on Gallery + My rows (issues #54, #55).
+- Notebook-template TOML round-trip in `journal-web-shim` — the schema
+  exists but the wasm bindings only cover page templates and brushes,
+  so Gallery's notebook tab cannot render schematics from live
+  `bodyToml` yet.
+- Web viewer should fetch published page-template assets from S3 (#56).
 - Amplify Hosting CI configuration. Code is ready for it; deployment
   gating is on the maintainer.
