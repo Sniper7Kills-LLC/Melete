@@ -442,8 +442,9 @@ pub fn build_editor_view(
                 .borrow_mut()
                 .brush_library
                 .push(new_brush.clone());
+            let backend = state_outer.borrow().backend.clone();
             let snap = state_outer.borrow().brush_library.clone();
-            if let Err(e) = brush_library::save(&snap) {
+            if let Err(e) = brush_library::save(&backend, &snap) {
                 tracing::warn!("brush library save: {e}");
             }
             editor_state.borrow_mut().brush = new_brush;
@@ -482,8 +483,9 @@ pub fn build_editor_view(
                     b.name = new_name;
                 }
                 let snap = s.brush_library.clone();
+                let backend = s.backend.clone();
                 drop(s);
-                if let Err(e) = brush_library::save(&snap) {
+                if let Err(e) = brush_library::save(&backend, &snap) {
                     tracing::warn!("brush library save: {e}");
                 }
                 if let Some(f) = rebuild.borrow().as_ref().cloned() {
@@ -517,8 +519,9 @@ pub fn build_editor_view(
                     s.active_brush_recipe = None;
                 }
             }
+            let backend = state_outer.borrow().backend.clone();
             let snap = state_outer.borrow().brush_library.clone();
-            if let Err(e) = brush_library::save(&snap) {
+            if let Err(e) = brush_library::save(&backend, &snap) {
                 tracing::warn!("brush library save: {e}");
             }
             crate::state::persist_tool_state(&state_outer);
@@ -644,8 +647,9 @@ pub fn build_editor_view(
                     .borrow_mut()
                     .brush_library
                     .push(new_brush.clone());
+                let backend = state_outer.borrow().backend.clone();
                 let lib_snapshot = state_outer.borrow().brush_library.clone();
-                if let Err(e) = brush_library::save(&lib_snapshot) {
+                if let Err(e) = brush_library::save(&backend, &lib_snapshot) {
                     tracing::warn!("brush library save failed: {}", e);
                 }
                 editor_state.borrow_mut().brush = new_brush;
@@ -690,7 +694,8 @@ pub fn build_editor_view(
             if !is_builtin && !s.brush_library.iter().any(|b| b.id == brush.id) {
                 s.brush_library.push(brush.clone());
                 let snap = s.brush_library.clone();
-                if let Err(e) = crate::brush_library::save(&snap) {
+                let backend = s.backend.clone();
+                if let Err(e) = crate::brush_library::save(&backend, &snap) {
                     tracing::warn!("brush library save: {e}");
                 }
             }
