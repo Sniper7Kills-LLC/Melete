@@ -21,7 +21,7 @@ use std::rc::Rc;
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Box as GtkBox, Button, Label, Orientation};
 use libadwaita as adw;
-use libadwaita::prelude::{AdwWindowExt, MessageDialogExt};
+use libadwaita::prelude::AdwWindowExt;
 
 /// Pure boot-path predicate: should the welcome window be shown given
 /// the current config? Split out so the boot logic is unit-testable
@@ -47,11 +47,23 @@ fn mark_completed() {
 /// flag is already set the callback fires synchronously and no window is
 /// presented — call sites can unconditionally pass control through this
 /// helper.
+///
+/// Also auto-skips (and persists `first_run_completed`) when the user
+/// is already signed in via the keyring/file token store: the welcome
+/// copy is sign-in-centric, so showing it post-auth is just noise.
 pub fn show_if_needed<F: FnOnce() + 'static>(parent: &ApplicationWindow, on_complete: F) {
     let cfg = crate::config::load();
     if !should_show(&cfg) {
         on_complete();
         return;
+    }
+    #[cfg(feature = "remote")]
+    {
+        if crate::sign_in_modal::is_signed_in() {
+            mark_completed();
+            on_complete();
+            return;
+        }
     }
     show(parent, on_complete);
 }
@@ -153,9 +165,25 @@ fn show<F: FnOnce() + 'static>(parent: &ApplicationWindow, on_complete: F) {
         skip_btn.connect_clicked(move |_| finish());
     }
     {
-        let win = win.clone();
+        let parent = parent.clone();
+        let finish = finish.clone();
         sign_in_btn.connect_clicked(move |_| {
-            show_signin_placeholder(&win);
+            #[cfg(feature = "remote")]
+            {
+                let finish = finish.clone();
+                crate::sign_in_modal::open(
+                    &parent,
+                    Box::new(move |signed_in| {
+                        if signed_in {
+                            finish();
+                        }
+                    }),
+                );
+            }
+            #[cfg(not(feature = "remote"))]
+            {
+                let _ = (&parent, &finish);
+            }
         });
     }
     {
@@ -172,22 +200,6 @@ fn show<F: FnOnce() + 'static>(parent: &ApplicationWindow, on_complete: F) {
     }
 
     win.present();
-}
-
-fn show_signin_placeholder(parent: &adw::Window) {
-    let dialog = adw::MessageDialog::builder()
-        .transient_for(parent)
-        .modal(true)
-        .heading("Sign-in coming soon")
-        .body(
-            "The Sign In button will be wired up in a future update. \
-             Skip for now to use the app offline.",
-        )
-        .build();
-    dialog.add_response("ok", "OK");
-    dialog.set_default_response(Some("ok"));
-    dialog.set_close_response("ok");
-    dialog.present();
 }
 
 #[cfg(test)]

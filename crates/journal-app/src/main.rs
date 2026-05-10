@@ -24,6 +24,8 @@ mod pdf_export;
 mod remote_browser;
 mod settings_dialogs;
 mod shortcuts;
+#[cfg(feature = "remote")]
+mod sign_in_modal;
 mod state;
 mod template_creator;
 mod template_io;

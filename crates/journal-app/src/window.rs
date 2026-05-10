@@ -76,6 +76,54 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         });
     }
 
+    // Library / public catalog — discoverable in the header so the
+    // "browse + fork community templates" path doesn't hide in a
+    // hamburger menu.
+    #[cfg(feature = "remote")]
+    {
+        let library_btn = Button::from_icon_name("folder-download-symbolic");
+        library_btn.set_tooltip_text(Some("Library — browse public templates"));
+        header.pack_end(&library_btn);
+        let parent_for_lib = parent.clone();
+        let state_for_lib = state.clone();
+        library_btn.connect_clicked(move |_| {
+            crate::remote_browser::open_browser(&parent_for_lib, state_for_lib.clone());
+        });
+    }
+
+    // Account chip — shows the signed-in email (or "Sign in" prompt
+    // when anonymous). Click opens the sign-in modal directly so
+    // users don't have to walk through App Settings → Account.
+    #[cfg(feature = "remote")]
+    {
+        let account_btn = Button::new();
+        account_btn.add_css_class("flat");
+        refresh_account_chip(&account_btn);
+        header.pack_end(&account_btn);
+        let parent_for_acct = parent.clone();
+        let state_for_acct = state.clone();
+        let account_btn_for_click = account_btn.clone();
+        account_btn.connect_clicked(move |_| {
+            if crate::sign_in_modal::is_signed_in() {
+                // Already signed in — open Account preferences for
+                // sign-out / status.
+                crate::settings_dialogs::open_app_settings(
+                    &parent_for_acct,
+                    state_for_acct.clone(),
+                    Box::new(|| {}),
+                );
+            } else {
+                let btn = account_btn_for_click.clone();
+                crate::sign_in_modal::open(
+                    &parent_for_acct,
+                    Box::new(move |_signed_in| {
+                        refresh_account_chip(&btn);
+                    }),
+                );
+            }
+        });
+    }
+
     // Create current_notebook early so build_menu_button can share it.
     let current_notebook: Rc<RefCell<Option<NotebookId>>> = Rc::new(RefCell::new(None));
 
@@ -301,6 +349,22 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     }
 
     win
+}
+
+/// Render the account chip in the header to reflect current sign-in
+/// state. Called on app start and after each sign-in / sign-out.
+#[cfg(feature = "remote")]
+fn refresh_account_chip(btn: &Button) {
+    if let Some(email) = crate::sign_in_modal::current_email() {
+        // Show the local-part of the email; the @domain rarely changes
+        // and chews header width on a Framework 12 screen.
+        let label = email.split('@').next().unwrap_or(email.as_str()).to_string();
+        btn.set_label(&format!("● {}", label));
+        btn.set_tooltip_text(Some(&format!("Signed in as {} — click to manage", email)));
+    } else {
+        btn.set_label("Sign in");
+        btn.set_tooltip_text(Some("Sign in to publish + browse public catalog"));
+    }
 }
 
 fn build_menu_button(

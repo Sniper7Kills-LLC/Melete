@@ -5,11 +5,8 @@
 //! Gated on the `remote` feature so non-cloud builds drop the entry
 //! entirely (no dead UI shown).
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use gtk4::prelude::*;
-use gtk4::{ApplicationWindow, Box as GtkBox, Button, Entry, Label, Orientation, Window};
+use gtk4::{ApplicationWindow, Button};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
@@ -121,105 +118,13 @@ fn add_signed_out_rows(parent: &ApplicationWindow, group: &adw::PreferencesGroup
 }
 
 fn prompt_sign_in(parent: &ApplicationWindow, group: adw::PreferencesGroup) {
-    let win = Window::builder()
-        .transient_for(parent)
-        .modal(true)
-        .title("Sign in")
-        .default_width(360)
-        .build();
-
-    let body = GtkBox::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(8)
-        .margin_top(16)
-        .margin_bottom(16)
-        .margin_start(16)
-        .margin_end(16)
-        .build();
-
-    let email_lbl = Label::builder()
-        .label("Email")
-        .halign(gtk4::Align::Start)
-        .build();
-    let email = Entry::builder().placeholder_text("you@example.com").build();
-    let pw_lbl = Label::builder()
-        .label("Password")
-        .halign(gtk4::Align::Start)
-        .build();
-    let pw = Entry::builder().visibility(false).build();
-
-    let status = Label::builder()
-        .label("")
-        .halign(gtk4::Align::Start)
-        .wrap(true)
-        .build();
-    status.add_css_class("dim-label");
-
-    body.append(&email_lbl);
-    body.append(&email);
-    body.append(&pw_lbl);
-    body.append(&pw);
-    body.append(&status);
-
-    let btn_row = GtkBox::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .halign(gtk4::Align::End)
-        .build();
-    let cancel_btn = Button::with_label("Cancel");
-    let signin_btn = Button::with_label("Sign in");
-    signin_btn.add_css_class("suggested-action");
-    btn_row.append(&cancel_btn);
-    btn_row.append(&signin_btn);
-    body.append(&btn_row);
-
-    {
-        let win = win.clone();
-        cancel_btn.connect_clicked(move |_| win.close());
-    }
-
-    let in_flight = Rc::new(RefCell::new(false));
-    {
-        let win = win.clone();
-        let parent = parent.clone();
-        let group = group.clone();
-        let email = email.clone();
-        let pw = pw.clone();
-        let status = status.clone();
-        let signin_btn_inner = signin_btn.clone();
-        let in_flight = in_flight.clone();
-        signin_btn.connect_clicked(move |_| {
-            let signin_btn = signin_btn_inner.clone();
-            if *in_flight.borrow() {
-                return;
+    let parent_for_rebuild = parent.clone();
+    crate::sign_in_modal::open(
+        parent,
+        Box::new(move |signed_in| {
+            if signed_in {
+                rebuild(&parent_for_rebuild, &group);
             }
-            *in_flight.borrow_mut() = true;
-            signin_btn.set_sensitive(false);
-            status.set_label("Signing in…");
-
-            // Sign-in is a blocking HTTPS call that can take seconds.
-            // Rather than pulling in a futures runtime, run it
-            // synchronously and accept a brief UI hiccup — the user
-            // is intentionally waiting on it. If this becomes an
-            // issue, hoist into a worker thread + glib::idle_add.
-            let username = email.text().to_string();
-            let password = pw.text().to_string();
-            let result = RemoteTemplateStore::connect()
-                .and_then(|mut s| s.sign_in(&username, &password));
-            *in_flight.borrow_mut() = false;
-            signin_btn.set_sensitive(true);
-            match result {
-                Ok(()) => {
-                    win.close();
-                    rebuild(&parent, &group);
-                }
-                Err(e) => {
-                    status.set_label(&format!("Sign-in failed: {e}"));
-                }
-            }
-        });
-    }
-
-    win.set_child(Some(&body));
-    win.present();
+        }),
+    );
 }
