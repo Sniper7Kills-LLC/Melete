@@ -690,6 +690,7 @@ pub fn build_editor_view(
     edit: Option<NotebookTemplate>,
     on_done: Rc<dyn Fn()>,
     on_open_chip: Option<OnOpenChipFn>,
+    read_only: bool,
 ) -> GtkBox {
     let page_templates: Vec<PageTemplate> = {
         let s = state.borrow();
@@ -756,7 +757,34 @@ pub fn build_editor_view(
         action_row.append(&publish_btn);
     }
     action_row.append(&save_btn);
+    if read_only {
+        title_lbl.set_label("Notebook Template Preview");
+        save_btn.set_visible(false);
+        #[cfg(feature = "remote")]
+        publish_btn.set_visible(false);
+    }
     root.append(&action_row);
+
+    // ── Missing-templates banner (preview only) ─────────────────────────────
+    // A notebook template is just a list of page-template ids — when
+    // previewing a remote one, those ids may point to templates that
+    // aren't in the local library yet. Surface them up front so the
+    // user can fetch them before deciding to download.
+    if read_only {
+        let referenced = collect_referenced_template_ids(&es.borrow().template);
+        let missing: Vec<TemplateId> = {
+            let s = state.borrow();
+            let reg = s.templates.borrow();
+            referenced
+                .into_iter()
+                .filter(|id| reg.get(*id).is_none() && !journal_templates::is_builtin(*id))
+                .collect()
+        };
+        if !missing.is_empty() {
+            let banner = build_missing_templates_banner(state.clone(), &missing);
+            root.append(&banner);
+        }
+    }
 
     #[cfg(feature = "remote")]
     {
@@ -1896,6 +1924,109 @@ fn refresh_options_panel(panel: &GtkBox, es: &Rc<RefCell<EditorState>>) {
         .build();
     hint.add_css_class("dim-label");
     panel.append(&hint);
+}
+
+/// Walk every page-template slot in a `NotebookTemplate` and collect
+/// the referenced `TemplateId`s (deduped).
+fn collect_referenced_template_ids(t: &NotebookTemplate) -> Vec<TemplateId> {
+    let mut seen: StdHashSet<TemplateId> = StdHashSet::new();
+    let mut out = Vec::new();
+    let push = |id: TemplateId, seen: &mut StdHashSet<TemplateId>, out: &mut Vec<TemplateId>| {
+        if seen.insert(id) {
+            out.push(id);
+        }
+    };
+    for id in t.year_start.iter().copied() {
+        push(id, &mut seen, &mut out);
+    }
+    for id in t.before_quarter.iter().copied() {
+        push(id, &mut seen, &mut out);
+    }
+    for id in t.before_month.iter().copied() {
+        push(id, &mut seen, &mut out);
+    }
+    for id in t.before_week.iter().copied() {
+        push(id, &mut seen, &mut out);
+    }
+    for slot in &t.daily_slots {
+        for id in slot.templates.iter().copied() {
+            push(id, &mut seen, &mut out);
+        }
+    }
+    out
+}
+
+/// Banner shown above the notebook template preview when the template
+/// references page templates that aren't in the local library and
+/// aren't builtins. Offers a one-click bulk download via the catalog
+/// — without it, the preview's Vello renderer falls back to a blank
+/// background for the missing pages.
+fn build_missing_templates_banner(state: SharedState, missing: &[TemplateId]) -> GtkBox {
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .margin_top(4)
+        .margin_bottom(4)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    row.add_css_class("warning");
+
+    let icon = gtk4::Image::from_icon_name("dialog-warning-symbolic");
+    row.append(&icon);
+
+    let text = Label::builder()
+        .label(format!(
+            "{} page template{} referenced by this preview {} not in your library.",
+            missing.len(),
+            if missing.len() == 1 { "" } else { "s" },
+            if missing.len() == 1 { "is" } else { "are" },
+        ))
+        .halign(Align::Start)
+        .hexpand(true)
+        .wrap(true)
+        .build();
+    row.append(&text);
+
+    #[cfg(feature = "remote")]
+    {
+        let dl_btn = Button::with_label(&format!("Download missing ({})", missing.len()));
+        dl_btn.add_css_class("suggested-action");
+        let missing_ids = missing.to_vec();
+        let state_for_dl = state.clone();
+        let text_clone = text.clone();
+        dl_btn.connect_clicked(move |b| {
+            b.set_sensitive(false);
+            b.set_label("Downloading…");
+            let mut ok = 0usize;
+            let mut fail = 0usize;
+            for id in &missing_ids {
+                match crate::remote_browser::download_page_template_into_local(
+                    id.0,
+                    state_for_dl.clone(),
+                ) {
+                    Ok(()) => ok += 1,
+                    Err(e) => {
+                        tracing::warn!("download missing page template {id:?}: {e}");
+                        fail += 1;
+                    }
+                }
+            }
+            text_clone.set_label(&format!(
+                "Downloaded {ok} template{}{}. Re-open the preview to render them.",
+                if ok == 1 { "" } else { "s" },
+                if fail > 0 { format!(" ({fail} failed)") } else { String::new() },
+            ));
+            b.set_label("Done");
+        });
+        row.append(&dl_btn);
+    }
+    #[cfg(not(feature = "remote"))]
+    {
+        let _ = state;
+    }
+
+    row
 }
 
 #[cfg(test)]

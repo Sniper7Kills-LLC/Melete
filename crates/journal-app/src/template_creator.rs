@@ -362,6 +362,7 @@ pub fn build_editor_view(
     state: SharedState,
     edit: Option<PageTemplate>,
     on_done: Rc<dyn Fn()>,
+    read_only: bool,
 ) -> GtkBox {
     let template = edit.unwrap_or_default();
     let cs = Rc::new(RefCell::new(CreatorState::new(template)));
@@ -413,6 +414,12 @@ pub fn build_editor_view(
         action_row.append(&publish_btn);
     }
     action_row.append(&save_btn);
+    if read_only {
+        title.set_label("Template Preview");
+        save_btn.set_visible(false);
+        #[cfg(feature = "remote")]
+        publish_btn.set_visible(false);
+    }
 
     #[cfg(feature = "remote")]
     {

@@ -42,6 +42,7 @@ pub fn build_editor_view(
     state: SharedState,
     seed_brush: Option<Brush>,
     on_done: Rc<dyn Fn()>,
+    read_only: bool,
 ) -> GtkBox {
     let editor_state = Rc::new(RefCell::new(EditorState {
         brush: seed_brush.unwrap_or_else(default_seed_brush),
@@ -91,6 +92,13 @@ pub fn build_editor_view(
     top.append(&title);
     #[cfg(feature = "remote")]
     let publish_btn = Button::with_label("Publish…");
+    if read_only {
+        title.set_label("Tool Preview");
+        save_as_btn.set_visible(false);
+        done_btn.set_visible(false);
+        #[cfg(feature = "remote")]
+        publish_btn.set_visible(false);
+    }
     #[cfg(feature = "remote")]
     top.append(&publish_btn);
     top.append(&save_as_btn);

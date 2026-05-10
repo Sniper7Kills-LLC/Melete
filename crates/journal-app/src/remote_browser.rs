@@ -35,6 +35,11 @@ pub struct EditorOpeners {
     pub page: OpenPageTemplateEditorFn,
     pub notebook: OpenNotebookTemplateEditorFn,
     pub brush: OpenBrushEditorFn,
+    /// Read-only preview opener — opens the editor with Save / Publish
+    /// hidden so the user can inspect a remote item before downloading.
+    pub preview_page: OpenPageTemplateEditorFn,
+    pub preview_notebook: OpenNotebookTemplateEditorFn,
+    pub preview_brush: OpenBrushEditorFn,
 }
 
 thread_local! {
@@ -51,9 +56,12 @@ fn with_openers<R>(f: impl FnOnce(Option<&EditorOpeners>) -> R) -> R {
 }
 
 pub fn open_browser(parent: &ApplicationWindow, state: SharedState) {
+    // Non-modal so the user can drag the catalog window aside while
+    // previewing an entry — preview swaps the main app stack to a
+    // read-only editor view, and a modal browser would block any
+    // interaction with that view.
     let win = Window::builder()
         .transient_for(parent)
-        .modal(true)
         .title("Browse public catalog")
         .default_width(760)
         .default_height(720)
@@ -445,13 +453,36 @@ fn render_row(row: &RemoteTemplateSummary, kind: Kind, state: SharedState) -> Gt
 
     outer.append(&text_col);
 
-    // Two actions per row:
+    // Three actions per row:
+    //   * Preview — fetches the entry and opens its respective editor
+    //     in read-only mode (Save / Publish hidden). Nothing lands in
+    //     the local registry; close to return to the catalog.
     //   * Download — read-only copy of the upstream entry into the
     //     local registry (preserves the original id; user gets a
     //     usable copy but can't republish since they don't own it).
     //   * Edit — server-side fork (fresh id, owned by caller),
     //     saved locally, then opened in the appropriate full-screen
     //     editor for tweaking before publish.
+    let preview_btn = Button::with_label("Preview");
+    preview_btn.set_valign(gtk4::Align::Center);
+    preview_btn.set_tooltip_text(Some("Open in its editor read-only — no save, no fork"));
+    {
+        let id = row.id;
+        preview_btn.connect_clicked(move |b| {
+            b.set_sensitive(false);
+            b.set_label("Loading…");
+            match open_preview_only(kind, id) {
+                Ok(()) => b.set_label("Preview"),
+                Err(e) => {
+                    tracing::warn!("preview failed: {e}");
+                    b.set_label("Preview failed");
+                }
+            }
+            b.set_sensitive(true);
+        });
+    }
+    outer.append(&preview_btn);
+
     let download_btn = Button::with_label("Download");
     download_btn.set_valign(gtk4::Align::Center);
     {
@@ -495,6 +526,58 @@ fn render_row(row: &RemoteTemplateSummary, kind: Kind, state: SharedState) -> Gt
     outer.append(&edit_btn);
 
     outer
+}
+
+/// Preview-only — fetches the upstream entry and routes it to the
+/// matching editor's read-only opener. Nothing is persisted locally
+/// and no server-side fork is created.
+fn open_preview_only(kind: Kind, id: uuid::Uuid) -> Result<(), RemoteError> {
+    let mut s = RemoteTemplateStore::connect()?;
+    match kind {
+        Kind::PageTemplate => {
+            let (row, _assets) = s.get_page_template(id)?;
+            let template = crate::template_io::page_template_from_row(&row).map_err(|e| {
+                RemoteError::Malformed(format!("parse preview page template: {e:#}"))
+            })?;
+            with_openers(|openers| match openers {
+                Some(o) => (o.preview_page)(template),
+                None => tracing::warn!("page template preview opener not registered"),
+            });
+        }
+        Kind::NotebookTemplate => {
+            let row = s.get_notebook_template(id)?;
+            let template =
+                crate::template_io::notebook_template_from_row(&row).map_err(|e| {
+                    RemoteError::Malformed(format!("parse preview notebook template: {e:#}"))
+                })?;
+            with_openers(|openers| match openers {
+                Some(o) => (o.preview_notebook)(template),
+                None => tracing::warn!("notebook template preview opener not registered"),
+            });
+        }
+        Kind::Brush => {
+            let row = s.get_brush(id)?;
+            let brush: journal_core::Brush = toml::from_str(&row.body_toml).map_err(|e| {
+                RemoteError::Malformed(format!("parse preview brush body: {e}"))
+            })?;
+            with_openers(|openers| match openers {
+                Some(o) => (o.preview_brush)(brush),
+                None => tracing::warn!("brush preview opener not registered"),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Public wrapper — downloads a single page template by id into the
+/// local registry without forking. Used by the notebook template
+/// preview when the user opts to fetch missing referenced page
+/// templates.
+pub fn download_page_template_into_local(
+    id: uuid::Uuid,
+    state: SharedState,
+) -> Result<(), RemoteError> {
+    download_into_local(Kind::PageTemplate, id, state)
 }
 
 /// Read-only download — fetches the upstream entry as-is and inserts

@@ -291,12 +291,20 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         let win_for_page = win.clone();
         let win_for_nb = win.clone();
         let win_for_brush = win.clone();
+        let win_for_page_pv = win.clone();
+        let win_for_nb_pv = win.clone();
+        let win_for_brush_pv = win.clone();
         crate::remote_browser::set_editor_openers(crate::remote_browser::EditorOpeners {
             page: Rc::new(move |t: PageTemplate| show_template_editor(&win_for_page, Some(t))),
             notebook: Rc::new(move |t: NotebookTemplate| {
                 show_notebook_template_editor(&win_for_nb, Some(t))
             }),
             brush: Rc::new(move |b: journal_core::Brush| show_tool_editor(&win_for_brush, Some(b))),
+            preview_page: Rc::new(move |t: PageTemplate| show_template_preview(&win_for_page_pv, t)),
+            preview_notebook: Rc::new(move |t: NotebookTemplate| {
+                show_notebook_template_preview(&win_for_nb_pv, t)
+            }),
+            preview_brush: Rc::new(move |b: journal_core::Brush| show_tool_preview(&win_for_brush_pv, b)),
         });
     }
 
@@ -927,6 +935,16 @@ fn build_home_into(win: &SharedWindow) {
 /// existing template, None => new template). When the editor closes (save or
 /// cancel) we navigate back to the previous view (notebook canvas or home).
 pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
+    show_template_editor_inner(win, edit, false);
+}
+
+/// Open the page template editor in read-only preview mode (Save / Publish hidden).
+#[cfg(feature = "remote")]
+pub fn show_template_preview(win: &SharedWindow, t: PageTemplate) {
+    show_template_editor_inner(win, Some(t), true);
+}
+
+fn show_template_editor_inner(win: &SharedWindow, edit: Option<PageTemplate>, read_only: bool) {
     let container = win.borrow().template_editor_container.clone();
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -948,11 +966,18 @@ pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
         }
     });
 
-    let view = crate::template_creator::build_editor_view(&parent, state, edit, on_done.clone());
+    let view = crate::template_creator::build_editor_view(
+        &parent,
+        state,
+        edit,
+        on_done.clone(),
+        read_only,
+    );
     container.append(&view);
 
     let w = win.borrow();
-    w.title_label.set_text("Template Editor");
+    w.title_label
+        .set_text(if read_only { "Template Preview" } else { "Template Editor" });
     w.back_btn.set_visible(false);
     w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
@@ -963,6 +988,20 @@ pub fn show_template_editor(win: &SharedWindow, edit: Option<PageTemplate>) {
 /// `seed_brush` — `Some(b)` opens the editor on a specific brush;
 /// `None` opens blank-slate (a default Pen composition).
 pub fn show_tool_editor(win: &SharedWindow, seed_brush: Option<journal_core::Brush>) {
+    show_tool_editor_inner(win, seed_brush, false);
+}
+
+/// Open the tool editor in read-only preview mode (Save as / Publish / Use hidden).
+#[cfg(feature = "remote")]
+pub fn show_tool_preview(win: &SharedWindow, b: journal_core::Brush) {
+    show_tool_editor_inner(win, Some(b), true);
+}
+
+fn show_tool_editor_inner(
+    win: &SharedWindow,
+    seed_brush: Option<journal_core::Brush>,
+    read_only: bool,
+) {
     let container = win.borrow().tool_editor_container.clone();
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -984,11 +1023,12 @@ pub fn show_tool_editor(win: &SharedWindow, seed_brush: Option<journal_core::Bru
         }
     });
 
-    let view = crate::tool_editor::build_editor_view(&parent, state, seed_brush, on_done);
+    let view = crate::tool_editor::build_editor_view(&parent, state, seed_brush, on_done, read_only);
     container.append(&view);
 
     let w = win.borrow();
-    w.title_label.set_text("Tool Editor");
+    w.title_label
+        .set_text(if read_only { "Tool Preview" } else { "Tool Editor" });
     w.back_btn.set_visible(false);
     w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
@@ -998,6 +1038,20 @@ pub fn show_tool_editor(win: &SharedWindow, seed_brush: Option<journal_core::Bru
 /// Switch the stack to the full-screen notebook template editor.
 /// `edit` — `Some(t)` edits an existing template, `None` creates a new one.
 pub fn show_notebook_template_editor(win: &SharedWindow, edit: Option<NotebookTemplate>) {
+    show_notebook_template_editor_inner(win, edit, false);
+}
+
+/// Open the notebook template editor in read-only preview mode (Save / Publish hidden).
+#[cfg(feature = "remote")]
+pub fn show_notebook_template_preview(win: &SharedWindow, t: NotebookTemplate) {
+    show_notebook_template_editor_inner(win, Some(t), true);
+}
+
+fn show_notebook_template_editor_inner(
+    win: &SharedWindow,
+    edit: Option<NotebookTemplate>,
+    read_only: bool,
+) {
     let container = win.borrow().notebook_template_editor_container.clone();
     while let Some(child) = container.first_child() {
         container.remove(&child);
@@ -1030,11 +1084,16 @@ pub fn show_notebook_template_editor(win: &SharedWindow, edit: Option<NotebookTe
         edit,
         on_done,
         Some(on_open_chip),
+        read_only,
     );
     container.append(&view);
 
     let w = win.borrow();
-    w.title_label.set_text("Notebook Template Editor");
+    w.title_label.set_text(if read_only {
+        "Notebook Template Preview"
+    } else {
+        "Notebook Template Editor"
+    });
     w.back_btn.set_visible(false);
     w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
