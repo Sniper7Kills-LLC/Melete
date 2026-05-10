@@ -685,7 +685,7 @@ impl FlatSlot {
 /// `edit` — `Some(t)` edits an existing template, `None` creates a new one.
 /// `on_done` — called when the editor is closed (save or back).
 pub fn build_editor_view(
-    _parent: &ApplicationWindow,
+    parent: &ApplicationWindow,
     state: SharedState,
     edit: Option<NotebookTemplate>,
     on_done: Rc<dyn Fn()>,
@@ -748,8 +748,51 @@ pub fn build_editor_view(
     action_row.append(&back_btn);
     action_row.append(&title_lbl);
     action_row.append(&saved_indicator);
+    #[cfg(feature = "remote")]
+    let publish_btn = Button::with_label("Publish…");
+    #[cfg(feature = "remote")]
+    {
+        publish_btn.set_tooltip_text(Some("Publish this template to the public catalog"));
+        action_row.append(&publish_btn);
+    }
     action_row.append(&save_btn);
     root.append(&action_row);
+
+    #[cfg(feature = "remote")]
+    {
+        let es_for_publish = es.clone();
+        let state_for_publish = state.clone();
+        let parent_for_publish = parent.clone();
+        publish_btn.connect_clicked(move |b| {
+            let template = es_for_publish.borrow().template.clone();
+            let state = state_for_publish.clone();
+            let btn = b.clone();
+            let title_hint = format!(
+                "notebook template \"{}\"",
+                if template.name.is_empty() { "untitled" } else { template.name.as_str() }
+            );
+            crate::remote_browser::pick_visibility(
+                &parent_for_publish,
+                &title_hint,
+                move |vis| {
+                    btn.set_sensitive(false);
+                    btn.set_label("Publishing…");
+                    match crate::remote_browser::publish_local_notebook_template(
+                        &template,
+                        state.clone(),
+                        vis,
+                    ) {
+                        Ok(()) => btn.set_label("Published ✓"),
+                        Err(e) => {
+                            tracing::warn!("publish notebook template: {e}");
+                            btn.set_label("Publish failed");
+                            btn.set_sensitive(true);
+                        }
+                    }
+                },
+            );
+        });
+    }
 
     // ── Meta row ─────────────────────────────────────────────────────────────
     let meta_row = build_meta_row(&es, &page_templates);
