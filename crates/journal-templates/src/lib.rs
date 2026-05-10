@@ -340,8 +340,8 @@ type = "blank"
             category: String::new(),
         };
         match page_template_to_background_config(&t) {
-            BackgroundConfig::Image { path, size_canvas } => {
-                assert_eq!(path.to_string_lossy(), "/tmp/x.png");
+            BackgroundConfig::Image { asset, size_canvas } => {
+                assert_eq!(asset, "/tmp/x.png");
                 assert_eq!(size_canvas, (200.0, 100.0));
             }
             other => panic!("expected Image variant, got {:?}", other),
@@ -369,11 +369,11 @@ type = "blank"
         };
         match page_template_to_background_config(&t) {
             BackgroundConfig::Pdf {
-                path,
+                asset,
                 page,
                 size_canvas,
             } => {
-                assert_eq!(path.to_string_lossy(), "/tmp/x.pdf");
+                assert_eq!(asset, "/tmp/x.pdf");
                 assert_eq!(page, 2);
                 assert_eq!(size_canvas, (215.9, 279.4));
             }

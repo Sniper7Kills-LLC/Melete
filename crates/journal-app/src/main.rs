@@ -6,6 +6,7 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 
+mod asset_resolver;
 mod brush_library;
 mod canvas_widget;
 mod config;

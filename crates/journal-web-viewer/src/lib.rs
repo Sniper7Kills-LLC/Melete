@@ -693,11 +693,11 @@ fn page_template_background(t: &PageTemplate) -> BackgroundConfig {
         BackgroundType::Isometric { spacing } => BackgroundConfig::Isometric { spacing: *spacing },
         BackgroundType::Hexagonal { spacing } => BackgroundConfig::Hexagonal { spacing: *spacing },
         BackgroundType::Image { path } => BackgroundConfig::Image {
-            path: std::path::PathBuf::from(path),
+            asset: path.strip_prefix("asset:").unwrap_or(path).to_string(),
             size_canvas: (t.size_mm.0, t.size_mm.1),
         },
         BackgroundType::Pdf { path, page } => BackgroundConfig::Pdf {
-            path: std::path::PathBuf::from(path),
+            asset: path.strip_prefix("asset:").unwrap_or(path).to_string(),
             page: *page,
             size_canvas: (t.size_mm.0, t.size_mm.1),
         },
