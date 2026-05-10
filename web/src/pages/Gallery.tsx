@@ -519,7 +519,9 @@ function useBrushesData(): LoadState<BrushEntry> {
 // Auth-gated actions: Edit + Fork
 // ---------------------------------------------------------------------
 
-type ForkKind = SavedKind;
+// ForkKind narrows SavedKind by excluding `'Notebook'` — user-owned
+// notebooks aren't shareable templates and have no fork mutation.
+type ForkKind = Exclude<SavedKind, 'Notebook'>;
 
 async function callFork(kind: ForkKind, id: string) {
   switch (kind) {
@@ -529,6 +531,12 @@ async function callFork(kind: ForkKind, id: string) {
       return client.mutations.forkNotebookTemplate({ id });
     case "Brush":
       return client.mutations.forkBrush({ id });
+    default: {
+      // Exhaustiveness guard — narrows the return type so callers don't
+      // see `... | undefined` when ForkKind grows a new variant.
+      const _exhaustive: never = kind;
+      throw new Error(`Unknown ForkKind: ${String(_exhaustive)}`);
+    }
   }
 }
 

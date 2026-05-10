@@ -458,15 +458,13 @@ export function NotebookViewer() {
         // via a filtered list query. Avoids hauling the entire
         // notebook back per subscription event.
         void client.models.RemoteStroke.list({
-          filter: { id: { in: ids as unknown[] } as { eq?: unknown } },
+          filter: { id: { in: ids } },
           authMode: liveAuthMode,
           limit: ids.length + 5,
-        } as unknown as Parameters<typeof client.models.RemoteStroke.list>[0]).then(
-          (res) => {
-            if (!res.data) return;
-            if (res.data.length > 0) append(res.data);
-          },
-        );
+        }).then((res) => {
+          if (!res.data) return;
+          if (res.data.length > 0) append(res.data);
+        });
       },
       error: (err) => {
         const e = err as { errors?: { message?: string }[] };
@@ -675,25 +673,6 @@ export function NotebookViewer() {
     if (!c) return;
     viewportRef.current.zoom *= factor;
     viewer.zoomAt(c.width / 2, c.height / 2, factor);
-  }
-
-  /**
-   * Replay the cached viewport on top of the freshly-loaded bundle.
-   * The WASM viewer's `loadNotebook` resets transforms, so any pan /
-   * zoom the user has accumulated needs to be re-applied. We diff
-   * against the starting (1,0,0) state and call pan + zoomAt in the
-   * same order user actions would.
-   */
-  function restoreViewport() {
-    const c = canvasRef.current;
-    if (!c) return;
-    const { pan_x, pan_y, zoom } = viewportRef.current;
-    if (zoom !== 1) {
-      viewer.zoomAt(c.width / 2, c.height / 2, zoom);
-    }
-    if (pan_x !== 0 || pan_y !== 0) {
-      viewer.pan(pan_x, pan_y);
-    }
   }
 
   return (
