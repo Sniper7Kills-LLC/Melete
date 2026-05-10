@@ -447,6 +447,19 @@ interface RemoteStrokeOps {
     args: ByPageArgs,
     opts?: ByNotebookOpts,
   ): Promise<ListResult<RemoteStrokeRow>>;
+  /**
+   * Default Amplify-generated `list` with filter/limit/authMode. Used
+   * for the `id IN (...)` lookup after `onStrokesBatchSync` fires —
+   * we only want the rows whose ids the event carried, not the whole
+   * notebook. The filter shape is permissive (`unknown`) because the
+   * `in` operator on the auto-generated type isn't surfaced in our
+   * hand-rolled interface yet.
+   */
+  list(opts?: {
+    filter?: { id?: { in?: unknown[]; eq?: unknown } };
+    limit?: number;
+    authMode?: AuthMode;
+  }): Promise<ListResult<RemoteStrokeRow>>;
   observeQuery(opts: ObserveOpts<RemoteStrokeRow>): {
     subscribe(handler: {
       next?: (snap: { items: RemoteStrokeRow[] }) => void;
