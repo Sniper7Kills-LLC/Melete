@@ -453,6 +453,20 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
     dev_group.add(&dev_row);
     page.add(&dev_group);
 
+    // ── Account ─────────────────────────────────────────────────────
+    #[cfg(feature = "remote")]
+    {
+        let account_group = adw::PreferencesGroup::builder()
+            .title("Account")
+            .description(
+                "Sign in to publish your templates / brushes to the public catalog \
+                 and fork others into your library.",
+            )
+            .build();
+        crate::account_settings::populate_account_group(parent, &account_group);
+        page.add(&account_group);
+    }
+
     prefs.add(&page);
 
     // Wire change signals to auto-save (adw convention — no Save/Cancel).

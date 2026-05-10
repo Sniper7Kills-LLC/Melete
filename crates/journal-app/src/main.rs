@@ -6,6 +6,8 @@
 #![allow(clippy::type_complexity)]
 #![allow(clippy::too_many_arguments)]
 
+#[cfg(feature = "remote")]
+mod account_settings;
 mod asset_resolver;
 mod brush_library;
 mod canvas_widget;
