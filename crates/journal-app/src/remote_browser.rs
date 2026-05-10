@@ -291,3 +291,110 @@ fn put_brush_into_local(
     state.backend.borrow_mut().put_brush(row)?;
     Ok(())
 }
+
+// ── publish helpers (callable from template_manager / brush_library) ──
+
+use journal_storage::remote_template_store::store::Visibility;
+
+/// Publish a local page template (and its asset bytes) to the public
+/// catalog. Returns once both the asset upload and the
+/// publishPageTemplate mutation succeed. Fire-and-log on the caller
+/// side; no UI feedback beyond the button label.
+pub fn publish_local_page_template(
+    template: &journal_core::PageTemplate,
+    state: SharedState,
+) -> Result<(), RemoteError> {
+    let mut store = RemoteTemplateStore::connect()?;
+    if !store.is_signed_in() {
+        return Err(RemoteError::NotSignedIn);
+    }
+
+    // Build the row + collect any inline asset bytes from the local
+    // backend.
+    let (row, assets) = {
+        let s = state.borrow();
+        let row = crate::template_io::page_template_to_row(template)
+            .map_err(|e| RemoteError::Malformed(format!("serialize page template: {e:#}")))?;
+        let asset_metas = s
+            .backend
+            .borrow_mut()
+            .list_page_template_assets(template.id.0)
+            .map_err(|e| RemoteError::Malformed(format!("list assets: {e:#}")))?;
+        let mut bytes = Vec::with_capacity(asset_metas.len());
+        for meta in asset_metas {
+            match s
+                .backend
+                .borrow_mut()
+                .get_page_template_asset(template.id.0, &meta.name)
+            {
+                Ok(Some(b)) => bytes.push(b),
+                Ok(None) => {
+                    tracing::warn!("asset {} missing in local backend, skipping", meta.name);
+                }
+                Err(e) => {
+                    return Err(RemoteError::Malformed(format!(
+                        "load asset {}: {e:#}",
+                        meta.name
+                    )));
+                }
+            }
+        }
+        (row, bytes)
+    };
+
+    store.publish_page_template(&row, &assets, Visibility::Public)?;
+    Ok(())
+}
+
+/// Publish a local notebook template. No assets to upload (notebook
+/// templates have no binary attachments).
+#[allow(dead_code)]
+pub fn publish_local_notebook_template(
+    template: &journal_core::NotebookTemplate,
+    state: SharedState,
+) -> Result<(), RemoteError> {
+    let mut store = RemoteTemplateStore::connect()?;
+    if !store.is_signed_in() {
+        return Err(RemoteError::NotSignedIn);
+    }
+    let row = {
+        let _s = state.borrow();
+        crate::template_io::notebook_template_to_row(template)
+            .map_err(|e| RemoteError::Malformed(format!("serialize notebook template: {e:#}")))?
+    };
+    store.publish_notebook_template(&row, Visibility::Public)?;
+    Ok(())
+}
+
+/// Publish a local brush. No assets to upload (brushes have no
+/// binary attachments).
+#[allow(dead_code)]
+pub fn publish_local_brush(
+    brush: &journal_core::Brush,
+    state: SharedState,
+) -> Result<(), RemoteError> {
+    let mut store = RemoteTemplateStore::connect()?;
+    if !store.is_signed_in() {
+        return Err(RemoteError::NotSignedIn);
+    }
+    // Re-derive the BrushRow from the in-memory Brush. The backend
+    // already stores it in the same shape.
+    let body_toml = toml::to_string(brush)
+        .map_err(|e| RemoteError::Malformed(format!("serialize brush: {e}")))?;
+    let sha = {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(body_toml.as_bytes());
+        hex::encode(h.finalize())
+    };
+    let row = journal_storage::BrushRow {
+        id: brush.id,
+        name: brush.name.clone(),
+        body_toml,
+        sha256: sha,
+        updated_at_sort: chrono::Utc::now().to_rfc3339(),
+    };
+    let _ = state; // currently not needed; kept for symmetry
+    store.publish_brush(&row, Visibility::Public)?;
+    Ok(())
+}
