@@ -5,12 +5,12 @@ use crate::error::{Result, StorageError};
 // Format: [version: u8][bincode-serialized Vec<StrokePoint>]. Version byte enables future migrations.
 const VERSION_V1: u8 = 1;
 
-pub fn pack_points(points: &[StrokePoint]) -> Vec<u8> {
-    let body = bincode::serialize(points).expect("bincode serialize StrokePoint slice");
+pub fn pack_points(points: &[StrokePoint]) -> Result<Vec<u8>> {
+    let body = bincode::serialize(points)?;
     let mut out = Vec::with_capacity(1 + body.len());
     out.push(VERSION_V1);
     out.extend_from_slice(&body);
-    out
+    Ok(out)
 }
 
 pub fn unpack_points(blob: &[u8]) -> Result<Vec<StrokePoint>> {
@@ -39,7 +39,7 @@ mod tests {
     #[test]
     fn round_trip_points() {
         let points = vec![pt(0.0, 0.0, 0.5), pt(1.0, 2.0, 0.7), pt(3.0, 4.0, 1.0)];
-        let blob = pack_points(&points);
+        let blob = pack_points(&points).unwrap();
         assert_eq!(blob[0], VERSION_V1);
         let back = unpack_points(&blob).unwrap();
         assert_eq!(back, points);

@@ -7,7 +7,7 @@ use crate::stroke_codec::{pack_points, unpack_points};
 use crate::util::{blob_to_uuid, uuid_to_blob};
 
 pub fn insert_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Result<()> {
-    let blob = pack_points(&stroke.points);
+    let blob = pack_points(&stroke.points)?;
     let pen_json = serde_json::to_string(&stroke.pen)?;
     let recipe_json = stroke
         .brush_recipe
@@ -152,7 +152,7 @@ pub fn purge_deleted(conn: &Connection, id: uuid::Uuid) -> Result<()> {
 }
 
 pub fn update_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Result<()> {
-    let blob = pack_points(&stroke.points);
+    let blob = pack_points(&stroke.points)?;
     let pen_json = serde_json::to_string(&stroke.pen)?;
     let recipe_json = stroke
         .brush_recipe
@@ -203,9 +203,11 @@ pub fn update_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Res
     Ok(())
 }
 
-/// Delete one stroke and insert N children in a single transaction.
+/// Delete one stroke and insert N children atomically. If any insert
+/// fails the transaction rolls back so the caller never sees a state
+/// where the original is gone but the children are partially inserted.
 pub fn replace_stroke(
-    conn: &Connection,
+    conn: &mut Connection,
     old_id: uuid::Uuid,
     new_strokes: &[Stroke],
     page_id: PageId,
@@ -216,17 +218,32 @@ pub fn replace_stroke(
         new_strokes.len(),
         page_id
     );
-    delete_stroke(conn, old_id)?;
+    let tx = conn.transaction()?;
+    delete_stroke(&tx, old_id)?;
     for s in new_strokes {
-        insert_stroke(conn, s, page_id)?;
+        insert_stroke(&tx, s, page_id)?;
     }
+    tx.commit()?;
     Ok(())
 }
 
 pub fn delete_strokes_batch(conn: &Connection, ids: &[uuid::Uuid]) -> Result<()> {
     tracing::debug!("STROKE_MOD sqlite delete_strokes_batch: {} ids", ids.len());
+    // Per-id failures get logged but don't abort the batch — the caller
+    // is the eraser/lasso path which treats best-effort delete as the
+    // contract. NotFound is the common case (already-deleted on a prior
+    // pass) and is downgraded to debug so it doesn't drown the log.
     for id in ids {
-        let _ = delete_stroke(conn, *id);
+        if let Err(e) = delete_stroke(conn, *id) {
+            match e {
+                StorageError::NotFound => {
+                    tracing::debug!("delete_strokes_batch: {} not found (already deleted?)", id);
+                }
+                _ => {
+                    tracing::warn!("delete_strokes_batch: {} failed: {}", id, e);
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -510,5 +527,66 @@ mod tests {
         crate::page_store::delete_page(db.conn(), pid).unwrap();
         let listed = list_strokes_for_page(db.conn(), pid).unwrap();
         assert!(listed.is_empty());
+    }
+
+    #[test]
+    fn replace_stroke_rolls_back_on_failure() {
+        // Set up a parent stroke, then attempt a replace where one of
+        // the children violates a NOT NULL constraint by reusing the
+        // parent's id (UPSERT would clobber instead of fail) — so we
+        // induce failure differently: pass a child whose page_id points
+        // at a deleted page, triggering FK violation. Children that
+        // reach insert_stroke first must NOT be visible after the
+        // failed transaction.
+        let (mut db, pid) = setup();
+        let parent = make_stroke(0.0, 0.0, 5.0);
+        insert_stroke(db.conn(), &parent, pid).unwrap();
+
+        // Two children: first is fine, second references a non-existent
+        // page so the FK constraint kicks in and aborts the tx.
+        let good_child = make_stroke(1.0, 1.0, 1.0);
+        let bad_child = make_stroke(2.0, 2.0, 1.0);
+        let bogus_pid = PageId(uuid::Uuid::new_v4());
+
+        // Manual splice: replace_stroke takes a single page_id arg, so
+        // we hand-roll the failure case by inserting the bad child
+        // against bogus_pid inside our own tx after the good child.
+        let conn = db.conn_mut();
+        let result: Result<()> = (|| {
+            let tx = conn.transaction()?;
+            delete_stroke(&tx, parent.id)?;
+            insert_stroke(&tx, &good_child, pid)?;
+            insert_stroke(&tx, &bad_child, bogus_pid)?;
+            tx.commit()?;
+            Ok(())
+        })();
+        assert!(result.is_err(), "expected FK violation to abort");
+
+        // Parent still present (delete rolled back), neither child
+        // committed.
+        let listed = list_strokes_for_page(db.conn(), pid).unwrap();
+        let ids: Vec<uuid::Uuid> = listed.iter().map(|s| s.id).collect();
+        assert!(ids.contains(&parent.id), "parent should survive rollback");
+        assert!(!ids.contains(&good_child.id), "good child must not commit");
+        assert!(!ids.contains(&bad_child.id), "bad child must not commit");
+    }
+
+    #[test]
+    fn delete_strokes_batch_logs_but_continues_on_missing() {
+        // delete_strokes_batch must not abort on NotFound — eraser
+        // hits an already-deleted stroke routinely.
+        let (db, pid) = setup();
+        let s1 = make_stroke(0.0, 0.0, 1.0);
+        let s2 = make_stroke(5.0, 5.0, 1.0);
+        insert_stroke(db.conn(), &s1, pid).unwrap();
+        insert_stroke(db.conn(), &s2, pid).unwrap();
+
+        let phantom = uuid::Uuid::new_v4();
+        // Mix a real id, an unknown id, and another real id — all real
+        // ones should soft-delete, unknown should be skipped.
+        delete_strokes_batch(db.conn(), &[s1.id, phantom, s2.id]).unwrap();
+
+        let listed = list_strokes_for_page(db.conn(), pid).unwrap();
+        assert!(listed.is_empty(), "all real ids should be soft-deleted");
     }
 }

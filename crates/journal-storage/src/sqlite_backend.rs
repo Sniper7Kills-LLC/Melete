@@ -142,7 +142,7 @@ impl StrokeStore for SqliteBackend {
         new_strokes: &[Stroke],
         page_id: PageId,
     ) -> Result<()> {
-        stroke_store::replace_stroke(self.db.conn(), old_id, new_strokes, page_id)
+        stroke_store::replace_stroke(self.db.conn_mut(), old_id, new_strokes, page_id)
     }
     fn delete_strokes_batch(&mut self, ids: &[Uuid]) -> Result<()> {
         stroke_store::delete_strokes_batch(self.db.conn(), ids)

@@ -685,7 +685,7 @@ impl StrokeStore for MultiFileSqliteBackend {
         page_id: PageId,
     ) -> Result<()> {
         let nid = self.notebook_for_page(page_id)?;
-        self.with_conn(nid, |c| {
+        self.with_conn_mut(nid, |c| {
             stroke_store::replace_stroke(c, old_id, new_strokes, page_id)
         })?;
         let mut cache = self.stroke_to_notebook.borrow_mut();
