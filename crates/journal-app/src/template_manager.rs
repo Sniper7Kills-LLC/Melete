@@ -406,6 +406,42 @@ fn build_notebook_template_row(
     });
     row.append(&edit_btn);
 
+    #[cfg(feature = "remote")]
+    {
+        let publish_btn = Button::from_icon_name("document-send-symbolic");
+        publish_btn.set_tooltip_text(Some("Publish to public catalog…"));
+        let template_for_publish = t.clone();
+        let state_for_publish = state.clone();
+        let parent_for_publish = parent.clone();
+        publish_btn.connect_clicked(move |b| {
+            let template = template_for_publish.clone();
+            let state = state_for_publish.clone();
+            let btn = b.clone();
+            let title_hint = format!("notebook template \"{}\"", template.name);
+            crate::remote_browser::pick_visibility(
+                &parent_for_publish,
+                &title_hint,
+                move |vis| {
+                    btn.set_sensitive(false);
+                    btn.set_tooltip_text(Some("Publishing…"));
+                    match crate::remote_browser::publish_local_notebook_template(
+                        &template,
+                        state.clone(),
+                        vis,
+                    ) {
+                        Ok(()) => btn.set_tooltip_text(Some("Published ✓")),
+                        Err(e) => {
+                            tracing::warn!("publish notebook template: {e}");
+                            btn.set_tooltip_text(Some("Publish failed (see log)"));
+                            btn.set_sensitive(true);
+                        }
+                    }
+                },
+            );
+        });
+        row.append(&publish_btn);
+    }
+
     let del = Button::from_icon_name("edit-delete-symbolic");
     del.set_tooltip_text(Some("Delete template"));
     del.add_css_class("destructive-action");
@@ -797,25 +833,37 @@ fn build_row(
         #[cfg(feature = "remote")]
         {
             let publish_btn = Button::from_icon_name("document-send-symbolic");
-            publish_btn.set_tooltip_text(Some("Publish to public catalog"));
+            publish_btn.set_tooltip_text(Some("Publish to public catalog…"));
             let template_for_publish = t.clone();
             let state_for_publish = state.clone();
+            let parent_for_publish = parent.clone();
             publish_btn.connect_clicked(move |b| {
-                b.set_sensitive(false);
-                b.set_tooltip_text(Some("Publishing…"));
-                match crate::remote_browser::publish_local_page_template(
-                    &template_for_publish,
-                    state_for_publish.clone(),
-                ) {
-                    Ok(()) => {
-                        b.set_tooltip_text(Some("Published ✓"));
-                    }
-                    Err(e) => {
-                        tracing::warn!("publish page template: {e}");
-                        b.set_tooltip_text(Some("Publish failed (see log)"));
-                        b.set_sensitive(true);
-                    }
-                }
+                let template = template_for_publish.clone();
+                let state = state_for_publish.clone();
+                let btn = b.clone();
+                let title_hint = format!("page template \"{}\"", template.name);
+                crate::remote_browser::pick_visibility(
+                    &parent_for_publish,
+                    &title_hint,
+                    move |vis| {
+                        btn.set_sensitive(false);
+                        btn.set_tooltip_text(Some("Publishing…"));
+                        match crate::remote_browser::publish_local_page_template(
+                            &template,
+                            state.clone(),
+                            vis,
+                        ) {
+                            Ok(()) => {
+                                btn.set_tooltip_text(Some("Published ✓"));
+                            }
+                            Err(e) => {
+                                tracing::warn!("publish page template: {e}");
+                                btn.set_tooltip_text(Some("Publish failed (see log)"));
+                                btn.set_sensitive(true);
+                            }
+                        }
+                    },
+                );
             });
             row.append(&publish_btn);
         }
