@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 
@@ -82,11 +83,20 @@ function AccountChipImpl() {
             className="fixed inset-0 z-10"
             onClick={() => setMenuOpen(false)}
           />
-          <div className="absolute right-0 top-full z-20 mt-1 w-48 rounded border border-slate-200 bg-white py-1 text-sm shadow-lg">
+          <div className="absolute right-0 top-full z-20 mt-1 w-52 rounded border border-slate-200 bg-white py-1 text-sm shadow-lg">
             <div className="border-b border-slate-100 px-3 py-2 text-[11px] uppercase tracking-wide text-slate-400">
               Signed in as
             </div>
-            <div className="px-3 py-1 text-xs text-slate-700">{email}</div>
+            <div className="px-3 py-1 pb-2 text-xs text-slate-700">{email}</div>
+            <div className="border-t border-slate-100" />
+            <Link
+              to="/my"
+              onClick={() => setMenuOpen(false)}
+              className="block px-3 py-2 text-slate-700 hover:bg-slate-100"
+            >
+              My library
+            </Link>
+            <div className="border-t border-slate-100" />
             <button
               type="button"
               onClick={() => {
