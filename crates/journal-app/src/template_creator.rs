@@ -405,7 +405,50 @@ pub fn build_editor_view(
     action_row.append(&title);
     action_row.append(&saved_indicator);
     action_row.append(&preview_btn);
+    #[cfg(feature = "remote")]
+    let publish_btn = Button::with_label("Publish…");
+    #[cfg(feature = "remote")]
+    {
+        publish_btn.set_tooltip_text(Some("Publish this template to the public catalog"));
+        action_row.append(&publish_btn);
+    }
     action_row.append(&save_btn);
+
+    #[cfg(feature = "remote")]
+    {
+        let cs_for_publish = cs.clone();
+        let state_for_publish = state.clone();
+        let parent_for_publish = parent.clone();
+        publish_btn.connect_clicked(move |b| {
+            let template = cs_for_publish.borrow().template.clone();
+            let state = state_for_publish.clone();
+            let btn = b.clone();
+            let title_hint = format!(
+                "page template \"{}\"",
+                if template.name.is_empty() { "untitled" } else { template.name.as_str() }
+            );
+            crate::remote_browser::pick_visibility(
+                &parent_for_publish,
+                &title_hint,
+                move |vis| {
+                    btn.set_sensitive(false);
+                    btn.set_label("Publishing…");
+                    match crate::remote_browser::publish_local_page_template(
+                        &template,
+                        state.clone(),
+                        vis,
+                    ) {
+                        Ok(()) => btn.set_label("Published ✓"),
+                        Err(e) => {
+                            tracing::warn!("publish page template: {e}");
+                            btn.set_label("Publish failed");
+                            btn.set_sensitive(true);
+                        }
+                    }
+                },
+            );
+        });
+    }
 
     #[cfg(feature = "vello")]
     {

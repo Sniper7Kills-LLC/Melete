@@ -7,8 +7,8 @@
 
 use gtk4::prelude::*;
 use gtk4::{
-    ApplicationWindow, Box as GtkBox, Button, Label, ListBox, ListBoxRow, Notebook, Orientation,
-    ScrolledWindow, SelectionMode, Window,
+    ApplicationWindow, Box as GtkBox, Button, DropDown, Entry, Label, ListBox, ListBoxRow,
+    Notebook, Orientation, ScrolledWindow, SelectionMode, StringList, Window,
 };
 
 use journal_storage::remote_template_store::store::{
@@ -16,6 +16,39 @@ use journal_storage::remote_template_store::store::{
 };
 
 use crate::state::SharedState;
+
+// ── Editor-opener wiring ────────────────────────────────────────────
+//
+// The catalog browser needs to hand a forked template / brush off to
+// the appropriate full-screen editor. The openers themselves live in
+// `window.rs` (they hold a `SharedWindow` to switch the GTK stack).
+// To avoid threading the openers through every call site, `window.rs`
+// stashes them in this thread-local once the window is built; the
+// browser then reads them on demand.
+
+pub type OpenPageTemplateEditorFn = std::rc::Rc<dyn Fn(journal_core::PageTemplate)>;
+pub type OpenNotebookTemplateEditorFn = std::rc::Rc<dyn Fn(journal_core::NotebookTemplate)>;
+pub type OpenBrushEditorFn = std::rc::Rc<dyn Fn(journal_core::Brush)>;
+
+#[derive(Clone)]
+pub struct EditorOpeners {
+    pub page: OpenPageTemplateEditorFn,
+    pub notebook: OpenNotebookTemplateEditorFn,
+    pub brush: OpenBrushEditorFn,
+}
+
+thread_local! {
+    static EDITOR_OPENERS: std::cell::RefCell<Option<EditorOpeners>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub fn set_editor_openers(o: EditorOpeners) {
+    EDITOR_OPENERS.with(|c| *c.borrow_mut() = Some(o));
+}
+
+fn with_openers<R>(f: impl FnOnce(Option<&EditorOpeners>) -> R) -> R {
+    EDITOR_OPENERS.with(|c| f(c.borrow().as_ref()))
+}
 
 pub fn open_browser(parent: &ApplicationWindow, state: SharedState) {
     let win = Window::builder()
@@ -117,6 +150,7 @@ fn build_tab(
         .margin_end(14)
         .build();
 
+    // Top row — count status + Refresh.
     let toolbar = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(6)
@@ -134,6 +168,22 @@ fn build_tab(
     toolbar.append(&refresh_btn);
     body.append(&toolbar);
 
+    // Filter row — search + (page templates only) category dropdown.
+    let filter_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .build();
+    let search = Entry::builder()
+        .placeholder_text("Search by name or description")
+        .hexpand(true)
+        .build();
+    filter_row.append(&search);
+    let category_dropdown = DropDown::from_strings(&["All categories"]);
+    category_dropdown.set_visible(matches!(kind, Kind::PageTemplate));
+    filter_row.append(&category_dropdown);
+    body.append(&filter_row);
+
+    // Result list.
     let scroll = ScrolledWindow::builder()
         .vexpand(true)
         .hexpand(true)
@@ -147,23 +197,118 @@ fn build_tab(
 
     let tab_label = Label::new(Some(kind.tab_base_label()));
 
-    let refresh: std::rc::Rc<dyn Fn()> = {
+    // Cached row set so search / category re-filter without re-fetching.
+    let cache: std::rc::Rc<std::cell::RefCell<Vec<RemoteTemplateSummary>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let last_error: std::rc::Rc<std::cell::RefCell<Option<RemoteError>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(None));
+
+    let apply_filters: std::rc::Rc<dyn Fn()> = {
         let list = list.clone();
         let status = status.clone();
-        let state = state.clone();
+        let cache = cache.clone();
+        let last_error = last_error.clone();
+        let search = search.clone();
+        let category_dropdown = category_dropdown.clone();
         let tab_label = tab_label.clone();
+        let state = state.clone();
         std::rc::Rc::new(move || {
-            status.set_label("Loading…");
-            // Synchronous fetch on the GTK main thread — sub-second
-            // over a healthy connection. If this becomes laggy we
-            // move to a worker thread + glib::idle_add.
-            let result = fetch(kind);
-            let count = result.as_ref().map(|v| v.len()).unwrap_or(0);
-            tab_label.set_label(&match count {
+            // Surface a load error first.
+            if let Some(err) = last_error.borrow().as_ref() {
+                let result: Result<Vec<RemoteTemplateSummary>, RemoteError> = match err {
+                    RemoteError::NotSignedIn => Err(RemoteError::NotSignedIn),
+                    other => Err(RemoteError::Malformed(format!("{other}"))),
+                };
+                populate(&list, &status, kind, result, state.clone());
+                return;
+            }
+            let q = search.text().to_string().to_lowercase();
+            let cat_idx = category_dropdown.selected();
+            let cats = current_categories(&cache.borrow());
+            let cat_filter = if cat_idx == 0 {
+                None
+            } else {
+                cats.get(cat_idx as usize - 1).cloned()
+            };
+            let filtered: Vec<RemoteTemplateSummary> = cache
+                .borrow()
+                .iter()
+                .filter(|r| {
+                    if !q.is_empty() {
+                        let in_name = r.name.to_lowercase().contains(&q);
+                        let in_desc = r.description.to_lowercase().contains(&q);
+                        if !in_name && !in_desc {
+                            return false;
+                        }
+                    }
+                    if let Some(c) = &cat_filter {
+                        if r.category.as_deref() != Some(c.as_str()) {
+                            return false;
+                        }
+                    }
+                    true
+                })
+                .cloned()
+                .collect();
+            tab_label.set_label(&match cache.borrow().len() {
                 0 => kind.tab_base_label().to_string(),
                 n => format!("{} ({})", kind.tab_base_label(), n),
             });
-            populate(&list, &status, kind, result, state.clone());
+            let shown = filtered.len();
+            let total = cache.borrow().len();
+            let label = if shown == total {
+                format!("{} entries", total)
+            } else {
+                format!("{} of {} entries", shown, total)
+            };
+            status.set_label(&label);
+            populate(&list, &status, kind, Ok(filtered), state.clone());
+            status.set_label(&label);
+        })
+    };
+
+    let refresh: std::rc::Rc<dyn Fn()> = {
+        let cache = cache.clone();
+        let last_error = last_error.clone();
+        let category_dropdown = category_dropdown.clone();
+        let status = status.clone();
+        let apply_filters = apply_filters.clone();
+        std::rc::Rc::new(move || {
+            status.set_label("Loading…");
+            let result = fetch(kind);
+            match result {
+                Ok(rows) => {
+                    *cache.borrow_mut() = rows;
+                    *last_error.borrow_mut() = None;
+                    // Refresh the dropdown options against the new
+                    // category set, preserving the user's selection
+                    // when possible.
+                    if matches!(kind, Kind::PageTemplate) {
+                        let cats = current_categories(&cache.borrow());
+                        let prev_label = if category_dropdown.selected() == 0 {
+                            "All categories".to_string()
+                        } else {
+                            cats.get(category_dropdown.selected() as usize - 1)
+                                .cloned()
+                                .unwrap_or_else(|| "All categories".to_string())
+                        };
+                        let mut options = vec!["All categories".to_string()];
+                        options.extend(cats.iter().cloned());
+                        let strs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
+                        category_dropdown.set_model(Some(&StringList::new(&strs)));
+                        let new_idx = options
+                            .iter()
+                            .position(|c| c == &prev_label)
+                            .unwrap_or(0) as u32;
+                        category_dropdown.set_selected(new_idx);
+                    }
+                }
+                Err(e) => {
+                    *cache.borrow_mut() = Vec::new();
+                    *last_error.borrow_mut() = Some(e);
+                }
+            }
+            apply_filters();
         })
     };
 
@@ -171,9 +316,30 @@ fn build_tab(
         let refresh = refresh.clone();
         refresh_btn.connect_clicked(move |_| refresh());
     }
+    {
+        let apply = apply_filters.clone();
+        search.connect_changed(move |_| apply());
+    }
+    {
+        let apply = apply_filters.clone();
+        category_dropdown.connect_selected_notify(move |_| apply());
+    }
 
     refresh();
     (body, tab_label, refresh)
+}
+
+/// Distinct sorted list of non-empty `category` values across `rows`.
+fn current_categories(rows: &[RemoteTemplateSummary]) -> Vec<String> {
+    let mut set: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for r in rows {
+        if let Some(c) = r.category.as_ref() {
+            if !c.is_empty() {
+                set.insert(c.clone());
+            }
+        }
+    }
+    set.into_iter().collect()
 }
 
 fn fetch(kind: Kind) -> Result<Vec<RemoteTemplateSummary>, RemoteError> {
@@ -279,38 +445,73 @@ fn render_row(row: &RemoteTemplateSummary, kind: Kind, state: SharedState) -> Gt
 
     outer.append(&text_col);
 
-    let fork_btn = Button::with_label("Fork");
-    fork_btn.add_css_class("suggested-action");
-    fork_btn.set_valign(gtk4::Align::Center);
+    // Two actions per row:
+    //   * Download — read-only copy of the upstream entry into the
+    //     local registry (preserves the original id; user gets a
+    //     usable copy but can't republish since they don't own it).
+    //   * Edit — server-side fork (fresh id, owned by caller),
+    //     saved locally, then opened in the appropriate full-screen
+    //     editor for tweaking before publish.
+    let download_btn = Button::with_label("Download");
+    download_btn.set_valign(gtk4::Align::Center);
     {
         let id = row.id;
         let state = state.clone();
-        fork_btn.connect_clicked(move |b| {
+        download_btn.connect_clicked(move |b| {
             b.set_sensitive(false);
-            b.set_label("Forking…");
-            match fork_into_local(kind, id, state.clone()) {
-                Ok(()) => b.set_label("Forked ✓"),
+            b.set_label("Downloading…");
+            match download_into_local(kind, id, state.clone()) {
+                Ok(()) => b.set_label("Downloaded ✓"),
                 Err(e) => {
-                    tracing::warn!("fork failed: {e}");
-                    b.set_label("Fork failed");
+                    tracing::warn!("download failed: {e}");
+                    b.set_label("Download failed");
                     b.set_sensitive(true);
                 }
             }
         });
     }
-    outer.append(&fork_btn);
+    outer.append(&download_btn);
+
+    let edit_btn = Button::with_label("Edit");
+    edit_btn.add_css_class("suggested-action");
+    edit_btn.set_valign(gtk4::Align::Center);
+    edit_btn.set_tooltip_text(Some("Fork into your library and open in the editor"));
+    {
+        let id = row.id;
+        let state = state.clone();
+        edit_btn.connect_clicked(move |b| {
+            b.set_sensitive(false);
+            b.set_label("Forking…");
+            match edit_into_local(kind, id, state.clone()) {
+                Ok(()) => b.set_label("Opening editor…"),
+                Err(e) => {
+                    tracing::warn!("edit (fork+open) failed: {e}");
+                    b.set_label("Failed");
+                    b.set_sensitive(true);
+                }
+            }
+        });
+    }
+    outer.append(&edit_btn);
 
     outer
 }
 
-fn fork_into_local(kind: Kind, id: uuid::Uuid, state: SharedState) -> Result<(), RemoteError> {
+/// Read-only download — fetches the upstream entry as-is and inserts
+/// into the local registry under the original id. The user gets a
+/// usable copy but isn't the owner and can't republish over it.
+fn download_into_local(
+    kind: Kind,
+    id: uuid::Uuid,
+    state: SharedState,
+) -> Result<(), RemoteError> {
     let mut s = RemoteTemplateStore::connect()?;
     match kind {
         Kind::PageTemplate => {
-            let row = s.fork_page_template(id)?;
+            let (row, _assets) = s.get_page_template(id)?;
             let s_state = state.borrow();
             let template = crate::template_io::page_template_from_row(&row).map_err(|e| {
-                RemoteError::Malformed(format!("parse forked page template: {e:#}"))
+                RemoteError::Malformed(format!("parse downloaded page template: {e:#}"))
             })?;
             crate::template_io::put_page_template(
                 &s_state.backend,
@@ -318,14 +519,19 @@ fn fork_into_local(kind: Kind, id: uuid::Uuid, state: SharedState) -> Result<(),
                 &template,
                 &[],
             )
-            .map_err(|e| RemoteError::Malformed(format!("save forked page template: {e:#}")))?;
+            .map_err(|e| {
+                RemoteError::Malformed(format!("save downloaded page template: {e:#}"))
+            })?;
         }
         Kind::NotebookTemplate => {
-            let row = s.fork_notebook_template(id)?;
+            let row = s.get_notebook_template(id)?;
             let s_state = state.borrow();
-            let template = crate::template_io::notebook_template_from_row(&row).map_err(|e| {
-                RemoteError::Malformed(format!("parse forked notebook template: {e:#}"))
-            })?;
+            let template =
+                crate::template_io::notebook_template_from_row(&row).map_err(|e| {
+                    RemoteError::Malformed(format!(
+                        "parse downloaded notebook template: {e:#}"
+                    ))
+                })?;
             crate::template_io::put_notebook_template(
                 &s_state.backend,
                 &s_state.notebook_templates,
@@ -333,11 +539,95 @@ fn fork_into_local(kind: Kind, id: uuid::Uuid, state: SharedState) -> Result<(),
             );
         }
         Kind::Brush => {
-            let row = s.fork_brush(id)?;
+            let row = s.get_brush(id)?;
             let s_state = state.borrow();
             put_brush_into_local(&s_state, &row).map_err(|e| {
-                RemoteError::Malformed(format!("save forked brush: {e:#}"))
+                RemoteError::Malformed(format!("save downloaded brush: {e:#}"))
             })?;
+        }
+    }
+    Ok(())
+}
+
+/// Server-side fork → save into local registry → hand off to the
+/// matching full-screen editor (looked up via the `EDITOR_OPENERS`
+/// thread-local, populated by `window.rs` once the main window is
+/// built). Editor-open is best-effort: if openers aren't registered
+/// the user still gets a forked copy in their library.
+fn edit_into_local(kind: Kind, id: uuid::Uuid, state: SharedState) -> Result<(), RemoteError> {
+    let mut s = RemoteTemplateStore::connect()?;
+    match kind {
+        Kind::PageTemplate => {
+            let row = s.fork_page_template(id)?;
+            let template = crate::template_io::page_template_from_row(&row).map_err(|e| {
+                RemoteError::Malformed(format!("parse forked page template: {e:#}"))
+            })?;
+            {
+                let s_state = state.borrow();
+                crate::template_io::put_page_template(
+                    &s_state.backend,
+                    &s_state.templates,
+                    &template,
+                    &[],
+                )
+                .map_err(|e| {
+                    RemoteError::Malformed(format!("save forked page template: {e:#}"))
+                })?;
+            }
+            with_openers(|openers| {
+                if let Some(o) = openers {
+                    (o.page)(template.clone());
+                } else {
+                    tracing::warn!("page template editor opener not registered");
+                }
+            });
+        }
+        Kind::NotebookTemplate => {
+            let row = s.fork_notebook_template(id)?;
+            let template = crate::template_io::notebook_template_from_row(&row).map_err(|e| {
+                RemoteError::Malformed(format!("parse forked notebook template: {e:#}"))
+            })?;
+            {
+                let s_state = state.borrow();
+                crate::template_io::put_notebook_template(
+                    &s_state.backend,
+                    &s_state.notebook_templates,
+                    &template,
+                );
+            }
+            with_openers(|openers| {
+                if let Some(o) = openers {
+                    (o.notebook)(template.clone());
+                } else {
+                    tracing::warn!("notebook template editor opener not registered");
+                }
+            });
+        }
+        Kind::Brush => {
+            let row = s.fork_brush(id)?;
+            {
+                let s_state = state.borrow();
+                put_brush_into_local(&s_state, &row).map_err(|e| {
+                    RemoteError::Malformed(format!("save forked brush: {e:#}"))
+                })?;
+            }
+            // Reconstruct a Brush from BrushRow.body_toml so the
+            // editor opens on the cloned shape.
+            let brush: journal_core::Brush = match toml::from_str(&row.body_toml) {
+                Ok(b) => b,
+                Err(e) => {
+                    return Err(RemoteError::Malformed(format!(
+                        "parse forked brush body: {e}"
+                    )));
+                }
+            };
+            with_openers(|openers| {
+                if let Some(o) = openers {
+                    (o.brush)(brush.clone());
+                } else {
+                    tracing::warn!("brush editor opener not registered");
+                }
+            });
         }
     }
     Ok(())

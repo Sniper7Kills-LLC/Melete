@@ -277,6 +277,23 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         }));
     }
 
+    // Register the catalog browser's editor-openers so its "Edit"
+    // (fork-then-open) action can switch the GTK stack to the
+    // appropriate full-screen editor.
+    #[cfg(feature = "remote")]
+    {
+        let win_for_page = win.clone();
+        let win_for_nb = win.clone();
+        let win_for_brush = win.clone();
+        crate::remote_browser::set_editor_openers(crate::remote_browser::EditorOpeners {
+            page: Rc::new(move |t: PageTemplate| show_template_editor(&win_for_page, Some(t))),
+            notebook: Rc::new(move |t: NotebookTemplate| {
+                show_notebook_template_editor(&win_for_nb, Some(t))
+            }),
+            brush: Rc::new(move |b: journal_core::Brush| show_tool_editor(&win_for_brush, Some(b))),
+        });
+    }
+
     {
         let win = win.clone();
         sidebar_toggle_btn.connect_clicked(move |_| {
