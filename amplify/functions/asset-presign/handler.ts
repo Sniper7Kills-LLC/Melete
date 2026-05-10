@@ -1,13 +1,18 @@
 import type { Schema } from '../../data/resource';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { GetCommand, DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+
+// Validates args + mints a presigned PUT URL whose key is rooted at
+// `protected/{caller_sub}/templates/...`. The bucket policy
+// (`protected/{entity_id}/*` → entity('identity').to([read, write,
+// delete])) is what physically prevents one user from writing into
+// another user's prefix; this Lambda just shapes the URL. Owner-of
+// -templateId is intentionally NOT checked here — see the comment on
+// `getAssetUploadUrl` in `amplify/data/resource.ts` for why.
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const MAX_BYTES = Number(process.env.MAX_ASSET_BYTES ?? '52428800');
 
-const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 const s3 = new S3Client({});
 
 type Args = {
@@ -26,14 +31,13 @@ export const handler: Schema['getAssetUploadUrl']['functionHandler'] = async (ev
   const args = event.arguments as Args;
   const identity = event.identity as { sub?: string } | undefined;
   const sub = identity?.sub;
-  const tableName = process.env.PAGE_TEMPLATE_TABLE_NAME;
   const bucketName = process.env.TEMPLATE_ASSETS_BUCKET_NAME;
 
   if (!sub) {
     throw new Error('UNAUTHENTICATED');
   }
-  if (!tableName || !bucketName) {
-    throw new Error('SERVER_MISCONFIGURED: missing PAGE_TEMPLATE_TABLE_NAME or TEMPLATE_ASSETS_BUCKET_NAME');
+  if (!bucketName) {
+    throw new Error('SERVER_MISCONFIGURED: missing TEMPLATE_ASSETS_BUCKET_NAME');
   }
   if (!args.templateId || typeof args.templateId !== 'string') {
     throw new Error('INVALID_TEMPLATE_ID');
@@ -46,16 +50,6 @@ export const handler: Schema['getAssetUploadUrl']['functionHandler'] = async (ev
   }
   if (!args.contentType || typeof args.contentType !== 'string') {
     throw new Error('INVALID_CONTENT_TYPE');
-  }
-
-  const row = await ddb.send(
-    new GetCommand({ TableName: tableName, Key: { id: args.templateId } }),
-  );
-  if (!row.Item) {
-    throw new Error('NOT_FOUND');
-  }
-  if (row.Item.owner !== sub) {
-    throw new Error('FORBIDDEN');
   }
 
   const s3Key = `protected/${sub}/templates/${args.templateId}/assets/${args.sha256}`;

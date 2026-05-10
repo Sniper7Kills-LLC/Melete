@@ -88,42 +88,42 @@ const schema = a.schema({
     .arguments({ id: a.id().required() })
     .returns(a.ref('PageTemplate'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './fork-page-template.ts', dataSource: a.ref('PageTemplate') })),
+    .handler(a.handler.custom({ entry: './fork-page-template.js', dataSource: a.ref('PageTemplate') })),
 
   forkNotebookTemplate: a
     .mutation()
     .arguments({ id: a.id().required() })
     .returns(a.ref('NotebookTemplate'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './fork-notebook-template.ts', dataSource: a.ref('NotebookTemplate') })),
+    .handler(a.handler.custom({ entry: './fork-notebook-template.js', dataSource: a.ref('NotebookTemplate') })),
 
   forkBrush: a
     .mutation()
     .arguments({ id: a.id().required() })
     .returns(a.ref('Brush'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './fork-brush.ts', dataSource: a.ref('Brush') })),
+    .handler(a.handler.custom({ entry: './fork-brush.js', dataSource: a.ref('Brush') })),
 
   publishPageTemplate: a
     .mutation()
     .arguments({ id: a.id().required(), visibility: a.ref('Visibility').required() })
     .returns(a.ref('PageTemplate'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './publish-page-template.ts', dataSource: a.ref('PageTemplate') })),
+    .handler(a.handler.custom({ entry: './publish-page-template.js', dataSource: a.ref('PageTemplate') })),
 
   publishNotebookTemplate: a
     .mutation()
     .arguments({ id: a.id().required(), visibility: a.ref('Visibility').required() })
     .returns(a.ref('NotebookTemplate'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './publish-notebook-template.ts', dataSource: a.ref('NotebookTemplate') })),
+    .handler(a.handler.custom({ entry: './publish-notebook-template.js', dataSource: a.ref('NotebookTemplate') })),
 
   publishBrush: a
     .mutation()
     .arguments({ id: a.id().required(), visibility: a.ref('Visibility').required() })
     .returns(a.ref('Brush'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './publish-brush.ts', dataSource: a.ref('Brush') })),
+    .handler(a.handler.custom({ entry: './publish-brush.js', dataSource: a.ref('Brush') })),
 
   getAssetUploadUrl: a
     .mutation()
@@ -140,6 +140,16 @@ const schema = a.schema({
       }),
     )
     .authorization((allow) => [allow.authenticated()])
+    // Lambda validates args + mints a presigned PUT URL whose key
+    // is bound to the caller's `cognito-identity.amazonaws.com:sub`.
+    // Owner-of-templateId is NOT checked here — the storage policy
+    // (`protected/{entity_id}/*`) physically prevents one user from
+    // writing into another user's prefix, so a misclaimed templateId
+    // only fills the caller's own quota. We avoided a JS-pipeline
+    // owner check because Amplify Gen 2 doesn't allow mixing JS +
+    // Lambda handlers on the same field, and giving the Lambda DDB
+    // read access on PageTemplate re-introduces the CFN circular
+    // dependency between the data + function nested stacks.
     .handler(a.handler.function(assetPresign)),
 });
 

@@ -15,10 +15,13 @@ export const backend = defineBackend({
 
 const presignFn = backend.assetPresign.resources.lambda as LambdaFunction;
 const bucket = backend.storage.resources.bucket;
-const pageTemplateTable = backend.data.resources.tables['PageTemplate'];
 
+// Lambda only needs the bucket name — owner verification happens
+// in the JS pipeline step (`check-page-template-owner.js`) which
+// reads PageTemplate via the AppSync DDB dataSource. Granting the
+// Lambda DDB access here would re-introduce the CFN circular
+// dependency between the data + function nested stacks.
 presignFn.addEnvironment('TEMPLATE_ASSETS_BUCKET_NAME', bucket.bucketName);
-presignFn.addEnvironment('PAGE_TEMPLATE_TABLE_NAME', pageTemplateTable.tableName);
 
 presignFn.addToRolePolicy(
   new PolicyStatement({
@@ -29,5 +32,3 @@ presignFn.addToRolePolicy(
     ],
   }),
 );
-
-pageTemplateTable.grantReadData(presignFn);
