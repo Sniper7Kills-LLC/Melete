@@ -140,6 +140,21 @@ impl MultiFileSqliteBackend {
         f(conn)
     }
 
+    /// Drop every section/page/stroke cache entry for the given
+    /// notebook. Called after any cascading delete (delete_section,
+    /// delete_page) so subsequent ops can't route a deleted id to its
+    /// (still-valid) notebook connection. Entries repopulate lazily
+    /// on the next list/get against the affected notebook.
+    fn evict_caches_for_notebook(&self, nid: NotebookId) {
+        self.section_to_notebook
+            .borrow_mut()
+            .retain(|_, v| *v != nid);
+        self.page_to_notebook.borrow_mut().retain(|_, v| *v != nid);
+        self.stroke_to_notebook
+            .borrow_mut()
+            .retain(|_, v| *v != nid);
+    }
+
     fn with_conn_mut<F, T>(&self, id: NotebookId, f: F) -> Result<T>
     where
         F: FnOnce(&mut Connection) -> Result<T>,
@@ -562,7 +577,13 @@ impl SectionStore for MultiFileSqliteBackend {
     fn delete_section(&mut self, id: SectionId) -> Result<()> {
         let nid = self.notebook_for_section(id)?;
         self.with_conn(nid, |c| section_store::delete_section(c, id))?;
-        self.section_to_notebook.borrow_mut().remove(&id);
+        // SQLite cascades the delete through descendant sections,
+        // their pages, and the strokes of those pages. The in-memory
+        // id→notebook caches don't see the cascade, so any cached
+        // entry pointing at a now-cascaded id would route subsequent
+        // ops at a deleted row. Evict every cache entry for this
+        // notebook; they'll repopulate lazily on the next list/get.
+        self.evict_caches_for_notebook(nid);
         Ok(())
     }
 
@@ -633,7 +654,12 @@ impl PageStore for MultiFileSqliteBackend {
     fn delete_page(&mut self, id: PageId) -> Result<()> {
         let nid = self.notebook_for_page(id)?;
         self.with_conn(nid, |c| page_store::delete_page(c, id))?;
-        self.page_to_notebook.borrow_mut().remove(&id);
+        // SQLite cascades to the page's strokes, but stroke_to_notebook
+        // entries for those strokes are still cached. Evict everything
+        // cached for this notebook so a subsequent op on a cascaded
+        // stroke id surfaces NotFound instead of routing to a stale
+        // entry.
+        self.evict_caches_for_notebook(nid);
         Ok(())
     }
 
@@ -924,5 +950,77 @@ mod tests {
             .join(JOURNALS_DIR)
             .join(format!("{}.journal", nb.id.0));
         assert!(!path.exists());
+    }
+
+    #[test]
+    fn delete_section_evicts_cascaded_caches() {
+        let dir = tmpdir();
+        let mut be = MultiFileSqliteBackend::open(dir.path()).unwrap();
+        let nb = mk_notebook();
+        be.insert_notebook(&nb).unwrap();
+        let sec = mk_section(nb.id, 0, "S");
+        be.insert_section(&sec).unwrap();
+        let page = mk_page(sec.id, 0);
+        be.insert_page(&page).unwrap();
+
+        // Warm caches for both ids.
+        let _ = be.get_page(page.id).unwrap();
+        assert!(be.page_to_notebook.borrow().contains_key(&page.id));
+
+        // Cascade delete via section.
+        be.delete_section(sec.id).unwrap();
+
+        // page_to_notebook entry must be gone — without eviction the
+        // cached entry would route get_page to a SQLite row that
+        // SQLite already cascaded away.
+        assert!(!be.page_to_notebook.borrow().contains_key(&page.id));
+        assert!(!be.section_to_notebook.borrow().contains_key(&sec.id));
+        // Verify the cascade actually happened in SQLite too.
+        assert!(matches!(be.get_page(page.id), Err(StorageError::NotFound)));
+    }
+
+    #[test]
+    fn delete_page_evicts_stroke_cache_for_notebook() {
+        use journal_core::{BlendMode, Color, PenSettings, Rect, Stroke, StrokePoint, ToolStyle};
+        let dir = tmpdir();
+        let mut be = MultiFileSqliteBackend::open(dir.path()).unwrap();
+        let nb = mk_notebook();
+        be.insert_notebook(&nb).unwrap();
+        let sec = mk_section(nb.id, 0, "S");
+        be.insert_section(&sec).unwrap();
+        let page = mk_page(sec.id, 0);
+        be.insert_page(&page).unwrap();
+
+        let stroke = Stroke {
+            id: Uuid::new_v4(),
+            points: vec![StrokePoint {
+                x: 0.0,
+                y: 0.0,
+                pressure: 0.5,
+                tilt_x: 0.0,
+                tilt_y: 0.0,
+                timestamp_ms: 1,
+            }],
+            pen: PenSettings {
+                color: Color { r: 0, g: 0, b: 0, a: 255 },
+                base_width: 1.0,
+                opacity: 1.0,
+                blend_mode: BlendMode::Normal,
+                brush_style: ToolStyle::Pen,
+            },
+            zoom_at_creation: 1.0,
+            bounding_box: Rect { x: 0.0, y: 0.0, width: 1.0, height: 1.0 },
+            brush_recipe: None,
+        };
+        be.insert_stroke(&stroke, page.id).unwrap();
+        assert!(be.stroke_to_notebook.borrow().contains_key(&stroke.id));
+
+        be.delete_page(page.id).unwrap();
+
+        // Cache for the cascaded stroke must be evicted; without this
+        // a later op would route a deleted stroke id to the still-open
+        // notebook connection and either return stale data or panic.
+        assert!(!be.stroke_to_notebook.borrow().contains_key(&stroke.id));
+        assert!(!be.page_to_notebook.borrow().contains_key(&page.id));
     }
 }

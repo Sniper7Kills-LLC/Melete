@@ -1897,3 +1897,116 @@ fn refresh_options_panel(panel: &GtkBox, es: &Rc<RefCell<EditorState>>) {
     hint.add_css_class("dim-label");
     panel.append(&hint);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use journal_core::EntryFlags;
+
+    fn empty_template() -> NotebookTemplate {
+        NotebookTemplate {
+            id: TemplateId(uuid::Uuid::new_v4()),
+            name: String::new(),
+            description: String::new(),
+            year_start: Vec::new(),
+            before_quarter: Vec::new(),
+            before_month: Vec::new(),
+            before_week: Vec::new(),
+            daily_slots: Vec::new(),
+            grouping: PlannerGrouping::Month,
+            page_title_format: "{day}".into(),
+            section_title_formats: SectionTitleFormats::default(),
+            entry_options: HashMap::new(),
+        }
+    }
+
+    fn flags(prev: bool, next: bool) -> EntryFlags {
+        EntryFlags {
+            bridge_previous: prev,
+            bridge_next: next,
+        }
+    }
+
+    #[test]
+    fn renumber_flat_keys_keeps_lower_drops_match_shifts_higher() {
+        let mut es = EditorState::new(empty_template());
+        es.template
+            .entry_options
+            .insert("year_start:0".into(), flags(true, false));
+        es.template
+            .entry_options
+            .insert("year_start:1".into(), flags(false, true));
+        es.template
+            .entry_options
+            .insert("year_start:2".into(), flags(true, true));
+        // Different prefix should be untouched.
+        es.template
+            .entry_options
+            .insert("before_month:1".into(), flags(true, false));
+
+        es.renumber_flat_keys("year_start", 1);
+
+        let opts = &es.template.entry_options;
+        assert_eq!(opts.get("year_start:0"), Some(&flags(true, false)));
+        // index 1 was removed
+        assert!(!opts.contains_key("year_start:1") || opts.get("year_start:1") == Some(&flags(true, true)));
+        // index 2 shifted to 1
+        assert_eq!(opts.get("year_start:1"), Some(&flags(true, true)));
+        // index 2 should no longer exist
+        assert!(!opts.contains_key("year_start:2"));
+        // Different prefix preserved
+        assert_eq!(opts.get("before_month:1"), Some(&flags(true, false)));
+    }
+
+    #[test]
+    fn renumber_daily_keys_only_touches_target_slot() {
+        let mut es = EditorState::new(empty_template());
+        // slot 0 has entries at idx 0/1/2
+        es.template
+            .entry_options
+            .insert("daily:0:0".into(), flags(true, false));
+        es.template
+            .entry_options
+            .insert("daily:0:1".into(), flags(false, true));
+        es.template
+            .entry_options
+            .insert("daily:0:2".into(), flags(true, true));
+        // slot 1 has its own entries — must not be touched
+        es.template
+            .entry_options
+            .insert("daily:1:0".into(), flags(true, false));
+        es.template
+            .entry_options
+            .insert("daily:1:1".into(), flags(false, true));
+
+        es.renumber_daily_keys(0, 1);
+
+        let opts = &es.template.entry_options;
+        // Slot 0: idx 0 kept, idx 1 removed (then idx 2 → idx 1)
+        assert_eq!(opts.get("daily:0:0"), Some(&flags(true, false)));
+        assert_eq!(opts.get("daily:0:1"), Some(&flags(true, true)));
+        assert!(!opts.contains_key("daily:0:2"));
+        // Slot 1: untouched
+        assert_eq!(opts.get("daily:1:0"), Some(&flags(true, false)));
+        assert_eq!(opts.get("daily:1:1"), Some(&flags(false, true)));
+    }
+
+    #[test]
+    fn renumber_keys_idempotent_when_removed_idx_not_present() {
+        // Removing an out-of-range idx should not corrupt remaining entries.
+        let mut es = EditorState::new(empty_template());
+        es.template
+            .entry_options
+            .insert("year_start:0".into(), flags(true, false));
+        es.template
+            .entry_options
+            .insert("year_start:1".into(), flags(false, true));
+
+        es.renumber_flat_keys("year_start", 99);
+
+        let opts = &es.template.entry_options;
+        // n < 99 keeps unchanged; nothing to drop or shift.
+        assert_eq!(opts.get("year_start:0"), Some(&flags(true, false)));
+        assert_eq!(opts.get("year_start:1"), Some(&flags(false, true)));
+    }
+}

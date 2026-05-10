@@ -318,24 +318,42 @@ pub fn build_toolbar(
     }
 
     // ── Restore saved position or default to bottom-centre ───────────────
-    if let (Some(x), Some(y)) = (cfg.toolbar_x, cfg.toolbar_y) {
-        bar.set_margin_start(x);
-        bar.set_margin_top(y);
-    } else {
+    //
+    // Either way, the actual placement happens in connect_map so we can
+    // clamp against parent dimensions that are valid at first layout
+    // (parent.width()/height() return 0 before then). Without the
+    // clamp, a config persisted on a now-unplugged secondary monitor
+    // would place the toolbar fully off-screen and unreachable.
+    {
         let bar_for_map = bar.clone();
+        let saved_xy: Option<(i32, i32)> = match (cfg.toolbar_x, cfg.toolbar_y) {
+            (Some(x), Some(y)) => Some((x, y)),
+            _ => None,
+        };
         bar.connect_map(move |_| {
-            if bar_for_map.margin_start() == 0 && bar_for_map.margin_top() == 0 {
-                if let Some(parent) = bar_for_map.parent() {
-                    let pw = parent.width();
-                    let ph = parent.height();
-                    let bw = bar_for_map.width();
-                    let bh = bar_for_map.height();
-                    let x = ((pw - bw) / 2).max(0);
-                    let y = (ph - bh - 16).max(0);
-                    bar_for_map.set_margin_start(x);
-                    bar_for_map.set_margin_top(y);
-                }
-            }
+            let Some(parent) = bar_for_map.parent() else {
+                return;
+            };
+            let pw = parent.width();
+            let ph = parent.height();
+            // Bar size hasn't been measured yet on first map; fall back
+            // to a sane minimum so the clamp math still produces a
+            // visible position.
+            let bw = bar_for_map.width().max(48);
+            let bh = bar_for_map.height().max(32);
+            let max_x = (pw - bw.min(pw)).max(0);
+            let max_y = (ph - bh.min(ph)).max(0);
+            let (mut x, mut y) = match saved_xy {
+                Some((sx, sy)) => (sx, sy),
+                None => (((pw - bw) / 2).max(0), (ph - bh - 16).max(0)),
+            };
+            // Clamp into the visible range. If a stale config points
+            // off-screen (e.g. removed monitor), this drags it back
+            // onto the canvas instead of hiding the toolbar.
+            x = x.clamp(0, max_x);
+            y = y.clamp(0, max_y);
+            bar_for_map.set_margin_start(x);
+            bar_for_map.set_margin_top(y);
         });
     }
 
@@ -418,6 +436,13 @@ pub fn build_toolbar(
     {
         let bar_ref = bar.clone();
         drag.connect_drag_end(move |_gesture, _dx, _dy| {
+            // Skip the persist if the bar hasn't been measured yet —
+            // otherwise we'd save a coordinate that's only valid
+            // against the parent's dimensions, not the bar's own
+            // size, and the next launch could place us off-screen.
+            if bar_ref.width() == 0 || bar_ref.height() == 0 {
+                return;
+            }
             let x = bar_ref.margin_start();
             let y = bar_ref.margin_top();
             let mut cfg = crate::config::load();
