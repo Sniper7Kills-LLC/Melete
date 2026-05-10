@@ -28,6 +28,13 @@ export interface PageTemplateRow {
   category?: string | null;
   visibility: Visibility;
   bodyToml: string;
+  /**
+   * Per-asset metadata for any image / PDF backgrounds the template
+   * references. Wire shape from AppSync's `a.json()` column — may
+   * arrive as an array, a JSON-encoded string, or null. Use
+   * `normalizeAssets` from `@/amplify-storage` to coerce.
+   */
+  assets?: unknown;
   forkedFrom?: string | null;
   forkCount?: number | null;
   viewCount?: number | null;

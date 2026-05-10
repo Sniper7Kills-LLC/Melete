@@ -10,6 +10,11 @@ import {
 } from "@/amplify-client";
 import { isStubBackend } from "@/amplify-config";
 import {
+  normalizeAssets,
+  publicAssetUrlByName,
+  type AssetMeta,
+} from "@/amplify-storage";
+import {
   EXAMPLE_TEMPLATES,
   type ExampleTemplate,
 } from "@/types/example-templates";
@@ -126,6 +131,7 @@ interface PageEntry {
   category: string | null;
   bodyToml: string;
   parsed: PageTemplate | null;
+  assets: AssetMeta[];
   swatch: string;
 }
 
@@ -197,6 +203,7 @@ function fallbackPages(): PageEntry[] {
       category: e.template.category ?? null,
       bodyToml,
       parsed: e.template,
+      assets: [],
       swatch: e.swatch ?? PAGE_SWATCHES[i % PAGE_SWATCHES.length]!,
     };
   });
@@ -356,6 +363,7 @@ function usePagesData(): LoadState<PageEntry> {
             category: row.category ?? null,
             bodyToml: row.bodyToml,
             parsed,
+            assets: normalizeAssets(row.assets),
             swatch:
               PAGE_SWATCHES[pickSwatch(PAGE_SWATCHES, row.id)]!,
           };
@@ -762,7 +770,11 @@ function PageTemplateCard({ entry }: { entry: PageEntry }) {
         className={`flex aspect-[3/4] items-center justify-center bg-gradient-to-br ${entry.swatch} relative`}
       >
         {entry.parsed ? (
-          <PageThumbnail template={entry.parsed} />
+          <PageThumbnail
+            template={entry.parsed}
+            templateId={entry.id}
+            assets={entry.assets}
+          />
         ) : (
           <div className="rounded bg-white/80 px-2 py-1 text-[11px] uppercase tracking-wide text-slate-500">
             no preview
@@ -796,14 +808,55 @@ function PageTemplateCard({ entry }: { entry: PageEntry }) {
   );
 }
 
-function PageThumbnail({ template }: { template: PageTemplate }) {
+function PageThumbnail({
+  template,
+  templateId,
+  assets,
+}: {
+  template: PageTemplate;
+  templateId: string;
+  assets: AssetMeta[];
+}) {
   const [pageW, pageH] = template.size_mm;
+  const bg = template.background;
+  const bgImageUrl =
+    bg.kind === "Image" ? publicAssetUrlByName(templateId, bg.path, assets) : null;
   return (
     <svg
       viewBox={`0 0 ${pageW} ${pageH}`}
       className="h-[88%] w-[80%] rounded bg-white shadow"
       preserveAspectRatio="xMidYMid meet"
     >
+      {bgImageUrl && (
+        <image
+          href={bgImageUrl}
+          x={0}
+          y={0}
+          width={pageW}
+          height={pageH}
+          preserveAspectRatio="xMidYMid slice"
+        />
+      )}
+      {bg.kind === "Pdf" && (
+        <g>
+          <rect
+            x={0}
+            y={0}
+            width={pageW}
+            height={pageH}
+            fill="rgba(120,120,140,0.08)"
+          />
+          <text
+            x={pageW / 2}
+            y={pageH / 2}
+            fontSize={Math.max(6, pageW / 30)}
+            textAnchor="middle"
+            fill="rgba(60,60,80,0.6)"
+          >
+            PDF page {bg.page}
+          </text>
+        </g>
+      )}
       {template.widgets.map((w, i) => (
         <rect
           key={i}
