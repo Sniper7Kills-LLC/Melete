@@ -294,15 +294,101 @@ fn put_brush_into_local(
 
 // ── publish helpers (callable from template_manager / brush_library) ──
 
-use journal_storage::remote_template_store::store::Visibility;
+pub use journal_storage::remote_template_store::store::Visibility;
 
-/// Publish a local page template (and its asset bytes) to the public
-/// catalog. Returns once both the asset upload and the
-/// publishPageTemplate mutation succeed. Fire-and-log on the caller
-/// side; no UI feedback beyond the button label.
+/// Modal that lets the user pick a visibility before a publish
+/// completes. `on_pick` is called with the chosen visibility on
+/// confirm; the modal closes itself either way. Cancel = no callback.
+pub fn pick_visibility(
+    parent: &ApplicationWindow,
+    title_hint: &str,
+    on_pick: impl Fn(Visibility) + 'static,
+) {
+    let win = Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .title("Publish")
+        .default_width(380)
+        .build();
+
+    let body = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(10)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(16)
+        .margin_end(16)
+        .build();
+
+    let header = Label::builder()
+        .label(&format!("Publish {} as:", title_hint))
+        .halign(gtk4::Align::Start)
+        .build();
+    header.add_css_class("title-4");
+    body.append(&header);
+
+    let public_radio = gtk4::CheckButton::builder()
+        .label("Public — visible to everyone in the catalog")
+        .build();
+    public_radio.set_active(true);
+    let unlisted_radio = gtk4::CheckButton::builder()
+        .label("Unlisted — only people with the link")
+        .group(&public_radio)
+        .build();
+    let private_radio = gtk4::CheckButton::builder()
+        .label("Private — uploaded but only you can see it")
+        .group(&public_radio)
+        .build();
+    body.append(&public_radio);
+    body.append(&unlisted_radio);
+    body.append(&private_radio);
+
+    let btn_row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .halign(gtk4::Align::End)
+        .build();
+    let cancel_btn = Button::with_label("Cancel");
+    let ok_btn = Button::with_label("Publish");
+    ok_btn.add_css_class("suggested-action");
+    btn_row.append(&cancel_btn);
+    btn_row.append(&ok_btn);
+    body.append(&btn_row);
+
+    {
+        let win = win.clone();
+        cancel_btn.connect_clicked(move |_| win.close());
+    }
+    {
+        let win = win.clone();
+        let public_radio = public_radio.clone();
+        let unlisted_radio = unlisted_radio.clone();
+        let on_pick = std::rc::Rc::new(on_pick);
+        ok_btn.connect_clicked(move |_| {
+            let vis = if public_radio.is_active() {
+                Visibility::Public
+            } else if unlisted_radio.is_active() {
+                Visibility::Unlisted
+            } else {
+                Visibility::Private
+            };
+            (on_pick)(vis);
+            win.close();
+        });
+    }
+
+    win.set_child(Some(&body));
+    win.present();
+}
+
+/// Publish a local page template (and its asset bytes) to the
+/// catalog with the chosen visibility. Returns once both the asset
+/// upload and the publishPageTemplate mutation succeed. Fire-and-log
+/// on the caller side; no UI feedback beyond the button label.
 pub fn publish_local_page_template(
     template: &journal_core::PageTemplate,
     state: SharedState,
+    visibility: Visibility,
 ) -> Result<(), RemoteError> {
     let mut store = RemoteTemplateStore::connect()?;
     if !store.is_signed_in() {
@@ -342,16 +428,16 @@ pub fn publish_local_page_template(
         (row, bytes)
     };
 
-    store.publish_page_template(&row, &assets, Visibility::Public)?;
+    store.publish_page_template(&row, &assets, visibility)?;
     Ok(())
 }
 
 /// Publish a local notebook template. No assets to upload (notebook
 /// templates have no binary attachments).
-#[allow(dead_code)]
 pub fn publish_local_notebook_template(
     template: &journal_core::NotebookTemplate,
     state: SharedState,
+    visibility: Visibility,
 ) -> Result<(), RemoteError> {
     let mut store = RemoteTemplateStore::connect()?;
     if !store.is_signed_in() {
@@ -362,16 +448,16 @@ pub fn publish_local_notebook_template(
         crate::template_io::notebook_template_to_row(template)
             .map_err(|e| RemoteError::Malformed(format!("serialize notebook template: {e:#}")))?
     };
-    store.publish_notebook_template(&row, Visibility::Public)?;
+    store.publish_notebook_template(&row, visibility)?;
     Ok(())
 }
 
 /// Publish a local brush. No assets to upload (brushes have no
 /// binary attachments).
-#[allow(dead_code)]
 pub fn publish_local_brush(
     brush: &journal_core::Brush,
     state: SharedState,
+    visibility: Visibility,
 ) -> Result<(), RemoteError> {
     let mut store = RemoteTemplateStore::connect()?;
     if !store.is_signed_in() {
@@ -395,6 +481,6 @@ pub fn publish_local_brush(
         updated_at_sort: chrono::Utc::now().to_rfc3339(),
     };
     let _ = state; // currently not needed; kept for symmetry
-    store.publish_brush(&row, Visibility::Public)?;
+    store.publish_brush(&row, visibility)?;
     Ok(())
 }

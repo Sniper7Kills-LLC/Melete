@@ -38,7 +38,7 @@ use crate::state::SharedState;
 /// `seed_brush` — `Some(b)` opens the editor on `b`; `None` opens
 /// blank-slate (a default Pen composition the user can fork).
 pub fn build_editor_view(
-    _parent: &ApplicationWindow,
+    parent: &ApplicationWindow,
     state: SharedState,
     seed_brush: Option<Brush>,
     on_done: Rc<dyn Fn()>,
@@ -89,10 +89,43 @@ pub fn build_editor_view(
     done_btn.add_css_class("suggested-action");
     top.append(&back_btn);
     top.append(&title);
+    #[cfg(feature = "remote")]
+    let publish_btn = Button::with_label("Publish…");
+    #[cfg(feature = "remote")]
+    top.append(&publish_btn);
     top.append(&save_as_btn);
     top.append(&done_btn);
     root.append(&top);
     root.append(&Separator::new(Orientation::Horizontal));
+
+    #[cfg(feature = "remote")]
+    {
+        let editor_state_for_publish = editor_state.clone();
+        let state_for_publish = state.clone();
+        let parent_for_publish = parent.clone();
+        publish_btn.connect_clicked(move |b| {
+            let brush = editor_state_for_publish.borrow().brush.clone();
+            let state = state_for_publish.clone();
+            let btn = b.clone();
+            let title_hint = format!("brush \"{}\"", brush.name);
+            crate::remote_browser::pick_visibility(
+                &parent_for_publish,
+                &title_hint,
+                move |vis| {
+                    btn.set_sensitive(false);
+                    btn.set_label("Publishing…");
+                    match crate::remote_browser::publish_local_brush(&brush, state.clone(), vis) {
+                        Ok(()) => btn.set_label("Published ✓"),
+                        Err(e) => {
+                            tracing::warn!("publish brush: {e}");
+                            btn.set_label("Publish failed");
+                            btn.set_sensitive(true);
+                        }
+                    }
+                },
+            );
+        });
+    }
 
     // Body — split paned.
     let paned = Paned::builder()
@@ -459,7 +492,7 @@ pub fn build_editor_view(
     {
         let editor_state = editor_state.clone();
         let state_outer = state.clone();
-        let parent_clone = _parent.clone();
+        let parent_clone = parent.clone();
         let rebuild = rebuild.clone();
         rename_btn.connect_clicked(move |_| {
             let id = editor_state.borrow().brush.id;
@@ -630,7 +663,7 @@ pub fn build_editor_view(
     {
         let editor_state = editor_state.clone();
         let state_outer = state.clone();
-        let parent_clone = _parent.clone();
+        let parent_clone = parent.clone();
         let rebuild = rebuild.clone();
         save_as_btn.connect_clicked(move |_| {
             let editor_state = editor_state.clone();
