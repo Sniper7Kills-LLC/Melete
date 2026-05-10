@@ -209,6 +209,11 @@ pub fn open_preview(parent: &ApplicationWindow, template: PageTemplate) {
             };
 
             let widgets_renderer_for_closure = widgets_renderer.clone();
+            // Template-editor preview has no backend handle yet, so it
+            // can't resolve `asset:<name>` URIs to bytes. Image / PDF
+            // backgrounds therefore render as blank in the preview.
+            // Wiring an in-memory pending-asset resolver is a follow-up.
+            let resolver = crate::asset_resolver::null_resolver();
             let bytes = match r.render_rgba(
                 &transform,
                 &bg,
@@ -217,6 +222,7 @@ pub fn open_preview(parent: &ApplicationWindow, template: PageTemplate) {
                 &HashSet::new(),
                 &overlays,
                 &ToolStyleParams::default(),
+                &resolver,
                 w as u32,
                 h as u32,
                 |scene, world_to_screen, pr| {

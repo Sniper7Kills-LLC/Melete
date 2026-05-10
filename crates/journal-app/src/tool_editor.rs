@@ -2737,6 +2737,9 @@ fn build_preview_area(
                 width: w as f64,
                 height: h as f64,
             };
+            // Tool-editor preview always uses Blank background; no
+            // assets are ever resolved.
+            let resolver = crate::asset_resolver::null_resolver();
             let bytes = match r.render_rgba(
                 &transform,
                 &BackgroundConfig::Blank,
@@ -2745,6 +2748,7 @@ fn build_preview_area(
                 &HashSet::new(),
                 &OverlayState::default(),
                 &ToolStyleParams::default(),
+                &resolver,
                 w as u32,
                 h as u32,
                 |_, _, _| {},

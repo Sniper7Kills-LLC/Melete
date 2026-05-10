@@ -21,9 +21,12 @@ use std::sync::Arc;
 /// errors. A failed resolve returns `None` and the caller decides what
 /// to do (typically draw a placeholder).
 ///
-/// `Send + Sync` so resolvers can be cloned into render tasks /
-/// background threads without further wrapping.
-pub trait AssetResolver: Send + Sync {
+/// Not `Send + Sync`: the desktop holds its backend in
+/// `Rc<RefCell<dyn JournalBackend>>` (single-threaded GTK main loop)
+/// and the web viewer is single-threaded wasm. A future caller that
+/// needs cross-thread sharing can introduce a `SyncAssetResolver`
+/// marker without disturbing existing impls.
+pub trait AssetResolver {
     /// Look up the bytes for `name`. Returns `None` if no asset by
     /// that name is registered, or if the asset is registered but
     /// its bytes are unavailable in this resolver (e.g. a remote
@@ -33,7 +36,7 @@ pub trait AssetResolver: Send + Sync {
 
 impl<F> AssetResolver for F
 where
-    F: Fn(&str) -> Option<Arc<[u8]>> + Send + Sync,
+    F: Fn(&str) -> Option<Arc<[u8]>>,
 {
     fn resolve(&self, name: &str) -> Option<Arc<[u8]>> {
         self(name)

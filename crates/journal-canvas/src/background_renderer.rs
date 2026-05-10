@@ -1,22 +1,11 @@
-use std::path::PathBuf;
-
-#[cfg(feature = "desktop")]
-use std::cell::RefCell;
-#[cfg(feature = "desktop")]
-use std::collections::HashMap;
-#[cfg(feature = "desktop")]
-use std::path::Path;
-
 #[cfg(feature = "desktop")]
 use gtk4::cairo;
-#[cfg(feature = "desktop")]
-use gtk4::gdk_pixbuf::Pixbuf;
-#[cfg(feature = "desktop")]
-use gtk4::prelude::*;
 #[cfg(feature = "desktop")]
 use journal_core::Color;
 #[cfg(feature = "desktop")]
 use journal_core::Rect;
+
+pub use journal_core::AssetResolver;
 
 use crate::grid_renderer::GridSettings;
 #[cfg(feature = "desktop")]
@@ -82,12 +71,16 @@ pub enum BackgroundConfig {
     Hexagonal {
         spacing: f64,
     },
+    /// Page-template image background. `asset` is the short
+    /// `asset:<name>` URI fragment the resolver looks up to fetch the
+    /// raw bytes from `index.db::page_template_assets`.
     Image {
-        path: PathBuf,
+        asset: String,
         size_canvas: (f64, f64),
     },
+    /// Page-template PDF background. Same resolver model as `Image`.
     Pdf {
-        path: PathBuf,
+        asset: String,
         page: u32,
         size_canvas: (f64, f64),
     },
@@ -174,21 +167,21 @@ pub fn draw_background(
         BackgroundConfig::Hexagonal { spacing } => {
             draw_hexagonal(ctx, transform, *spacing);
         }
-        BackgroundConfig::Image { path, size_canvas } => {
-            draw_image(ctx, page_rect, path, *size_canvas);
+        BackgroundConfig::Image { asset, size_canvas } => {
+            // Cairo path no longer resolves asset URIs — primary
+            // canvas rendering goes through Vello, which carries
+            // the asset resolver. PDF export + thumbnails fall back
+            // to a blank background when the template is image-backed.
+            // TODO(post-1.0): wire a resolver into the Cairo path
+            // so PDF export keeps full template fidelity.
+            let _ = (ctx, page_rect, asset, size_canvas);
         }
         BackgroundConfig::Pdf {
-            path,
+            asset,
             page,
             size_canvas,
         } => {
-            #[cfg(feature = "pdf")]
-            draw_pdf(ctx, page_rect, path, *page, *size_canvas);
-            #[cfg(not(feature = "pdf"))]
-            {
-                let _ = (path, page, size_canvas);
-                tracing::warn!("PDF support disabled");
-            }
+            let _ = (ctx, page_rect, asset, page, size_canvas);
         }
     }
 }
@@ -284,184 +277,6 @@ fn draw_lines(
     let _ = ctx.stroke();
 
     ctx.restore().ok();
-}
-
-#[cfg(feature = "desktop")]
-#[derive(Clone)]
-struct CachedSurface {
-    surface: cairo::ImageSurface,
-    pixel_w: i32,
-    pixel_h: i32,
-}
-
-#[cfg(feature = "desktop")]
-thread_local! {
-    static IMAGE_CACHE: RefCell<HashMap<PathBuf, CachedSurface>> = RefCell::new(HashMap::new());
-}
-
-#[cfg(feature = "desktop")]
-fn load_surface(path: &Path) -> Option<CachedSurface> {
-    let pixbuf = match Pixbuf::from_file(path) {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!("pixbuf failed to load {:?}: {}", path, e);
-            return None;
-        }
-    };
-    let w = pixbuf.width();
-    let h = pixbuf.height();
-    if w <= 0 || h <= 0 {
-        return None;
-    }
-    let surface = match cairo::ImageSurface::create(cairo::Format::ARgb32, w, h) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("cairo create surface failed for {:?}: {}", path, e);
-            return None;
-        }
-    };
-    {
-        let ctx = match cairo::Context::new(&surface) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!("cairo context failed for surface {:?}: {}", path, e);
-                return None;
-            }
-        };
-        ctx.set_source_pixbuf(&pixbuf, 0.0, 0.0);
-        let _ = ctx.paint();
-    }
-    Some(CachedSurface {
-        surface,
-        pixel_w: w,
-        pixel_h: h,
-    })
-}
-
-#[cfg(feature = "desktop")]
-fn with_cached_surface<F: FnOnce(&CachedSurface)>(path: &Path, f: F) {
-    IMAGE_CACHE.with(|cache| {
-        let mut map = cache.borrow_mut();
-        if !map.contains_key(path) {
-            if let Some(loaded) = load_surface(path) {
-                map.insert(path.to_path_buf(), loaded);
-            }
-        }
-        if let Some(entry) = map.get(path) {
-            f(entry);
-        }
-    });
-}
-
-#[cfg(all(feature = "pdf", feature = "desktop"))]
-thread_local! {
-    static PDF_CACHE: RefCell<HashMap<(PathBuf, u32), CachedSurface>> = RefCell::new(HashMap::new());
-}
-
-#[cfg(all(feature = "pdf", feature = "desktop"))]
-fn render_pdf_to_surface(path: &Path, page_idx: u32) -> Option<CachedSurface> {
-    use poppler::Document;
-    let abs = match path.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!("canonicalize {:?}: {}", path, e);
-            return None;
-        }
-    };
-    let uri = format!("file://{}", abs.display());
-    let doc = match Document::from_file(&uri, None) {
-        Ok(d) => d,
-        Err(e) => {
-            tracing::warn!("poppler open {}: {}", uri, e);
-            return None;
-        }
-    };
-    let page = match doc.page(page_idx as i32) {
-        Some(p) => p,
-        None => {
-            tracing::warn!("pdf page {} missing in {}", page_idx, uri);
-            return None;
-        }
-    };
-    let (w_pts, h_pts) = page.size();
-    // Rasterize at 2x for sharpness on zoom
-    let scale = 2.0;
-    let pw = (w_pts * scale).ceil().max(1.0) as i32;
-    let ph = (h_pts * scale).ceil().max(1.0) as i32;
-    let surface = cairo::ImageSurface::create(cairo::Format::ARgb32, pw, ph).ok()?;
-    {
-        let ctx = cairo::Context::new(&surface).ok()?;
-        ctx.set_source_rgb(1.0, 1.0, 1.0);
-        let _ = ctx.paint();
-        ctx.scale(scale, scale);
-        page.render(&ctx);
-    }
-    Some(CachedSurface {
-        surface,
-        pixel_w: pw,
-        pixel_h: ph,
-    })
-}
-
-#[cfg(all(feature = "pdf", feature = "desktop"))]
-fn draw_pdf(
-    ctx: &cairo::Context,
-    page_rect: Rect,
-    path: &Path,
-    page_idx: u32,
-    size_canvas: (f64, f64),
-) {
-    if size_canvas.0 <= 0.0 || size_canvas.1 <= 0.0 {
-        return;
-    }
-    let key = (path.to_path_buf(), page_idx);
-    PDF_CACHE.with(|cache| {
-        let mut map = cache.borrow_mut();
-        if !map.contains_key(&key) {
-            if let Some(loaded) = render_pdf_to_surface(path, page_idx) {
-                map.insert(key.clone(), loaded);
-            }
-        }
-        if let Some(cached) = map.get(&key) {
-            let target_w = page_rect.width.max(size_canvas.0);
-            let target_h = page_rect.height.max(size_canvas.1);
-            let sx = target_w / cached.pixel_w as f64;
-            let sy = target_h / cached.pixel_h as f64;
-            ctx.save().ok();
-            ctx.rectangle(page_rect.x, page_rect.y, target_w, target_h);
-            ctx.clip();
-            ctx.translate(page_rect.x, page_rect.y);
-            ctx.scale(sx, sy);
-            let _ = ctx.set_source_surface(&cached.surface, 0.0, 0.0);
-            let _ = ctx.paint();
-            ctx.restore().ok();
-        }
-    });
-}
-
-#[cfg(feature = "desktop")]
-fn draw_image(ctx: &cairo::Context, page_rect: Rect, path: &Path, size_canvas: (f64, f64)) {
-    if size_canvas.0 <= 0.0 || size_canvas.1 <= 0.0 {
-        return;
-    }
-    with_cached_surface(path, |cached| {
-        if cached.pixel_w <= 0 || cached.pixel_h <= 0 {
-            return;
-        }
-        let target_w = page_rect.width.max(size_canvas.0);
-        let target_h = page_rect.height.max(size_canvas.1);
-        let sx = target_w / cached.pixel_w as f64;
-        let sy = target_h / cached.pixel_h as f64;
-
-        ctx.save().ok();
-        ctx.rectangle(page_rect.x, page_rect.y, target_w, target_h);
-        ctx.clip();
-        ctx.translate(page_rect.x, page_rect.y);
-        ctx.scale(sx, sy);
-        let _ = ctx.set_source_surface(&cached.surface, 0.0, 0.0);
-        let _ = ctx.paint();
-        ctx.restore().ok();
-    });
 }
 
 /// Draw an equilateral-triangle (isometric) lattice across the visible

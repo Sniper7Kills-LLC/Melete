@@ -214,6 +214,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 widget_ctx,
                 overlays,
                 brush_params,
+                resolver,
             ) = {
                 let s = state.borrow();
                 let mut frame: Vec<journal_core::Stroke> = s.strokes.clone();
@@ -270,6 +271,14 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     cursor_tip,
                     fade_alpha,
                 };
+                let resolver: Box<dyn journal_core::AssetResolver> =
+                    match s.current_template.as_ref() {
+                        Some(t) => Box::new(crate::asset_resolver::PageTemplateAssetResolver::new(
+                            s.backend.clone(),
+                            t.id.0,
+                        )),
+                        None => Box::new(crate::asset_resolver::null_resolver()),
+                    };
                 (
                     s.transform,
                     frame,
@@ -280,6 +289,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     widget_ctx,
                     overlays,
                     s.brush_params,
+                    resolver,
                 )
             };
 
@@ -312,6 +322,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 &selected_ids,
                 &overlays,
                 &brush_params,
+                resolver.as_ref(),
                 w,
                 h,
                 |scene, world_to_screen, pr| {
@@ -798,19 +809,19 @@ fn bg_fingerprint<H: std::hash::Hasher>(bg: &journal_canvas::BackgroundConfig, h
             5u8.hash(h);
             spacing.to_bits().hash(h);
         }
-        B::Image { path, size_canvas } => {
+        B::Image { asset, size_canvas } => {
             6u8.hash(h);
-            path.hash(h);
+            asset.hash(h);
             size_canvas.0.to_bits().hash(h);
             size_canvas.1.to_bits().hash(h);
         }
         B::Pdf {
-            path,
+            asset,
             page,
             size_canvas,
         } => {
             7u8.hash(h);
-            path.hash(h);
+            asset.hash(h);
             page.hash(h);
             size_canvas.0.to_bits().hash(h);
             size_canvas.1.to_bits().hash(h);

@@ -10,7 +10,6 @@
 //! offscreen target.
 
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use journal_core::{BlendMode, Color as JColor, Point, Rect, Stroke};
@@ -23,7 +22,7 @@ use vello::peniko::{
 
 type PImage = ImageBrush;
 
-use crate::background_renderer::BackgroundConfig;
+use crate::background_renderer::{AssetResolver, BackgroundConfig};
 use crate::grid_renderer::GridSettings;
 use vello::wgpu;
 use vello::{AaConfig, RenderParams, Renderer, RendererOptions, Scene};
@@ -335,12 +334,14 @@ pub struct VelloRenderer {
     renderer: Renderer,
     target: Option<Target>,
     scene: Scene,
-    /// Cache of decoded raster images keyed by absolute path. peniko::Image
-    /// is itself ref-counted (via `Blob<u8>`'s Arc) so cloning is cheap.
-    image_cache: HashMap<PathBuf, PImage>,
-    /// Cache of rasterized PDF pages.
+    /// Cache of decoded raster images keyed by `(asset_name, sha256)`
+    /// when the resolver supplied a digest, or by `(asset_name, "")`
+    /// when not. peniko::Image is itself ref-counted (via `Blob<u8>`'s
+    /// Arc) so cloning is cheap.
+    image_cache: HashMap<String, PImage>,
+    /// Cache of rasterized PDF pages keyed by `(asset_name, page)`.
     #[cfg(feature = "pdf")]
-    pdf_cache: HashMap<(PathBuf, u32), PImage>,
+    pdf_cache: HashMap<(String, u32), PImage>,
 }
 
 struct Target {
@@ -389,24 +390,32 @@ impl VelloRenderer {
         })
     }
 
-    fn ensure_image_for_bg(&mut self, path: &Path) -> Option<PImage> {
-        if let Some(img) = self.image_cache.get(path) {
+    fn ensure_image_for_bg(
+        &mut self,
+        asset: &str,
+        resolver: &dyn AssetResolver,
+    ) -> Option<PImage> {
+        if let Some(img) = self.image_cache.get(asset) {
             return Some(img.clone());
         }
-        let dyn_img = match image::ImageReader::open(path) {
-            Ok(r) => match r.with_guessed_format().map(|r| r.decode()) {
-                Ok(Ok(d)) => d,
-                Ok(Err(e)) => {
-                    tracing::warn!("decode {:?}: {}", path, e);
-                    return None;
-                }
-                Err(e) => {
-                    tracing::warn!("guess format {:?}: {}", path, e);
-                    return None;
-                }
-            },
+        let bytes = match resolver.resolve(asset) {
+            Some(b) => b,
+            None => {
+                tracing::warn!("asset {:?} not found in resolver", asset);
+                return None;
+            }
+        };
+        let dyn_img = match image::ImageReader::new(std::io::Cursor::new(bytes.as_ref()))
+            .with_guessed_format()
+            .map(|r| r.decode())
+        {
+            Ok(Ok(d)) => d,
+            Ok(Err(e)) => {
+                tracing::warn!("decode asset {:?}: {}", asset, e);
+                return None;
+            }
             Err(e) => {
-                tracing::warn!("open image {:?}: {}", path, e);
+                tracing::warn!("guess format asset {:?}: {}", asset, e);
                 return None;
             }
         };
@@ -422,24 +431,36 @@ impl VelloRenderer {
             height: h,
         };
         let image = PImage::new(data);
-        self.image_cache.insert(path.to_path_buf(), image.clone());
+        self.image_cache.insert(asset.to_string(), image.clone());
         Some(image)
     }
 
     #[cfg(feature = "pdf")]
-    fn ensure_pdf_for_bg(&mut self, path: &Path, page_idx: u32) -> Option<PImage> {
-        let key = (path.to_path_buf(), page_idx);
+    fn ensure_pdf_for_bg(
+        &mut self,
+        asset: &str,
+        page_idx: u32,
+        resolver: &dyn AssetResolver,
+    ) -> Option<PImage> {
+        let key = (asset.to_string(), page_idx);
         if let Some(img) = self.pdf_cache.get(&key) {
             return Some(img.clone());
         }
-        let bytes = render_pdf_page_to_rgba8(path, page_idx)?;
-        let blob = Blob::new(Arc::new(bytes.bytes));
+        let bytes = match resolver.resolve(asset) {
+            Some(b) => b,
+            None => {
+                tracing::warn!("pdf asset {:?} not found in resolver", asset);
+                return None;
+            }
+        };
+        let raster = render_pdf_page_to_rgba8(bytes.as_ref(), page_idx)?;
+        let blob = Blob::new(Arc::new(raster.bytes));
         let data = ImageData {
             data: blob,
             format: ImageFormat::Rgba8,
             alpha_type: ImageAlphaType::Alpha,
-            width: bytes.width,
-            height: bytes.height,
+            width: raster.width,
+            height: raster.height,
         };
         let image = PImage::new(data);
         self.pdf_cache.insert(key, image.clone());
@@ -492,6 +513,7 @@ impl VelloRenderer {
         selected_ids: &HashSet<Uuid>,
         overlays: &OverlayState,
         brush_params: &ToolStyleParams,
+        resolver: &dyn AssetResolver,
         w: u32,
         h: u32,
         widgets_draw: F,
@@ -506,9 +528,11 @@ impl VelloRenderer {
         // build_scene doesn't need a mutable self borrow (the cache lives on
         // self alongside the scene).
         let bg_image = match background {
-            BackgroundConfig::Image { path, .. } => self.ensure_image_for_bg(path),
+            BackgroundConfig::Image { asset, .. } => self.ensure_image_for_bg(asset, resolver),
             #[cfg(feature = "pdf")]
-            BackgroundConfig::Pdf { path, page, .. } => self.ensure_pdf_for_bg(path, *page),
+            BackgroundConfig::Pdf { asset, page, .. } => {
+                self.ensure_pdf_for_bg(asset, *page, resolver)
+            }
             _ => None,
         };
         self.ensure_target(w, h);
@@ -596,21 +620,15 @@ struct PdfRgba8 {
 }
 
 #[cfg(feature = "pdf")]
-fn render_pdf_page_to_rgba8(path: &Path, page_idx: u32) -> Option<PdfRgba8> {
+fn render_pdf_page_to_rgba8(bytes: &[u8], page_idx: u32) -> Option<PdfRgba8> {
     use gtk4::cairo;
+    use gtk4::glib;
     use poppler::Document;
-    let abs = match path.canonicalize() {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!("canonicalize {:?}: {}", path, e);
-            return None;
-        }
-    };
-    let uri = format!("file://{}", abs.display());
-    let doc = match Document::from_file(&uri, None) {
+    let g_bytes = glib::Bytes::from(bytes);
+    let doc = match Document::from_bytes(&g_bytes, None) {
         Ok(d) => d,
         Err(e) => {
-            tracing::warn!("poppler open {}: {}", uri, e);
+            tracing::warn!("poppler open: {}", e);
             return None;
         }
     };
