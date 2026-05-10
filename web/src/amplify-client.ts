@@ -90,6 +90,12 @@ interface ListOpts<T> {
 
 type ByOwnerOpts = { authMode?: AuthMode; limit?: number };
 type ByOwnerArgs = { owner: string };
+type GetArgs = { id: string };
+type GetOpts = { authMode?: AuthMode };
+interface GetResult<T> {
+  data: T | null;
+  errors?: { message: string }[];
+}
 
 interface PageTemplateOps {
   list(opts?: ListOpts<PageTemplateRow>): Promise<ListResult<PageTemplateRow>>;
@@ -97,6 +103,7 @@ interface PageTemplateOps {
     args: ByOwnerArgs,
     opts?: ByOwnerOpts,
   ): Promise<ListResult<PageTemplateRow>>;
+  get(args: GetArgs, opts?: GetOpts): Promise<GetResult<PageTemplateRow>>;
 }
 
 interface NotebookTemplateOps {
@@ -107,6 +114,10 @@ interface NotebookTemplateOps {
     args: ByOwnerArgs,
     opts?: ByOwnerOpts,
   ): Promise<ListResult<NotebookTemplateRow>>;
+  get(
+    args: GetArgs,
+    opts?: GetOpts,
+  ): Promise<GetResult<NotebookTemplateRow>>;
 }
 
 interface BrushOps {
@@ -115,6 +126,34 @@ interface BrushOps {
     args: ByOwnerArgs,
     opts?: ByOwnerOpts,
   ): Promise<ListResult<BrushRow>>;
+  get(args: GetArgs, opts?: GetOpts): Promise<GetResult<BrushRow>>;
+}
+
+interface MutationResult<T> {
+  data: T | null;
+  errors?: { message: string }[];
+}
+
+interface PublishArgs {
+  id: string;
+  visibility: Visibility;
+}
+
+interface ForkArgs {
+  id: string;
+}
+
+interface MutationOps {
+  publishPageTemplate(args: PublishArgs): Promise<MutationResult<PageTemplateRow>>;
+  publishNotebookTemplate(
+    args: PublishArgs,
+  ): Promise<MutationResult<NotebookTemplateRow>>;
+  publishBrush(args: PublishArgs): Promise<MutationResult<BrushRow>>;
+  forkPageTemplate(args: ForkArgs): Promise<MutationResult<PageTemplateRow>>;
+  forkNotebookTemplate(
+    args: ForkArgs,
+  ): Promise<MutationResult<NotebookTemplateRow>>;
+  forkBrush(args: ForkArgs): Promise<MutationResult<BrushRow>>;
 }
 
 interface AmplifyDataClient {
@@ -123,6 +162,7 @@ interface AmplifyDataClient {
     NotebookTemplate: NotebookTemplateOps;
     Brush: BrushOps;
   };
+  mutations: MutationOps;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional, see comment above

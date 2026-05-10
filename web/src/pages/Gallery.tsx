@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuthenticator } from "@aws-amplify/ui-react";
 
 import {
   client,
@@ -505,6 +507,114 @@ function useBrushesData(): LoadState<BrushEntry> {
 }
 
 // ---------------------------------------------------------------------
+// Auth-gated actions: Edit + Fork
+// ---------------------------------------------------------------------
+
+type ForkKind = "PageTemplate" | "NotebookTemplate" | "Brush";
+
+async function callFork(kind: ForkKind, id: string) {
+  switch (kind) {
+    case "PageTemplate":
+      return client.mutations.forkPageTemplate({ id });
+    case "NotebookTemplate":
+      return client.mutations.forkNotebookTemplate({ id });
+    case "Brush":
+      return client.mutations.forkBrush({ id });
+  }
+}
+
+interface ActionRowProps {
+  /** Where Edit should route — null disables the button. */
+  editHref?: string | null;
+  forkKind: ForkKind;
+  rowId: string;
+  /** Number badge text (widget count, layer count, etc.). Optional. */
+  meta?: string;
+  /** Download handler — clipboard copy is the canonical action. */
+  onDownload: () => void;
+  downloadLabel: string;
+}
+
+function ActionRow({
+  editHref,
+  forkKind,
+  rowId,
+  meta,
+  onDownload,
+  downloadLabel,
+}: ActionRowProps) {
+  const navigate = useNavigate();
+  // useAuthenticator throws if no Provider — but main.tsx wraps the
+  // whole app, so this is safe everywhere.
+  const { authStatus } = useAuthenticator((c) => [c.authStatus]);
+  const signedIn = authStatus === "authenticated";
+
+  const [forking, setForking] = useState(false);
+  const [forkErr, setForkErr] = useState<string | null>(null);
+
+  async function fork() {
+    if (!signedIn || forking) return;
+    setForking(true);
+    setForkErr(null);
+    try {
+      const r = await callFork(forkKind, rowId);
+      if (r.errors?.length) {
+        setForkErr(r.errors.map((e) => e.message).join("; "));
+        return;
+      }
+      // Land the user on /my so they can see the new private copy.
+      navigate("/my");
+    } catch (e) {
+      setForkErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setForking(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="mt-3 flex items-center justify-between">
+        {meta ? (
+          <span className="text-[11px] text-slate-400">{meta}</span>
+        ) : (
+          <span />
+        )}
+        <div className="flex items-center gap-1">
+          {editHref && (
+            <button
+              type="button"
+              onClick={() => navigate(editHref)}
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Edit
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={fork}
+            disabled={!signedIn || forking}
+            title={signedIn ? "Fork into your library" : "Sign in to fork"}
+            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {forking ? "Forking…" : "Fork"}
+          </button>
+          <button
+            type="button"
+            onClick={onDownload}
+            className="rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
+          >
+            {downloadLabel}
+          </button>
+        </div>
+      </div>
+      {forkErr && (
+        <div className="mt-1 text-[10px] text-rose-600">{forkErr}</div>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------
 // Search + filter chrome
 // ---------------------------------------------------------------------
 
@@ -669,19 +779,18 @@ function PageTemplateCard({ entry }: { entry: PageEntry }) {
         <div className="mt-1 flex-1 text-xs leading-snug text-slate-500">
           {entry.description}
         </div>
-        <div className="mt-3 flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">
-            {widgetCount === null
+        <ActionRow
+          editHref={entry.parsed ? `/designer?edit=${entry.id}` : null}
+          forkKind="PageTemplate"
+          rowId={entry.id}
+          meta={
+            widgetCount === null
               ? "—"
-              : `${widgetCount} widget${widgetCount === 1 ? "" : "s"}`}
-          </span>
-          <button
-            onClick={download}
-            className="rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
-          >
-            {copied ? "Copied!" : "Download"}
-          </button>
-        </div>
+              : `${widgetCount} widget${widgetCount === 1 ? "" : "s"}`
+          }
+          onDownload={download}
+          downloadLabel={copied ? "Copied!" : "Download"}
+        />
       </div>
     </article>
   );
@@ -785,14 +894,12 @@ function NotebookCard({ entry }: { entry: NotebookEntry }) {
         <div className="mt-1 flex-1 text-xs leading-snug text-slate-500">
           {entry.description}
         </div>
-        <div className="mt-3 flex items-center justify-end">
-          <button
-            onClick={download}
-            className="rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
-          >
-            {copied ? "Copied!" : "Download"}
-          </button>
-        </div>
+        <ActionRow
+          forkKind="NotebookTemplate"
+          rowId={entry.id}
+          onDownload={download}
+          downloadLabel={copied ? "Copied!" : "Download"}
+        />
       </div>
     </article>
   );
@@ -870,19 +977,18 @@ function BrushCard({ entry }: { entry: BrushEntry }) {
         <div className="mt-1 flex-1 text-xs leading-snug text-slate-500">
           {entry.description}
         </div>
-        <div className="mt-3 flex items-center justify-between">
-          <span className="text-[11px] text-slate-400">
-            {layerCount === null
+        <ActionRow
+          editHref={brush ? `/tooler?edit=${entry.id}` : null}
+          forkKind="Brush"
+          rowId={entry.id}
+          meta={
+            layerCount === null
               ? "—"
-              : `${layerCount} layer${layerCount === 1 ? "" : "s"}`}
-          </span>
-          <button
-            onClick={download}
-            className="rounded bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-700"
-          >
-            {copied ? "Copied!" : "Download"}
-          </button>
-        </div>
+              : `${layerCount} layer${layerCount === 1 ? "" : "s"}`
+          }
+          onDownload={download}
+          downloadLabel={copied ? "Copied!" : "Download"}
+        />
       </div>
     </article>
   );

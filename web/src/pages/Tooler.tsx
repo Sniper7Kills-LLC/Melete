@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
+import { client } from "@/amplify-client";
+import { isStubBackend } from "@/amplify-config";
 import type { BlendMode } from "@/types";
 import {
   BLEND_LABELS,
@@ -84,6 +87,60 @@ const CURSOR_KINDS: CursorShapeKind[] = [
 export function Tooler() {
   const [brush, setBrush] = useState<Brush>(() => newBrush());
   const [selectedLayerIdx, setSelectedLayerIdx] = useState<number | null>(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  const [loadStatus, setLoadStatus] = useState<
+    null | { kind: "loading" } | { kind: "err"; message: string }
+  >(null);
+
+  // Load a public Brush by id when ?edit=<id> is on the URL. apiKey
+  // auth keeps the lookup anonymous; the WASM shim parses the TOML.
+  useEffect(() => {
+    if (!editId) return;
+    if (isStubBackend) {
+      setLoadStatus({ kind: "err", message: "Backend not configured." });
+      return;
+    }
+    let cancelled = false;
+    setLoadStatus({ kind: "loading" });
+    client.models.Brush.get({ id: editId }, { authMode: "apiKey" })
+      .then((r) => {
+        if (cancelled) return;
+        if (r.errors?.length) {
+          setLoadStatus({
+            kind: "err",
+            message: r.errors.map((e) => e.message).join("; "),
+          });
+          return;
+        }
+        if (!r.data) {
+          setLoadStatus({ kind: "err", message: "Brush not found." });
+          return;
+        }
+        try {
+          const parsed = shim.parseBrushToml(r.data.bodyToml);
+          setBrush(parsed);
+          setSelectedLayerIdx(parsed.layers.length > 0 ? 0 : null);
+          setLoadStatus(null);
+          setSearchParams({}, { replace: true });
+        } catch (e) {
+          setLoadStatus({
+            kind: "err",
+            message: `Parse failed: ${e instanceof Error ? e.message : String(e)}`,
+          });
+        }
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setLoadStatus({
+          kind: "err",
+          message: e instanceof Error ? e.message : String(e),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, setSearchParams]);
 
   const selectedLayer =
     selectedLayerIdx !== null ? brush.layers[selectedLayerIdx] : null;
@@ -169,7 +226,18 @@ export function Tooler() {
   // ---- render ---------------------------------------------------------
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col">
+      {loadStatus?.kind === "loading" && (
+        <div className="border-b border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
+          Loading brush…
+        </div>
+      )}
+      {loadStatus?.kind === "err" && (
+        <div className="border-b border-rose-200 bg-rose-50 px-3 py-1 text-xs text-rose-700">
+          Could not load brush: {loadStatus.message}
+        </div>
+      )}
+      <div className="flex flex-1 overflow-hidden">
       {/* Left — palette + layers */}
       <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
         <div className="border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -413,6 +481,7 @@ export function Tooler() {
           sharing are deferred — see issue #37.
         </p>
       </aside>
+      </div>
     </div>
   );
 }

@@ -1,19 +1,18 @@
-// Signed-in "my templates" view.
-//
-// Wrapped in `<Authenticator>` so the UI shows the Cognito sign-in flow
-// when the visitor is anonymous. The auth-mode for these queries is
-// `userPool` (Amplify Gen 2's default), which is what the schema's
-// `allow.owner()` rule honors — visitors only see rows where their
-// Cognito sub matches `owner`.
+// Signed-in "my templates" view. AccountChip in the header drives
+// auth — this page reads `useAuthenticator` to decide whether to show
+// content, a sign-in prompt, or the stub-mode banner. The data-mode
+// queries use Cognito userPool auth (the schema's `allow.owner()`
+// rule scopes results to the caller's Cognito sub).
 
-import { Authenticator } from '@aws-amplify/ui-react';
+import { useAuthenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import { useEffect, useState } from 'react';
 import {
   client,
-  type PageTemplateRow as PageTemplate,
-  type NotebookTemplateRow as NotebookTemplate,
   type BrushRow as Brush,
+  type NotebookTemplateRow as NotebookTemplate,
+  type PageTemplateRow as PageTemplate,
+  type Visibility,
 } from '../amplify-client';
 import { isStubBackend } from '../amplify-config';
 
@@ -22,12 +21,21 @@ type LoadState<T> =
   | { status: 'ok'; rows: T[] }
   | { status: 'err'; message: string };
 
+type ModelKind = 'PageTemplate' | 'NotebookTemplate' | 'Brush';
+
+interface RowLike {
+  id: string;
+  name: string;
+  visibility: string;
+  description?: string | null;
+}
+
 function useMyList<T extends { id: string }>(
   ownerSub: string | undefined,
   fetcher: (
     sub: string,
   ) => Promise<{ data: T[] | null; errors?: { message: string }[] }>,
-): LoadState<T> {
+): [LoadState<T>, (mut: (rows: T[]) => T[]) => void] {
   const [state, setState] = useState<LoadState<T>>({ status: 'loading' });
   useEffect(() => {
     if (!ownerSub) return;
@@ -64,17 +72,114 @@ function useMyList<T extends { id: string }>(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetcher is stable per page
   }, [ownerSub]);
-  return state;
+
+  function patch(mut: (rows: T[]) => T[]) {
+    setState((s) =>
+      s.status === 'ok' ? { status: 'ok', rows: mut(s.rows) } : s,
+    );
+  }
+  return [state, patch];
 }
 
-function MySection<
-  T extends { id: string; name: string; visibility: string; description?: string | null },
->({
+async function publishRow(
+  kind: ModelKind,
+  id: string,
+  visibility: Visibility,
+) {
+  switch (kind) {
+    case 'PageTemplate':
+      return client.mutations.publishPageTemplate({ id, visibility });
+    case 'NotebookTemplate':
+      return client.mutations.publishNotebookTemplate({ id, visibility });
+    case 'Brush':
+      return client.mutations.publishBrush({ id, visibility });
+  }
+}
+
+const VISIBILITIES: Visibility[] = ['PRIVATE', 'UNLISTED', 'PUBLIC'];
+
+function VisibilityBadge({ v }: { v: string }) {
+  return (
+    <span
+      className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+        v === 'PUBLIC'
+          ? 'bg-emerald-100 text-emerald-700'
+          : v === 'UNLISTED'
+            ? 'bg-amber-100 text-amber-700'
+            : 'bg-slate-100 text-slate-600'
+      }`}
+    >
+      {v}
+    </span>
+  );
+}
+
+function PublishMenu({
+  kind,
+  row,
+  onChange,
+}: {
+  kind: ModelKind;
+  row: RowLike;
+  onChange: (next: Visibility) => void;
+}) {
+  const [busy, setBusy] = useState<Visibility | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function pick(target: Visibility) {
+    if (target === row.visibility || busy) return;
+    setBusy(target);
+    setErr(null);
+    try {
+      const r = await publishRow(kind, row.id, target);
+      if (r.errors?.length) {
+        setErr(r.errors.map((e) => e.message).join('; '));
+      } else {
+        onChange(target);
+      }
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {err && (
+        <span
+          title={err}
+          className="max-w-[180px] truncate text-[10px] text-rose-600"
+        >
+          {err}
+        </span>
+      )}
+      <select
+        value={row.visibility}
+        disabled={busy !== null}
+        onChange={(e) => pick(e.target.value as Visibility)}
+        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-700 disabled:opacity-50"
+      >
+        {VISIBILITIES.map((v) => (
+          <option key={v} value={v}>
+            {busy === v ? `${v}…` : v}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function MySection<T extends RowLike>({
   title,
+  kind,
   state,
+  patch,
 }: {
   title: string;
+  kind: ModelKind;
   state: LoadState<T>;
+  patch: (mut: (rows: T[]) => T[]) => void;
 }) {
   return (
     <section className="space-y-2">
@@ -97,9 +202,9 @@ function MySection<
           {state.rows.map((row) => (
             <li
               key={row.id}
-              className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2"
+              className="flex items-center justify-between gap-3 rounded border border-slate-200 bg-white px-3 py-2"
             >
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-slate-900">
                   {row.name}
                 </div>
@@ -109,17 +214,18 @@ function MySection<
                   </div>
                 )}
               </div>
-              <span
-                className={`rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                  row.visibility === 'PUBLIC'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : row.visibility === 'UNLISTED'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'bg-slate-100 text-slate-600'
-                }`}
-              >
-                {row.visibility}
-              </span>
+              <VisibilityBadge v={row.visibility} />
+              <PublishMenu
+                kind={kind}
+                row={row}
+                onChange={(next) =>
+                  patch((rows) =>
+                    rows.map((r) =>
+                      r.id === row.id ? { ...r, visibility: next } : r,
+                    ),
+                  )
+                }
+              />
             </li>
           ))}
         </ul>
@@ -128,73 +234,92 @@ function MySection<
   );
 }
 
-function MyContent({
-  signOut,
-  email,
-  ownerSub,
-}: {
-  signOut: (() => void) | undefined;
-  email: string | undefined;
-  ownerSub: string | undefined;
-}) {
-  const pages = useMyList<PageTemplate>(ownerSub, (sub) =>
+function MyContent({ ownerSub }: { ownerSub: string }) {
+  const [pages, patchPages] = useMyList<PageTemplate>(ownerSub, (sub) =>
     client.models.PageTemplate.listPageTemplatesByOwner({ owner: sub }),
   );
-  const notebooks = useMyList<NotebookTemplate>(ownerSub, (sub) =>
-    client.models.NotebookTemplate.listNotebookTemplatesByOwner({ owner: sub }),
+  const [notebooks, patchNotebooks] = useMyList<NotebookTemplate>(
+    ownerSub,
+    (sub) =>
+      client.models.NotebookTemplate.listNotebookTemplatesByOwner({
+        owner: sub,
+      }),
   );
-  const brushes = useMyList<Brush>(ownerSub, (sub) =>
+  const [brushes, patchBrushes] = useMyList<Brush>(ownerSub, (sub) =>
     client.models.Brush.listBrushesByOwner({ owner: sub }),
   );
 
   return (
     <div className="h-full overflow-auto p-6">
       <div className="mx-auto max-w-5xl space-y-6">
-        <header className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">
-              My templates
-            </h1>
-            <p className="text-sm text-slate-600">
-              Templates and brushes you have authored. Only you can see
-              private rows.
-            </p>
-            {isStubBackend && (
-              <div className="mt-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                <strong>Backend not configured.</strong> Run{' '}
-                <code>npx ampx sandbox</code> at the repo root.
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            {email && <span className="text-slate-600">{email}</span>}
-            <button
-              type="button"
-              onClick={signOut}
-              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-slate-700 hover:bg-slate-100"
-            >
-              Sign out
-            </button>
-          </div>
+        <header>
+          <h1 className="text-2xl font-semibold text-slate-900">
+            My templates
+          </h1>
+          <p className="text-sm text-slate-600">
+            Templates and brushes you have authored. Use the visibility
+            menu on each row to publish — <strong>UNLISTED</strong>{' '}
+            shows only via direct link, <strong>PUBLIC</strong> appears
+            in the Gallery.
+          </p>
         </header>
-        <MySection title="Page templates" state={pages} />
-        <MySection title="Notebook templates" state={notebooks} />
-        <MySection title="Brushes" state={brushes} />
+        <MySection
+          title="Page templates"
+          kind="PageTemplate"
+          state={pages}
+          patch={patchPages}
+        />
+        <MySection
+          title="Notebook templates"
+          kind="NotebookTemplate"
+          state={notebooks}
+          patch={patchNotebooks}
+        />
+        <MySection
+          title="Brushes"
+          kind="Brush"
+          state={brushes}
+          patch={patchBrushes}
+        />
       </div>
     </div>
   );
 }
 
 export function My() {
-  return (
-    <Authenticator loginMechanisms={['email']} signUpAttributes={['email']}>
-      {({ signOut, user }) => (
-        <MyContent
-          signOut={signOut}
-          email={user?.signInDetails?.loginId}
-          ownerSub={user?.userId}
-        />
-      )}
-    </Authenticator>
-  );
+  const { authStatus, user } = useAuthenticator((c) => [
+    c.authStatus,
+    c.user,
+  ]);
+
+  if (isStubBackend) {
+    return (
+      <div className="h-full overflow-auto p-6">
+        <div className="mx-auto max-w-3xl rounded border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+          <div className="text-base font-semibold">Backend not configured</div>
+          <div className="mt-1">
+            Run <code>npx ampx sandbox</code> at the repo root to see
+            your templates here.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (authStatus !== 'authenticated' || !user?.userId) {
+    return (
+      <div className="h-full overflow-auto p-6">
+        <div className="mx-auto max-w-3xl rounded border border-slate-200 bg-white px-4 py-6 text-center text-slate-600">
+          <div className="text-lg font-semibold text-slate-900">
+            Sign in to see your templates
+          </div>
+          <p className="mt-2 text-sm">
+            Use the <strong>Sign in</strong> button in the top-right.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return <MyContent ownerSub={user.userId} />;
 }

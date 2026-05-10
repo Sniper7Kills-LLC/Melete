@@ -9,9 +9,11 @@ import {
   Routes,
 } from "react-router-dom";
 import { Amplify } from "aws-amplify";
+import { Authenticator } from "@aws-amplify/ui-react";
 
 import "./index.css";
 import { amplifyOutputs, isStubBackend } from "./amplify-config";
+import { AccountChip } from "./components/AccountChip";
 import { Viewer } from "./pages/Viewer";
 import { Designer } from "./pages/Designer";
 import { Templeter } from "./pages/Templeter";
@@ -22,8 +24,8 @@ import { useUnits } from "./store/unitsStore";
 
 // Configure Amplify before any GraphQL or auth call. The stub falls in
 // when there's no real `amplify_outputs.json` at the repo root; in that
-// case the Public/My pages render a "Backend not configured" banner and
-// skip live network calls.
+// case Gallery / My render a "Backend not configured" banner and skip
+// live network calls.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Amplify accepts the wide outputs shape
 Amplify.configure(amplifyOutputs as any);
 
@@ -88,9 +90,10 @@ function NavBar() {
         </NavLink>
       </nav>
       <UnitsSelector />
-      <span className="ml-3 text-xs text-slate-400">
+      <span className="text-xs text-slate-400">
         {isStubBackend ? "Backend: stub" : "Backend: live"}
       </span>
+      <AccountChip />
     </header>
   );
 }
@@ -115,38 +118,43 @@ function UnitsSelector() {
 
 function App() {
   return (
-    <BrowserRouter
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
-      <div className="flex h-full flex-col">
-        <NavBar />
-        <main className="flex-1 overflow-hidden">
-          <Routes>
-            <Route path="/" element={<Viewer />} />
-            <Route path="/designer" element={<Designer />} />
-            <Route path="/templeter" element={<Templeter />} />
-            <Route path="/tooler" element={<Tooler />} />
-            <Route path="/gallery" element={<Gallery />} />
-            {/* Legacy /public path collapsed into /gallery — keep a
-                redirect so any external links / bookmarks survive. */}
-            <Route path="/public" element={<Navigate to="/gallery" replace />} />
-            <Route path="/my" element={<My />} />
-            <Route
-              path="*"
-              element={
-                <div className="p-8 text-slate-600">
-                  Not found.{" "}
-                  <Link to="/" className="text-indigo-600 underline">
-                    Go home
-                  </Link>
-                  .
-                </div>
-              }
-            />
-          </Routes>
-        </main>
-      </div>
-    </BrowserRouter>
+    <Authenticator.Provider>
+      <BrowserRouter
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <div className="flex h-full flex-col">
+          <NavBar />
+          <main className="flex-1 overflow-hidden">
+            <Routes>
+              <Route path="/" element={<Viewer />} />
+              <Route path="/designer" element={<Designer />} />
+              <Route path="/templeter" element={<Templeter />} />
+              <Route path="/tooler" element={<Tooler />} />
+              <Route path="/gallery" element={<Gallery />} />
+              {/* Legacy /public path collapsed into /gallery — keep a
+                  redirect so any external links / bookmarks survive. */}
+              <Route
+                path="/public"
+                element={<Navigate to="/gallery" replace />}
+              />
+              <Route path="/my" element={<My />} />
+              <Route
+                path="*"
+                element={
+                  <div className="p-8 text-slate-600">
+                    Not found.{" "}
+                    <Link to="/" className="text-indigo-600 underline">
+                      Go home
+                    </Link>
+                    .
+                  </div>
+                }
+              />
+            </Routes>
+          </main>
+        </div>
+      </BrowserRouter>
+    </Authenticator.Provider>
   );
 }
 

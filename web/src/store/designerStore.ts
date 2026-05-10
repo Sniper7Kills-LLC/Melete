@@ -161,6 +161,8 @@ interface DesignerState {
   undo: () => void;
   redo: () => void;
   reset: () => void;
+  /** Replace the current template wholesale; clears history. */
+  loadTemplate: (t: PageTemplate) => void;
 }
 
 export const useDesigner = create<DesignerState>((set, get) => {
@@ -283,6 +285,15 @@ export const useDesigner = create<DesignerState>((set, get) => {
     reset() {
       set({
         template: makeBlankTemplate(),
+        selectedWidgetId: null,
+        undoStack: [],
+        redoStack: [],
+      });
+    },
+
+    loadTemplate(t) {
+      set({
+        template: t,
         selectedWidgetId: null,
         undoStack: [],
         redoStack: [],

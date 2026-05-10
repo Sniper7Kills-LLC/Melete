@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { WidgetPalette } from "@/components/WidgetPalette";
 import { DesignSurface } from "@/components/DesignSurface";
 import { PropertyPanel } from "@/components/PropertyPanel";
 import { SaveModal } from "@/components/SaveModal";
+import { client } from "@/amplify-client";
+import { isStubBackend } from "@/amplify-config";
 import { useDesigner } from "@/store/designerStore";
 import {
   displayToMm,
@@ -27,6 +30,7 @@ export function Designer() {
   const undo = useDesigner((s) => s.undo);
   const redo = useDesigner((s) => s.redo);
   const reset = useDesigner((s) => s.reset);
+  const loadTemplate = useDesigner((s) => s.loadTemplate);
   const undoStack = useDesigner((s) => s.undoStack);
   const redoStack = useDesigner((s) => s.redoStack);
   const template = useDesigner((s) => s.template);
@@ -39,6 +43,64 @@ export function Designer() {
   const snapDisplay = mmToDisplay(snapMm, units);
 
   const [savedToml, setSavedToml] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  const [loadStatus, setLoadStatus] = useState<
+    null | { kind: "loading" } | { kind: "err"; message: string }
+  >(null);
+
+  // Load a public PageTemplate by id when ?edit=<id> is on the URL.
+  // Uses apiKey auth so the lookup works for anonymous visitors. Once
+  // fetched + parsed via the WASM shim, hydrates the designer store
+  // and clears the query param so a refresh doesn't re-import.
+  useEffect(() => {
+    if (!editId) return;
+    if (isStubBackend) {
+      setLoadStatus({ kind: "err", message: "Backend not configured." });
+      return;
+    }
+    let cancelled = false;
+    setLoadStatus({ kind: "loading" });
+    client.models.PageTemplate.get(
+      { id: editId },
+      { authMode: "apiKey" },
+    )
+      .then((r) => {
+        if (cancelled) return;
+        if (r.errors?.length) {
+          setLoadStatus({
+            kind: "err",
+            message: r.errors.map((e) => e.message).join("; "),
+          });
+          return;
+        }
+        if (!r.data) {
+          setLoadStatus({ kind: "err", message: "Template not found." });
+          return;
+        }
+        try {
+          const parsed = shim.parseTemplateToml(r.data.bodyToml);
+          loadTemplate(parsed);
+          setLoadStatus(null);
+          setSearchParams({}, { replace: true });
+        } catch (e) {
+          setLoadStatus({
+            kind: "err",
+            message: `Parse failed: ${e instanceof Error ? e.message : String(e)}`,
+          });
+        }
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setLoadStatus({
+          kind: "err",
+          message: e instanceof Error ? e.message : String(e),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, loadTemplate, setSearchParams]);
 
   function onSave() {
     const toml = shim.serializeTemplateToml(template);
@@ -47,6 +109,16 @@ export function Designer() {
 
   return (
     <div className="flex h-full flex-col">
+      {loadStatus?.kind === "loading" && (
+        <div className="border-b border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
+          Loading template…
+        </div>
+      )}
+      {loadStatus?.kind === "err" && (
+        <div className="border-b border-rose-200 bg-rose-50 px-3 py-1 text-xs text-rose-700">
+          Could not load template: {loadStatus.message}
+        </div>
+      )}
       <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 text-sm">
         <button
           onClick={undo}
