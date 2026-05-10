@@ -1,5 +1,6 @@
 import { defineBackend } from '@aws-amplify/backend';
 import { Function as LambdaFunction } from 'aws-cdk-lib/aws-lambda';
+import { CfnUserPoolClient } from 'aws-cdk-lib/aws-cognito';
 import { PolicyStatement, Effect } from 'aws-cdk-lib/aws-iam';
 import { auth } from './auth/resource';
 import { data } from './data/resource';
@@ -12,6 +13,20 @@ export const backend = defineBackend({
   storage,
   assetPresign,
 });
+
+// Enable USER_PASSWORD_AUTH on the Cognito App Client. The Rust
+// desktop client uses Cognito's plain InitiateAuth (USER_PASSWORD_AUTH
+// flow) rather than SRP — SRP would require a much larger crypto
+// dependency surface in the storage crate. SRP / refresh / custom
+// flows stay enabled for the web client.
+const userPoolClient = backend.auth.resources.userPoolClient.node
+  .defaultChild as CfnUserPoolClient;
+userPoolClient.explicitAuthFlows = [
+  'ALLOW_USER_PASSWORD_AUTH',
+  'ALLOW_USER_SRP_AUTH',
+  'ALLOW_REFRESH_TOKEN_AUTH',
+  'ALLOW_CUSTOM_AUTH',
+];
 
 const presignFn = backend.assetPresign.resources.lambda as LambdaFunction;
 const bucket = backend.storage.resources.bucket;
