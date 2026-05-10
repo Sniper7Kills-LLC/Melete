@@ -1,0 +1,146 @@
+# Sandbox round-trip smoke test (Phase 6.3 follow-up).
+#
+# Spins up an ephemeral Amplify sandbox, seeds it via the Node
+# DDB script, exercises the Rust client end-to-end via the
+# `smoke_signin` test, and tears the sandbox back down.
+#
+# Manual-trigger only (`workflow_dispatch`) — each run deploys ~30
+# AWS resources (CloudFormation nested stacks, Cognito pools, DDB
+# tables, S3 buckets, AppSync API, Lambda, IAM) and takes ~10 min.
+# Add an `on: schedule:` block once we want a nightly canary.
+#
+# Required GitHub repository secrets:
+#   AWS_ROLE_TO_ASSUME   IAM role ARN with sandbox-deploy + admin
+#                        Cognito + DDB perms; trust policy must allow
+#                        `token.actions.githubusercontent.com`
+#   AWS_REGION           e.g. `us-east-1`
+#
+# Or, if not using OIDC, fall back to:
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+#   AWS_REGION
+#
+# The Cognito test user is created in-job (no secret to leak); a
+# random password is generated, used, and discarded.
+
+name: sandbox-roundtrip
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # for OIDC-based AWS auth
+  contents: read
+
+concurrency:
+  # Two parallel runs would race on the shared sandbox identifier
+  # ('sniper7kills'). Serialise.
+  group: sandbox-roundtrip
+  cancel-in-progress: false
+
+jobs:
+  roundtrip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        if: ${{ vars.USE_OIDC == 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Configure AWS credentials (static)
+        if: ${{ vars.USE_OIDC != 'true' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install GTK4 system deps (for journal-storage tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
+
+      - name: npm install
+        run: npm ci
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: CDK bootstrap (idempotent)
+        run: npx cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID }}/${{ secrets.AWS_REGION }}
+        continue-on-error: true
+
+      - name: Deploy ephemeral sandbox
+        env:
+          # Use the run id as the sandbox identifier so concurrent
+          # branches don't collide.
+          AMPX_IDENTIFIER: ci-${{ github.run_id }}
+        run: |
+          npx ampx sandbox --once --identifier "$AMPX_IDENTIFIER"
+
+      - name: Provision Cognito test user
+        id: testuser
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          USER_POOL_ID=$(jq -r '.auth.user_pool_id' amplify_outputs.json)
+          USERNAME="ci-test+$RANDOM@example.com"
+          # Strong random password meeting Cognito defaults.
+          PASSWORD="P$(openssl rand -base64 18 | tr -d '/+= ')!9aA"
+          aws cognito-idp admin-create-user \
+            --user-pool-id "$USER_POOL_ID" \
+            --username "$USERNAME" \
+            --user-attributes Name=email,Value="$USERNAME" Name=email_verified,Value=true \
+            --message-action SUPPRESS
+          aws cognito-idp admin-set-user-password \
+            --user-pool-id "$USER_POOL_ID" \
+            --username "$USERNAME" \
+            --password "$PASSWORD" \
+            --permanent
+          echo "username=$USERNAME" >> "$GITHUB_OUTPUT"
+          # Mask the password from logs and propagate to next steps.
+          echo "::add-mask::$PASSWORD"
+          echo "password=$PASSWORD" >> "$GITHUB_OUTPUT"
+
+      - name: Seed templates via DynamoDB
+        run: node tools/seed-data/publish.mjs
+
+      - name: Cargo build
+        run: cargo build -p journal-storage --features remote
+
+      - name: Smoke test (sign-in + list_public_*)
+        env:
+          JOURNAL_TEST_USERNAME: ${{ steps.testuser.outputs.username }}
+          JOURNAL_TEST_PASSWORD: ${{ steps.testuser.outputs.password }}
+        run: |
+          cargo test -p journal-storage --features remote \
+            --test smoke_signin -- --ignored --nocapture
+
+      - name: Tear down sandbox
+        if: ${{ always() }}
+        env:
+          AMPX_IDENTIFIER: ci-${{ github.run_id }}
+        run: |
+          npx ampx sandbox delete --yes --identifier "$AMPX_IDENTIFIER" || true
