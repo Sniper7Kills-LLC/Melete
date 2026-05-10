@@ -454,8 +454,6 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
             };
             new_cfg.developer_mode = inputs.developer_mode;
             new_cfg.stylus_top_action = inputs.stylus_top_action;
-            new_cfg.sync_worker_count = inputs.sync_worker_count.clamp(1, 16);
-            new_cfg.autosync_default = inputs.autosync_default;
             if let Err(e) = crate::config::save(&new_cfg) {
                 tracing::error!("save config: {e}");
             }
@@ -590,55 +588,8 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
         .build();
     dev_group.add(&dev_row);
 
-    // ── Cloud sync ──────────────────────────────────────────────────
-    #[cfg(feature = "remote")]
-    let (sync_workers_row, autosync_row, sync_group) = {
-        let sync_group = adw::PreferencesGroup::builder()
-            .title("Cloud sync")
-            .description(
-                "Notebook sync to AWS. Worker count controls how many \
-                 stroke uploads run in parallel — higher = faster eraser \
-                 fan-out, more concurrent connections.",
-            )
-            .build();
-
-        let workers_row = adw::SpinRow::with_range(1.0, 16.0, 1.0);
-        workers_row.set_title("Sync worker threads");
-        workers_row.set_subtitle("Default 4. Takes effect after relaunch.");
-        workers_row.set_value(cfg.sync_worker_count as f64);
-        sync_group.add(&workers_row);
-
-        let auto_row = adw::SwitchRow::builder()
-            .title("Auto-enable Live Sync on notebook open")
-            .subtitle("When signed in, every notebook opens with live sync already on.")
-            .active(cfg.autosync_default)
-            .build();
-        sync_group.add(&auto_row);
-
-        (workers_row, auto_row, sync_group)
-    };
-
-    // ── Account ─────────────────────────────────────────────────────
-    #[cfg(feature = "remote")]
-    let account_group = {
-        let g = adw::PreferencesGroup::builder()
-            .title("Account")
-            .description(
-                "Sign in to publish your templates / brushes to the public catalog \
-                 and fork others into your library.",
-            )
-            .build();
-        crate::account_settings::populate_account_group(parent, &g);
-        g
-    };
-
-    // Group order: account / sync up top (identity-first), then display,
-    // drawing, stylus, empty-state, developer. Reads top-down from
-    // "who am I" → "what does this look like" → "advanced".
-    #[cfg(feature = "remote")]
-    page.add(&account_group);
-    #[cfg(feature = "remote")]
-    page.add(&sync_group);
+    // App-only groups. Account-specific settings (Account, Cloud sync)
+    // moved to `open_account_settings`.
     page.add(&display_group);
     page.add(&drawing_group);
     page.add(&stylus_group);
@@ -653,10 +604,6 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
         let text_row = text_row.clone();
         let dev_row = dev_row.clone();
         let top_action_row = top_action_row.clone();
-        #[cfg(feature = "remote")]
-        let sync_workers_row = sync_workers_row.clone();
-        #[cfg(feature = "remote")]
-        let autosync_row = autosync_row.clone();
         move || PersistInputs {
             image_path: path_state.borrow().clone(),
             text: text_row.text().to_string(),
@@ -665,14 +612,6 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
                 1 => crate::config::StylusTopAction::ColorCycle,
                 _ => crate::config::StylusTopAction::ToolCycle,
             },
-            #[cfg(feature = "remote")]
-            sync_worker_count: sync_workers_row.value() as usize,
-            #[cfg(not(feature = "remote"))]
-            sync_worker_count: 4,
-            #[cfg(feature = "remote")]
-            autosync_default: autosync_row.is_active(),
-            #[cfg(not(feature = "remote"))]
-            autosync_default: false,
         }
     };
 
@@ -739,23 +678,6 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
             persist(&snapshot_inputs());
         });
     }
-    #[cfg(feature = "remote")]
-    {
-        let persist = persist.clone();
-        let snapshot_inputs = snapshot_inputs.clone();
-        sync_workers_row.connect_changed(move |_| {
-            persist(&snapshot_inputs());
-        });
-    }
-    #[cfg(feature = "remote")]
-    {
-        let persist = persist.clone();
-        let snapshot_inputs = snapshot_inputs.clone();
-        autosync_row.connect_active_notify(move |_| {
-            persist(&snapshot_inputs());
-        });
-    }
-
     prefs.present();
 }
 
@@ -764,8 +686,86 @@ struct PersistInputs {
     text: String,
     developer_mode: bool,
     stylus_top_action: crate::config::StylusTopAction,
-    sync_worker_count: usize,
-    autosync_default: bool,
+}
+
+/// Account settings window — separate from app preferences so account
+/// state (sign-in, sync workers, autosync) lives next to identity, not
+/// alongside font / stylus / empty-state preferences.
+#[cfg(feature = "remote")]
+pub fn open_account_settings(parent: &ApplicationWindow, state: SharedState) {
+    use adw::prelude::*;
+    let _ = state; // reserved for future plan/usage hooks
+
+    let cfg = crate::config::load();
+    let prefs = adw::PreferencesWindow::builder()
+        .title("Account settings")
+        .transient_for(parent)
+        .modal(true)
+        .default_width(560)
+        .default_height(560)
+        .build();
+
+    let page = adw::PreferencesPage::new();
+
+    // ── Account ─────────────────────────────────────────────────────
+    let account_group = adw::PreferencesGroup::builder()
+        .title("Account")
+        .description(
+            "Sign in to publish your templates / brushes to the public catalog \
+             and fork others into your library.",
+        )
+        .build();
+    crate::account_settings::populate_account_group(parent, &account_group);
+
+    // ── Cloud sync ──────────────────────────────────────────────────
+    let sync_group = adw::PreferencesGroup::builder()
+        .title("Cloud sync")
+        .description(
+            "Notebook sync to AWS. Worker count controls how many \
+             stroke uploads run in parallel — higher = faster eraser \
+             fan-out, more concurrent connections.",
+        )
+        .build();
+
+    let workers_row = adw::SpinRow::with_range(1.0, 16.0, 1.0);
+    workers_row.set_title("Sync worker threads");
+    workers_row.set_subtitle("Default 4. Takes effect after relaunch.");
+    workers_row.set_value(cfg.sync_worker_count as f64);
+    sync_group.add(&workers_row);
+
+    let autosync_row = adw::SwitchRow::builder()
+        .title("Auto-enable Live Sync on notebook open")
+        .subtitle("When signed in, every notebook opens with live sync already on.")
+        .active(cfg.autosync_default)
+        .build();
+    sync_group.add(&autosync_row);
+
+    page.add(&account_group);
+    page.add(&sync_group);
+    prefs.add(&page);
+
+    let persist_sync = {
+        let workers_row = workers_row.clone();
+        let autosync_row = autosync_row.clone();
+        move || {
+            let mut new_cfg = crate::config::load();
+            new_cfg.sync_worker_count = (workers_row.value() as usize).clamp(1, 16);
+            new_cfg.autosync_default = autosync_row.is_active();
+            if let Err(e) = crate::config::save(&new_cfg) {
+                tracing::error!("save config: {e}");
+            }
+        }
+    };
+    {
+        let persist = persist_sync.clone();
+        workers_row.connect_changed(move |_| persist());
+    }
+    {
+        let persist = persist_sync.clone();
+        autosync_row.connect_active_notify(move |_| persist());
+    }
+
+    prefs.present();
 }
 
 // ── Pen presets settings dialog ───────────────────────────────────────────────

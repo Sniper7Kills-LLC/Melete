@@ -464,7 +464,7 @@ fn open_account_popover(
         let state = state.clone();
         settings_btn.connect_clicked(move |_| {
             popover_clone.popdown();
-            crate::settings_dialogs::open_app_settings(&parent, state.clone(), Box::new(|| {}));
+            crate::settings_dialogs::open_account_settings(&parent, state.clone());
         });
     }
     vbox.append(&settings_btn);
