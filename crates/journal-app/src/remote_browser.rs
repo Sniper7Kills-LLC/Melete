@@ -22,7 +22,7 @@ pub fn open_browser(parent: &ApplicationWindow, state: SharedState) {
         .transient_for(parent)
         .modal(true)
         .title("Browse public catalog")
-        .default_width(720)
+        .default_width(760)
         .default_height(720)
         .build();
 
@@ -34,40 +34,49 @@ pub fn open_browser(parent: &ApplicationWindow, state: SharedState) {
     let header = GtkBox::builder()
         .orientation(Orientation::Horizontal)
         .spacing(8)
-        .margin_top(8)
-        .margin_bottom(4)
-        .margin_start(12)
-        .margin_end(12)
+        .margin_top(10)
+        .margin_bottom(6)
+        .margin_start(14)
+        .margin_end(14)
         .build();
-    let title = Label::builder()
-        .label("Public templates + brushes")
-        .halign(gtk4::Align::Start)
+    let title_col = GtkBox::builder()
+        .orientation(Orientation::Vertical)
         .hexpand(true)
         .build();
-    title.add_css_class("title-3");
+    let title = Label::builder()
+        .label("Public catalog")
+        .halign(gtk4::Align::Start)
+        .build();
+    title.add_css_class("title-2");
+    let subtitle = Label::builder()
+        .label("Templates and brushes shared by the community. Fork to copy into your library.")
+        .halign(gtk4::Align::Start)
+        .wrap(true)
+        .build();
+    subtitle.add_css_class("dim-label");
+    title_col.append(&title);
+    title_col.append(&subtitle);
+    header.append(&title_col);
+
     let close_btn = Button::with_label("Close");
+    close_btn.set_valign(gtk4::Align::Center);
     {
         let win = win.clone();
         close_btn.connect_clicked(move |_| win.close());
     }
-    header.append(&title);
     header.append(&close_btn);
     outer.append(&header);
 
     // Tabs: Page Templates / Notebook Templates / Brushes.
+    // Each tab manages its own refresh + state so reloads only re-fetch
+    // the active model.
     let notebook = Notebook::builder().vexpand(true).hexpand(true).build();
-    notebook.append_page(
-        &build_tab(state.clone(), Kind::PageTemplate),
-        Some(&Label::new(Some("Page templates"))),
-    );
-    notebook.append_page(
-        &build_tab(state.clone(), Kind::NotebookTemplate),
-        Some(&Label::new(Some("Notebook templates"))),
-    );
-    notebook.append_page(
-        &build_tab(state.clone(), Kind::Brush),
-        Some(&Label::new(Some("Brushes"))),
-    );
+    let (page_body, page_label, _page_refresh) = build_tab(state.clone(), Kind::PageTemplate);
+    let (nb_body, nb_label, _nb_refresh) = build_tab(state.clone(), Kind::NotebookTemplate);
+    let (brush_body, brush_label, _brush_refresh) = build_tab(state.clone(), Kind::Brush);
+    notebook.append_page(&page_body, Some(&page_label));
+    notebook.append_page(&nb_body, Some(&nb_label));
+    notebook.append_page(&brush_body, Some(&brush_label));
     outer.append(&notebook);
 
     win.set_child(Some(&outer));
@@ -81,22 +90,49 @@ enum Kind {
     Brush,
 }
 
-fn build_tab(state: SharedState, kind: Kind) -> GtkBox {
+impl Kind {
+    fn tab_base_label(self) -> &'static str {
+        match self {
+            Kind::PageTemplate => "Page templates",
+            Kind::NotebookTemplate => "Notebook templates",
+            Kind::Brush => "Brushes",
+        }
+    }
+}
+
+/// Build a tab. Returns (body, tab_label, refresh_fn).
+/// The tab label updates with the current row count; the refresh fn
+/// is exposed in case the caller wants to invoke it externally
+/// (currently only the in-tab Refresh button uses it).
+fn build_tab(
+    state: SharedState,
+    kind: Kind,
+) -> (GtkBox, Label, std::rc::Rc<dyn Fn()>) {
     let body = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(8)
-        .margin_top(8)
+        .margin_top(10)
         .margin_bottom(8)
-        .margin_start(12)
-        .margin_end(12)
+        .margin_start(14)
+        .margin_end(14)
         .build();
 
+    let toolbar = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(6)
+        .build();
     let status = Label::builder()
         .label("Loading…")
         .halign(gtk4::Align::Start)
+        .hexpand(true)
         .build();
     status.add_css_class("dim-label");
-    body.append(&status);
+    let refresh_btn = Button::from_icon_name("view-refresh-symbolic");
+    refresh_btn.set_tooltip_text(Some("Refresh"));
+    refresh_btn.add_css_class("flat");
+    toolbar.append(&status);
+    toolbar.append(&refresh_btn);
+    body.append(&toolbar);
 
     let scroll = ScrolledWindow::builder()
         .vexpand(true)
@@ -109,12 +145,35 @@ fn build_tab(state: SharedState, kind: Kind) -> GtkBox {
     scroll.set_child(Some(&list));
     body.append(&scroll);
 
-    // Synchronous fetch on the GTK main thread — sub-second over a
-    // healthy connection. If this becomes laggy we move to a worker
-    // thread + glib::idle_add.
-    let result = fetch(kind);
-    populate(&list, &status, kind, result, state);
-    body
+    let tab_label = Label::new(Some(kind.tab_base_label()));
+
+    let refresh: std::rc::Rc<dyn Fn()> = {
+        let list = list.clone();
+        let status = status.clone();
+        let state = state.clone();
+        let tab_label = tab_label.clone();
+        std::rc::Rc::new(move || {
+            status.set_label("Loading…");
+            // Synchronous fetch on the GTK main thread — sub-second
+            // over a healthy connection. If this becomes laggy we
+            // move to a worker thread + glib::idle_add.
+            let result = fetch(kind);
+            let count = result.as_ref().map(|v| v.len()).unwrap_or(0);
+            tab_label.set_label(&match count {
+                0 => kind.tab_base_label().to_string(),
+                n => format!("{} ({})", kind.tab_base_label(), n),
+            });
+            populate(&list, &status, kind, result, state.clone());
+        })
+    };
+
+    {
+        let refresh = refresh.clone();
+        refresh_btn.connect_clicked(move |_| refresh());
+    }
+
+    refresh();
+    (body, tab_label, refresh)
 }
 
 fn fetch(kind: Kind) -> Result<Vec<RemoteTemplateSummary>, RemoteError> {
