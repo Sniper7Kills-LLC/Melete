@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "auth": {
+    "user_pool_id": "stub",
+    "aws_region": "us-east-1",
+    "user_pool_client_id": "stub",
+    "identity_pool_id": "stub",
+    "username_attributes": ["email"],
+    "standard_required_attributes": ["email"],
+    "user_verification_types": ["email"],
+    "unauthenticated_identities_enabled": true
+  },
+  "data": {
+    "url": "https://stub.appsync-api.us-east-1.amazonaws.com/graphql",
+    "aws_region": "us-east-1",
+    "default_authorization_type": "AMAZON_COGNITO_USER_POOLS",
+    "authorization_types": ["AMAZON_COGNITO_USER_POOLS", "API_KEY"],
+    "api_key": "stub"
+  }
+}

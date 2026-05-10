@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Journal web POC — view-only viewer + page-template designer. Vite + React + TS, mock WASM stub.",
+  "description": "Journal web POC — view-only viewer + page-template designer + Amplify-backed public/my template lists. Vite + React + TS.",
   "scripts": {
     "dev": "vite",
     "wasm": "bash build-wasm.sh",
@@ -13,12 +13,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@aws-amplify/ui-react": "^6.5.5",
+    "aws-amplify": "^6.6.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.2",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@aws-amplify/backend": "^1.4.0",
     "@types/node": "^25.6.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
