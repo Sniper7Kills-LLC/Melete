@@ -17,6 +17,13 @@ pub mod multi_file_backend;
 pub mod sqlite_backend;
 pub mod template_migration;
 
+/// Phase 6.3 remote (AWS Amplify) template store. Only the build-time
+/// config skeleton lands here — issue #6 will add the network client.
+#[cfg(feature = "remote")]
+pub mod remote_template_store {
+    pub mod config;
+}
+
 // SQLite-specific store modules. Crate-internal: only `SqliteBackend`
 // delegates to them. App and library callers must use the trait surface.
 pub(crate) mod brush_store;
