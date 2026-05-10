@@ -146,6 +146,12 @@ pub struct AppConfig {
     /// advances through `color_slots`.
     #[serde(default)]
     pub stylus_top_action: StylusTopAction,
+    /// True once the user has dispatched the first-run welcome window
+    /// (either by clicking Sign In or Skip). Default `false` so a brand
+    /// new install — or a config file written before this field existed —
+    /// shows the welcome window on next boot.
+    #[serde(default)]
+    pub first_run_completed: bool,
 }
 
 /// (slug, label, font-family chain). The slug is what's persisted in
@@ -213,6 +219,7 @@ impl Default for AppConfig {
             tour_dismissed: false,
             last_seen_version: None,
             stylus_top_action: StylusTopAction::ToolCycle,
+            first_run_completed: false,
         }
     }
 }
