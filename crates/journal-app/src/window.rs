@@ -92,8 +92,11 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     }
 
     // Account chip — shows the signed-in email (or "Sign in" prompt
-    // when anonymous). Click opens the sign-in modal directly so
-    // users don't have to walk through App Settings → Account.
+    // when anonymous). Anonymous click opens the sign-in modal; signed-in
+    // click opens an account popover (email / "Account settings…" /
+    // "Sign out"). Opening App Settings was confusing — clicking an
+    // account control should land on account actions, not the global
+    // preferences window.
     #[cfg(feature = "remote")]
     {
         let account_btn = Button::new();
@@ -103,35 +106,35 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         let parent_for_acct = parent.clone();
         let state_for_acct = state.clone();
         let account_btn_for_click = account_btn.clone();
-        account_btn.connect_clicked(move |_| {
-            if crate::sign_in_modal::is_signed_in() {
-                // Already signed in — open Account preferences for
-                // sign-out / status.
-                crate::settings_dialogs::open_app_settings(
-                    &parent_for_acct,
-                    state_for_acct.clone(),
-                    Box::new(|| {}),
-                );
-            } else {
-                let btn = account_btn_for_click.clone();
+        account_btn.connect_clicked(move |btn| {
+            if !crate::sign_in_modal::is_signed_in() {
+                let chip = account_btn_for_click.clone();
                 crate::sign_in_modal::open(
                     &parent_for_acct,
                     Box::new(move |_signed_in| {
-                        refresh_account_chip(&btn);
+                        refresh_account_chip(&chip);
                     }),
                 );
+                return;
             }
+            open_account_popover(
+                btn,
+                &parent_for_acct,
+                state_for_acct.clone(),
+                account_btn_for_click.clone(),
+            );
         });
     }
 
     // Create current_notebook early so build_menu_button can share it.
     let current_notebook: Rc<RefCell<Option<NotebookId>>> = Rc::new(RefCell::new(None));
 
-    // Tools…  menu entry is built before `win` exists, so it forwards
-    // through this closure cell that's populated after `win` is built.
-    // The closure takes an optional seed brush — `None` opens
-    // blank-slate; `Some(b)` opens focused on `b`.
+    // Menu entries are built before `win` exists, so they forward through
+    // these closure cells populated after `win` is built. Each closure
+    // takes an optional seed (None = blank slate, Some(x) = focused on x).
     let tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>> =
+        Rc::new(RefCell::new(None));
+    let templates_open: Rc<RefCell<Option<Rc<dyn Fn(Option<PageTemplate>)>>>> =
         Rc::new(RefCell::new(None));
 
     let menu_btn = build_menu_button(
@@ -139,6 +142,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         state.clone(),
         current_notebook.clone(),
         tools_open.clone(),
+        templates_open.clone(),
     );
     header.pack_end(&menu_btn);
 
@@ -269,11 +273,17 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         back_btn.connect_clicked(move |_| show_home(&win));
     }
 
-    // Wire the Tools… menu entry now that `win` exists.
+    // Wire menu closures now that `win` exists.
     {
         let win = win.clone();
         *tools_open.borrow_mut() = Some(Rc::new(move |seed: Option<journal_core::Brush>| {
             show_tool_editor(&win, seed);
+        }));
+    }
+    {
+        let win = win.clone();
+        *templates_open.borrow_mut() = Some(Rc::new(move |seed: Option<PageTemplate>| {
+            show_template_editor(&win, seed);
         }));
     }
 
@@ -368,6 +378,76 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     win
 }
 
+/// Build and show a popover anchored to the account chip with the
+/// signed-in user's email and the two account actions: open Preferences
+/// to the Account group, or sign out. Built fresh each click so the
+/// email label stays in sync after sign-out + sign-in.
+#[cfg(feature = "remote")]
+fn open_account_popover(
+    anchor: &Button,
+    parent: &ApplicationWindow,
+    state: SharedState,
+    chip: Button,
+) {
+    let popover = Popover::new();
+    let vbox = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_top(8)
+        .margin_bottom(8)
+        .margin_start(8)
+        .margin_end(8)
+        .build();
+
+    let email_lbl = Label::builder()
+        .label(
+            crate::sign_in_modal::current_email()
+                .map(|e| format!("Signed in as {}", e))
+                .unwrap_or_else(|| "Signed in".to_string()),
+        )
+        .halign(Align::Start)
+        .build();
+    email_lbl.add_css_class("dim-label");
+    vbox.append(&email_lbl);
+    vbox.append(&Separator::new(Orientation::Horizontal));
+
+    let settings_btn = Button::with_label("Account settings…");
+    settings_btn.add_css_class("flat");
+    {
+        let popover_clone = popover.clone();
+        let parent = parent.clone();
+        settings_btn.connect_clicked(move |_| {
+            popover_clone.popdown();
+            crate::settings_dialogs::open_app_settings(&parent, state.clone(), Box::new(|| {}));
+        });
+    }
+    vbox.append(&settings_btn);
+
+    let signout_btn = Button::with_label("Sign out");
+    signout_btn.add_css_class("flat");
+    signout_btn.add_css_class("destructive-action");
+    {
+        let popover_clone = popover.clone();
+        let chip = chip.clone();
+        signout_btn.connect_clicked(move |_| {
+            popover_clone.popdown();
+            use journal_storage::remote_template_store::store::RemoteTemplateStore;
+            match RemoteTemplateStore::connect().and_then(|mut s| s.sign_out()) {
+                Ok(()) => refresh_account_chip(&chip),
+                Err(e) => tracing::warn!("sign_out: {e}"),
+            }
+        });
+    }
+    vbox.append(&signout_btn);
+
+    popover.set_child(Some(&vbox));
+    popover.set_parent(anchor);
+    // Drop the parent link on close so the popover widget is released
+    // (otherwise GTK holds a reference until the chip is destroyed).
+    popover.connect_closed(|p| p.unparent());
+    popover.popup();
+}
+
 /// Render the account chip in the header to reflect current sign-in
 /// state. Called on app start and after each sign-in / sign-out.
 #[cfg(feature = "remote")]
@@ -389,6 +469,7 @@ fn build_menu_button(
     state: SharedState,
     current_notebook: Rc<RefCell<Option<NotebookId>>>,
     tools_open: Rc<RefCell<Option<Rc<dyn Fn(Option<journal_core::Brush>)>>>>,
+    templates_open: Rc<RefCell<Option<Rc<dyn Fn(Option<PageTemplate>)>>>>,
 ) -> MenuButton {
     let popover = Popover::new();
     let vbox = GtkBox::builder()
@@ -400,6 +481,9 @@ fn build_menu_button(
         .margin_end(8)
         .build();
 
+    // ── File (notebook-scoped exports) ───────────────────────────────
+    // Hidden entirely when no notebook is open so the home screen menu
+    // isn't cluttered with greyed-out exporters.
     let export_btn = Button::with_label("Export page as PDF…");
     {
         let state = state.clone();
@@ -412,10 +496,7 @@ fn build_menu_button(
     }
     vbox.append(&export_btn);
 
-    // Export the entire notebook as a multi-page PDF.
     let export_nb_btn = Button::with_label("Export notebook as PDF…");
-    // Start disabled; enabled when a notebook is open.
-    export_nb_btn.set_sensitive(false);
     {
         let state = state.clone();
         let parent = parent.clone();
@@ -423,51 +504,58 @@ fn build_menu_button(
         let current_notebook = current_notebook.clone();
         export_nb_btn.connect_clicked(move |_| {
             popover_clone.popdown();
-            let nb_id = match *current_notebook.borrow() {
-                Some(id) => id,
-                None => return,
+            let Some(nb_id) = *current_notebook.borrow() else {
+                return;
             };
             do_notebook_pdf_export(&parent, state.clone(), nb_id);
         });
     }
-    // Keep sensitivity in sync with whether a notebook is open by watching
-    // via a tick callback on the button widget.
-    {
-        let export_nb_btn_tick = export_nb_btn.clone();
-        let current_notebook_tick = current_notebook.clone();
-        export_nb_btn.add_tick_callback(move |_, _| {
-            let has_nb = current_notebook_tick.borrow().is_some();
-            export_nb_btn_tick.set_sensitive(has_nb);
-            gtk4::glib::ControlFlow::Continue
-        });
-    }
     vbox.append(&export_nb_btn);
 
-    // Developer-mode toggle. Always visible. Flipping it on shows the
-    // floating Tool Options popup + the per-tool brush-tuning dialog;
-    // off hides them. State persists to config so the next launch
-    // honours the choice.
-    vbox.append(&Separator::new(Orientation::Horizontal));
-    let dev_check = gtk4::CheckButton::with_label("Developer mode");
-    dev_check.set_active(crate::config::load().developer_mode);
-    vbox.append(&dev_check);
+    let file_separator = Separator::new(Orientation::Horizontal);
+    vbox.append(&file_separator);
 
-    let tool_btn = Button::with_label("Tool settings…");
-    tool_btn.set_visible(crate::config::developer_mode_enabled(&crate::config::load()));
+    // Toggle visibility of the File group when notebook-open state changes.
     {
-        let state = state.clone();
+        let current_notebook = current_notebook.clone();
+        let export_btn = export_btn.clone();
+        let export_nb_btn = export_nb_btn.clone();
+        let sep = file_separator.clone();
+        gtk4::glib::timeout_add_local(
+            std::time::Duration::from_millis(250),
+            move || {
+                let has_nb = current_notebook.borrow().is_some();
+                export_btn.set_visible(has_nb);
+                export_nb_btn.set_visible(has_nb);
+                sep.set_visible(has_nb);
+                gtk4::glib::ControlFlow::Continue
+            },
+        );
+    }
+
+    // ── Library (manage local artifacts) ─────────────────────────────
+    let templates_btn = Button::with_label("Manage templates…");
+    {
         let parent = parent.clone();
+        let state = state.clone();
         let popover_clone = popover.clone();
-        tool_btn.connect_clicked(move |_| {
+        let templates_open = templates_open.clone();
+        templates_btn.connect_clicked(move |_| {
             popover_clone.popdown();
-            crate::settings_dialogs::open_tool_settings(&parent, state.clone());
+            let opener: crate::template_manager::OpenEditorFn = {
+                let templates_open = templates_open.clone();
+                Rc::new(move |seed: Option<PageTemplate>| {
+                    if let Some(f) = templates_open.borrow().as_ref().cloned() {
+                        f(seed);
+                    }
+                })
+            };
+            crate::template_manager::open(&parent, state.clone(), opener);
         });
     }
-    vbox.append(&tool_btn);
+    vbox.append(&templates_btn);
 
-    // Tool Editor — composable-brush full-screen page. Available to
-    // every user (not gated on dev mode).
-    let tool_editor_btn = Button::with_label("Tools…");
+    let tool_editor_btn = Button::with_label("Manage brushes/tools…");
     {
         let popover_clone = popover.clone();
         let tools_open = tools_open.clone();
@@ -480,177 +568,20 @@ fn build_menu_button(
     }
     vbox.append(&tool_editor_btn);
 
-    // Browse public catalog — only when the `remote` feature is on.
-    #[cfg(feature = "remote")]
+    vbox.append(&Separator::new(Orientation::Horizontal));
+
+    // ── App ──────────────────────────────────────────────────────────
+    let prefs_btn = Button::with_label("Preferences…");
     {
-        let browse_btn = Button::with_label("Browse public catalog…");
-        {
-            let parent = parent.clone();
-            let state = state.clone();
-            let popover_clone = popover.clone();
-            browse_btn.connect_clicked(move |_| {
-                popover_clone.popdown();
-                crate::remote_browser::open_browser(&parent, state.clone());
-            });
-        }
-        vbox.append(&browse_btn);
-    }
-
-    // Notebook sync — push the current notebook's snapshot to the
-    // cloud + (when toggled on) live-stream every new stroke. Sensitive
-    // only when a notebook is open + the user is signed in. Two
-    // buttons: "Push snapshot now" (one-shot) and "Live sync"
-    // (toggle). Per-notebook enabled state is kept in a process-local
-    // set inside `notebook_sync::ENABLED`.
-    #[cfg(feature = "remote")]
-    {
-        vbox.append(&Separator::new(Orientation::Horizontal));
-        let push_btn = Button::with_label("Sync notebook to cloud");
-        push_btn.set_sensitive(false);
-        {
-            let parent = parent.clone();
-            let state = state.clone();
-            let popover_clone = popover.clone();
-            let current_notebook = current_notebook.clone();
-            push_btn.connect_clicked(move |_| {
-                popover_clone.popdown();
-                let Some(nb_id) = *current_notebook.borrow() else {
-                    return;
-                };
-                sync_with_smart_visibility(
-                    &parent,
-                    state.clone(),
-                    nb_id,
-                    /* live_after = */ false,
-                );
-            });
-        }
-        vbox.append(&push_btn);
-
-        let visibility_btn = Button::with_label("Notebook visibility…");
-        visibility_btn.set_sensitive(false);
-        {
-            let parent = parent.clone();
-            let popover_clone = popover.clone();
-            let current_notebook = current_notebook.clone();
-            visibility_btn.connect_clicked(move |_| {
-                popover_clone.popdown();
-                let Some(nb_id) = *current_notebook.borrow() else {
-                    return;
-                };
-                let parent_for_dialog = parent.clone();
-                ask_visibility_then(
-                    &parent,
-                    "Notebook visibility",
-                    "Pick who can read this notebook on the web. Private = signed-in owner only. Unlisted = anyone with the link. Public = browsable.",
-                    move |chosen: crate::notebook_sync::NotebookVisibility| {
-                        match crate::notebook_sync::set_remote_visibility(nb_id, chosen) {
-                            Ok(()) => {
-                                tracing::info!(
-                                    "notebook_sync: visibility set to {:?} for {:?}",
-                                    chosen,
-                                    nb_id
-                                );
-                                let dialog = gtk4::AlertDialog::builder()
-                                    .message("Visibility updated")
-                                    .detail(format!("Set to {:?}.", chosen))
-                                    .build();
-                                dialog.show(Some(&parent_for_dialog));
-                            }
-                            Err(e) => {
-                                tracing::error!("notebook_sync: set_visibility failed for {:?}: {:#}", nb_id, e);
-                                let dialog = gtk4::AlertDialog::builder()
-                                    .message("Visibility change failed")
-                                    .detail(format!("{:#}", e))
-                                    .build();
-                                dialog.show(Some(&parent_for_dialog));
-                            }
-                        }
-                    },
-                );
-            });
-        }
-        vbox.append(&visibility_btn);
-        let visibility_btn_for_tick = visibility_btn.clone();
-
-        let live_check = gtk4::CheckButton::with_label("Live sync (push every stroke)");
-        live_check.set_sensitive(false);
-        {
-            let parent = parent.clone();
-            let state = state.clone();
-            let current_notebook = current_notebook.clone();
-            live_check.connect_toggled(move |btn| {
-                let Some(nb_id) = *current_notebook.borrow() else {
-                    btn.set_active(false);
-                    return;
-                };
-                if btn.is_active() {
-                    sync_with_smart_visibility(
-                        &parent,
-                        state.clone(),
-                        nb_id,
-                        /* live_after = */ true,
-                    );
-                } else {
-                    tracing::info!("notebook_sync: live sync OFF for {:?}", nb_id);
-                    crate::notebook_sync::disable(nb_id);
-                }
-            });
-        }
-        vbox.append(&live_check);
-
-        // Keep both controls in sync with notebook-open + signed-in
-        // state. We used to hang this off `push_btn.add_tick_callback`
-        // but tick callbacks only fire while the widget is mapped —
-        // and the popover's children stay unmapped until the user
-        // clicks the hamburger. That made the live-sync toggle look
-        // perpetually OFF even after autosync flipped the flag.
-        // glib::timeout_add_local runs on the main loop regardless
-        // of widget visibility, so the UI now reflects the flag the
-        // moment it changes.
-        {
-            let push_btn_tick = push_btn.clone();
-            let live_check_tick = live_check.clone();
-            let visibility_btn_tick = visibility_btn_for_tick.clone();
-            let current_notebook_tick = current_notebook.clone();
-            gtk4::glib::timeout_add_local(
-                std::time::Duration::from_millis(250),
-                move || {
-                    let has_nb = current_notebook_tick.borrow().is_some();
-                    let signed = crate::sign_in_modal::is_signed_in();
-                    let on = has_nb && signed;
-                    push_btn_tick.set_sensitive(on);
-                    live_check_tick.set_sensitive(on);
-                    visibility_btn_tick.set_sensitive(on);
-                    if let Some(nb_id) = *current_notebook_tick.borrow() {
-                        let actual = crate::notebook_sync::is_enabled(nb_id);
-                        if live_check_tick.is_active() != actual {
-                            live_check_tick.set_active(actual);
-                        }
-                    }
-                    gtk4::glib::ControlFlow::Continue
-                },
-            );
-        }
-    }
-
-    {
-        let tool_btn = tool_btn.clone();
-        dev_check.connect_toggled(move |btn| {
-            let on = btn.is_active();
-            let mut cfg = crate::config::load();
-            cfg.developer_mode = on;
-            if let Err(e) = crate::config::save(&cfg) {
-                tracing::warn!("save dev mode toggle: {e}");
-            }
-            tool_btn.set_visible(on);
-            // The Tool Options panel is wired into the canvas overlay
-            // at app startup so it can dock to the right side; toggling
-            // dev mode mid-session updates the config flag, but the
-            // panel itself only appears / disappears on the next
-            // launch. Cheap enough — restart loads fast.
+        let parent = parent.clone();
+        let state = state.clone();
+        let popover_clone = popover.clone();
+        prefs_btn.connect_clicked(move |_| {
+            popover_clone.popdown();
+            crate::settings_dialogs::open_app_settings(&parent, state.clone(), Box::new(|| {}));
         });
     }
+    vbox.append(&prefs_btn);
 
     popover.set_child(Some(&vbox));
 
@@ -1233,7 +1164,7 @@ fn build_cheatsheet_button() -> MenuButton {
 
 
 #[cfg(feature = "remote")]
-fn ask_visibility_then(
+pub(crate) fn ask_visibility_then(
     parent: &ApplicationWindow,
     title: &str,
     detail: &str,
@@ -1278,7 +1209,7 @@ fn ask_visibility_then(
 /// visibility silently. `live_after` flips the live-sync flag on after
 /// the upload completes — used by the "Live sync" toggle.
 #[cfg(feature = "remote")]
-fn sync_with_smart_visibility(
+pub(crate) fn sync_with_smart_visibility(
     parent: &ApplicationWindow,
     state: SharedState,
     nb_id: NotebookId,
