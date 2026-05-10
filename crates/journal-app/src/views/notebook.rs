@@ -368,7 +368,7 @@ fn build_bookmarks_sidebar_panel(
     wrapper.add_css_class("bookmarks-panel");
 
     let expander = Expander::builder()
-        .label(&format!("Bookmarks ({})", entries.len()))
+        .label(format!("Bookmarks ({})", entries.len()))
         .expanded(ctx.bookmarks_expanded.get())
         .build();
     {

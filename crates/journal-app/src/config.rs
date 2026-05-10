@@ -2,16 +2,11 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum StylusTopAction {
+    #[default]
     ToolCycle,
     ColorCycle,
-}
-
-impl Default for StylusTopAction {
-    fn default() -> Self {
-        StylusTopAction::ToolCycle
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

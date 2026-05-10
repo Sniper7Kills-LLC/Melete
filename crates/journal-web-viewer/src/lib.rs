@@ -577,11 +577,7 @@ fn draw_dots(
             // Approximate each dot as a tiny rect in the path. Cheaper
             // than building an Ellipse per-point and visually
             // indistinguishable at typical zooms for a viewer POC.
-            path.extend(
-                vello::kurbo::Circle::new((x, y), r)
-                    .to_path(0.05)
-                    .into_iter(),
-            );
+            path.extend(vello::kurbo::Circle::new((x, y), r).to_path(0.05));
             x += spacing;
         }
         y += spacing;

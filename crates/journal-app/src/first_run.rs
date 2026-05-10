@@ -216,8 +216,10 @@ mod tests {
 
     #[test]
     fn should_skip_when_flag_set() {
-        let mut cfg = AppConfig::default();
-        cfg.first_run_completed = true;
+        let cfg = AppConfig {
+            first_run_completed: true,
+            ..AppConfig::default()
+        };
         assert!(!should_show(&cfg));
     }
 }

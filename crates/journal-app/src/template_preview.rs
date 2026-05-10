@@ -27,7 +27,7 @@ pub fn open_preview(parent: &ApplicationWindow, template: PageTemplate) {
     let win = Window::builder()
         .transient_for(parent)
         .modal(true)
-        .title(&format!("Preview — {}", if template.name.is_empty() { "untitled template" } else { template.name.as_str() }))
+        .title(format!("Preview — {}", if template.name.is_empty() { "untitled template" } else { template.name.as_str() }))
         .default_width(720)
         .default_height(900)
         .build();
@@ -47,7 +47,7 @@ pub fn open_preview(parent: &ApplicationWindow, template: PageTemplate) {
         .build();
     let date = Local::now().date_naive();
     let date_lbl = Label::builder()
-        .label(&format!("As of {}", date.format("%a, %b %-d, %Y")))
+        .label(format!("As of {}", date.format("%a, %b %-d, %Y")))
         .halign(gtk4::Align::Start)
         .hexpand(true)
         .build();
