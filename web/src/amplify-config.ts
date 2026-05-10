@@ -16,11 +16,15 @@
 
 import stub from './amplify-outputs.stub.json';
 
-// Vite's `import.meta.glob` resolves at build time. The pattern points to
-// the repo-root file. Vite returns an empty record when the file is absent,
-// so the bundle still builds in fresh checkouts.
+// Vite's `import.meta.glob` only sees files inside the project root
+// (web/), so we resolve through a `web/amplify_outputs.json` symlink
+// that points at the repo-root file. The symlink is created by the
+// dev script (or by hand: `ln -sf ../amplify_outputs.json
+// web/amplify_outputs.json`) and is gitignored. Vite returns an
+// empty record when the file is absent, so the bundle still builds
+// in fresh checkouts without a deployed sandbox.
 const realOutputsModules = import.meta.glob<{ default: unknown }>(
-  '../../../amplify_outputs.json',
+  '../amplify_outputs.json',
   { eager: true },
 );
 
