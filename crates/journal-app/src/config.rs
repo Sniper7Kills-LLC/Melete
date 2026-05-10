@@ -282,10 +282,11 @@ pub fn save(cfg: &AppConfig) -> std::io::Result<()> {
             "config dir",
         ));
     };
-    if let Some(parent) = p.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     let text = toml::to_string(cfg)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
-    std::fs::write(&p, text)
+    // Crash-safe: write to a sibling tmp file, fsync, then rename
+    // over the destination. Without this a power-cut mid-write
+    // would leave the user with a zero-length config.toml on next
+    // boot.
+    journal_storage::fs_atomic::write_atomic(&p, text.as_bytes())
 }

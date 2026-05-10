@@ -8,6 +8,7 @@
 
 mod db;
 mod error;
+pub mod fs_atomic;
 mod schema;
 mod stroke_codec;
 mod util;

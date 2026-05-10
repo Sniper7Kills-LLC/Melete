@@ -142,11 +142,12 @@ pub fn clear_tokens() -> Result<(), AuthError> {
 
 /// Path-based file save — the unit-testable seam.
 pub(crate) fn save_to_path(path: &Path, t: &Tokens) -> Result<(), AuthError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
     let raw = toml::to_string(t)?;
-    fs::write(path, raw)?;
+    // Atomic rename keeps the token cache consistent across a
+    // crash mid-write — losing the cache forces the user to
+    // re-sign-in but doesn't corrupt the file with a partial body
+    // that would later parse as garbage.
+    crate::fs_atomic::write_atomic(path, raw.as_bytes())?;
     set_mode_0600(path)?;
     Ok(())
 }
