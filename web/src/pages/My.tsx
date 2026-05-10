@@ -416,47 +416,99 @@ function MyContent({ ownerSub }: { ownerSub: string }) {
     client.models.SavedTemplate.listSavedTemplatesByOwner({ owner: sub }),
   );
 
+  // Two-tab split: "Mine" = content the signed-in user authored;
+  // "Saved" = subscriptions to other authors' shared templates. The
+  // mental models differ (authoring + visibility actions vs. browse +
+  // unsave), so keeping them on one scroll was confusing.
+  const [tab, setTab] = useState<'mine' | 'saved'>('mine');
+  const savedCount = saved.status === 'ok' ? saved.rows.length : null;
+
   return (
     <div className="h-full overflow-auto p-6">
       <div className="mx-auto max-w-5xl space-y-6">
         <header>
           <h1 className="text-2xl font-semibold text-slate-900">
-            My templates
+            My library
           </h1>
           <p className="text-sm text-slate-600">
-            Templates and brushes you have authored. Use the visibility
-            menu on each row to publish — <strong>UNLISTED</strong>{' '}
-            shows only via direct link, <strong>PUBLIC</strong> appears
-            in the Gallery.
+            Templates and brushes you have authored, plus subscriptions
+            to other authors. Use the visibility menu on each row to
+            publish — <strong>UNLISTED</strong> shows only via direct
+            link, <strong>PUBLIC</strong> appears in the Gallery.
           </p>
         </header>
-        <MySection
-          title="Page templates"
-          kind="PageTemplate"
-          state={pages}
-          patch={patchPages}
-        />
-        <MySection
-          title="Notebook templates"
-          kind="NotebookTemplate"
-          state={notebooks}
-          patch={patchNotebooks}
-        />
-        <MySection
-          title="Brushes"
-          kind="Brush"
-          state={brushes}
-          patch={patchBrushes}
-        />
-        <MySection
-          title="Notebooks"
-          kind="Notebook"
-          state={myNotebooks}
-          patch={patchMyNotebooks}
-        />
-        <SavedSection state={saved} patch={patchSaved} />
+        <div className="flex gap-1 border-b border-slate-200">
+          <TabButton
+            active={tab === 'mine'}
+            onClick={() => setTab('mine')}
+            label="Mine"
+          />
+          <TabButton
+            active={tab === 'saved'}
+            onClick={() => setTab('saved')}
+            label={
+              savedCount === null
+                ? 'Saved'
+                : `Saved (${savedCount})`
+            }
+          />
+        </div>
+        {tab === 'mine' && (
+          <>
+            <MySection
+              title="Page templates"
+              kind="PageTemplate"
+              state={pages}
+              patch={patchPages}
+            />
+            <MySection
+              title="Notebook templates"
+              kind="NotebookTemplate"
+              state={notebooks}
+              patch={patchNotebooks}
+            />
+            <MySection
+              title="Brushes"
+              kind="Brush"
+              state={brushes}
+              patch={patchBrushes}
+            />
+            <MySection
+              title="Notebooks"
+              kind="Notebook"
+              state={myNotebooks}
+              patch={patchMyNotebooks}
+            />
+          </>
+        )}
+        {tab === 'saved' && <SavedSection state={saved} patch={patchSaved} />}
       </div>
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        'px-4 py-2 text-sm font-medium transition-colors -mb-px border-b-2 ' +
+        (active
+          ? 'border-indigo-600 text-indigo-700'
+          : 'border-transparent text-slate-500 hover:text-slate-800')
+      }
+    >
+      {label}
+    </button>
   );
 }
 
