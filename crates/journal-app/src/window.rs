@@ -3,9 +3,10 @@ use std::rc::Rc;
 
 use gtk4::prelude::*;
 use gtk4::{
-    Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Grid, HeaderBar, Label,
+    Align, ApplicationWindow, Box as GtkBox, Button, DrawingArea, Grid, HeaderBar, Image, Label,
     MenuButton, Orientation, Overlay, Popover, Separator, Stack, StackTransitionType,
 };
+use libadwaita as adw;
 use journal_core::{NotebookId, NotebookTemplate, PageTemplate};
 // NotebookStore methods reached via dyn JournalBackend.
 
@@ -81,8 +82,14 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     // hamburger menu.
     #[cfg(feature = "remote")]
     {
-        let library_btn = Button::from_icon_name("folder-download-symbolic");
-        library_btn.set_tooltip_text(Some("Library — browse public templates"));
+        let library_content = adw::ButtonContent::builder()
+            .icon_name("folder-download-symbolic")
+            .label("Library")
+            .build();
+        let library_btn = Button::builder()
+            .child(&library_content)
+            .tooltip_text("Library — browse public templates, brushes, and notebook templates")
+            .build();
         header.pack_end(&library_btn);
         let parent_for_lib = parent.clone();
         let state_for_lib = state.clone();
@@ -92,11 +99,10 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
     }
 
     // Account chip — shows the signed-in email (or "Sign in" prompt
-    // when anonymous). Anonymous click opens the sign-in modal; signed-in
-    // click opens an account popover (email / "Account settings…" /
-    // "Sign out"). Opening App Settings was confusing — clicking an
-    // account control should land on account actions, not the global
-    // preferences window.
+    // when anonymous). Click always opens the account popover; the
+    // popover itself routes anonymous users to the sign-in modal and
+    // shows account-gated entries (live sync, plan & usage, …) as
+    // disabled placeholders so users see what unlocks with an account.
     #[cfg(feature = "remote")]
     {
         let account_btn = Button::new();
@@ -107,16 +113,6 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         let state_for_acct = state.clone();
         let account_btn_for_click = account_btn.clone();
         account_btn.connect_clicked(move |btn| {
-            if !crate::sign_in_modal::is_signed_in() {
-                let chip = account_btn_for_click.clone();
-                crate::sign_in_modal::open(
-                    &parent_for_acct,
-                    Box::new(move |_signed_in| {
-                        refresh_account_chip(&chip);
-                    }),
-                );
-                return;
-            }
             open_account_popover(
                 btn,
                 &parent_for_acct,
@@ -399,16 +395,65 @@ fn open_account_popover(
         .margin_end(8)
         .build();
 
-    let email_lbl = Label::builder()
-        .label(
-            crate::sign_in_modal::current_email()
-                .map(|e| format!("Signed in as {}", e))
-                .unwrap_or_else(|| "Signed in".to_string()),
-        )
+    let signed_in = crate::sign_in_modal::is_signed_in();
+
+    // Header: email when signed-in, "Not signed in" + Sign in CTA otherwise.
+    if signed_in {
+        let email_lbl = Label::builder()
+            .label(
+                crate::sign_in_modal::current_email()
+                    .map(|e| format!("Signed in as {}", e))
+                    .unwrap_or_else(|| "Signed in".to_string()),
+            )
+            .halign(Align::Start)
+            .build();
+        email_lbl.add_css_class("dim-label");
+        vbox.append(&email_lbl);
+    } else {
+        let header_lbl = Label::builder().label("Not signed in").halign(Align::Start).build();
+        header_lbl.add_css_class("dim-label");
+        vbox.append(&header_lbl);
+
+        let signin_btn = Button::with_label("Sign in");
+        signin_btn.add_css_class("suggested-action");
+        {
+            let popover_clone = popover.clone();
+            let parent = parent.clone();
+            let chip = chip.clone();
+            signin_btn.connect_clicked(move |_| {
+                popover_clone.popdown();
+                let chip = chip.clone();
+                crate::sign_in_modal::open(
+                    &parent,
+                    Box::new(move |_signed_in| {
+                        refresh_account_chip(&chip);
+                    }),
+                );
+            });
+        }
+        vbox.append(&signin_btn);
+    }
+
+    vbox.append(&Separator::new(Orientation::Horizontal));
+
+    // Account-gated section. Shown to everyone so anonymous users see
+    // what an account unlocks. Each row is disabled when not signed in
+    // (tooltip: "Sign in to use") and disabled-with-"Coming soon" when
+    // signed in but the feature isn't wired yet.
+    let gated_lbl = Label::builder()
+        .label("With your account")
         .halign(Align::Start)
         .build();
-    email_lbl.add_css_class("dim-label");
-    vbox.append(&email_lbl);
+    gated_lbl.add_css_class("caption-heading");
+    gated_lbl.add_css_class("dim-label");
+    vbox.append(&gated_lbl);
+
+    let unlock_tip = if signed_in { "Coming soon" } else { "Sign in to use" };
+
+    vbox.append(&build_gated_row("Live sync threads", "network-transmit-receive-symbolic", unlock_tip));
+    vbox.append(&build_gated_row("Plan & usage", "emblem-default-symbolic", unlock_tip));
+    vbox.append(&build_gated_row("Published items", "view-list-symbolic", unlock_tip));
+
     vbox.append(&Separator::new(Orientation::Horizontal));
 
     let settings_btn = Button::with_label("Account settings…");
@@ -416,6 +461,7 @@ fn open_account_popover(
     {
         let popover_clone = popover.clone();
         let parent = parent.clone();
+        let state = state.clone();
         settings_btn.connect_clicked(move |_| {
             popover_clone.popdown();
             crate::settings_dialogs::open_app_settings(&parent, state.clone(), Box::new(|| {}));
@@ -423,22 +469,24 @@ fn open_account_popover(
     }
     vbox.append(&settings_btn);
 
-    let signout_btn = Button::with_label("Sign out");
-    signout_btn.add_css_class("flat");
-    signout_btn.add_css_class("destructive-action");
-    {
-        let popover_clone = popover.clone();
-        let chip = chip.clone();
-        signout_btn.connect_clicked(move |_| {
-            popover_clone.popdown();
-            use journal_storage::remote_template_store::store::RemoteTemplateStore;
-            match RemoteTemplateStore::connect().and_then(|mut s| s.sign_out()) {
-                Ok(()) => refresh_account_chip(&chip),
-                Err(e) => tracing::warn!("sign_out: {e}"),
-            }
-        });
+    if signed_in {
+        let signout_btn = Button::with_label("Sign out");
+        signout_btn.add_css_class("flat");
+        signout_btn.add_css_class("destructive-action");
+        {
+            let popover_clone = popover.clone();
+            let chip = chip.clone();
+            signout_btn.connect_clicked(move |_| {
+                popover_clone.popdown();
+                use journal_storage::remote_template_store::store::RemoteTemplateStore;
+                match RemoteTemplateStore::connect().and_then(|mut s| s.sign_out()) {
+                    Ok(()) => refresh_account_chip(&chip),
+                    Err(e) => tracing::warn!("sign_out: {e}"),
+                }
+            });
+        }
+        vbox.append(&signout_btn);
     }
-    vbox.append(&signout_btn);
 
     popover.set_child(Some(&vbox));
     popover.set_parent(anchor);
@@ -446,6 +494,24 @@ fn open_account_popover(
     // (otherwise GTK holds a reference until the chip is destroyed).
     popover.connect_closed(|p| p.unparent());
     popover.popup();
+}
+
+/// Disabled placeholder row for an account-gated feature. Renders as
+/// `[icon] Label` with a tooltip explaining why it's unavailable.
+fn build_gated_row(label: &str, icon_name: &str, tooltip: &str) -> Button {
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    row.append(&Image::from_icon_name(icon_name));
+    let lbl = Label::builder().label(label).halign(Align::Start).hexpand(true).build();
+    row.append(&lbl);
+
+    let btn = Button::builder().child(&row).build();
+    btn.add_css_class("flat");
+    btn.set_sensitive(false);
+    btn.set_tooltip_text(Some(tooltip));
+    btn
 }
 
 /// Render the account chip in the header to reflect current sign-in
