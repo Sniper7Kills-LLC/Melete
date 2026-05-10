@@ -475,7 +475,7 @@ impl RemoteTemplateOps for RemoteTemplateStore {
         if item.is_null() {
             return Err(RemoteError::Malformed(format!("page template {} not found", id)));
         }
-        Ok(parse_page_template_row_with_assets(item)?)
+        parse_page_template_row_with_assets(item)
     }
     fn get_notebook_template(&mut self, id: Uuid) -> Result<TemplateRow, RemoteError> {
         let v = self.gql(

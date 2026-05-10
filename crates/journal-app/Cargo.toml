@@ -34,10 +34,16 @@ sha2 = "0.10"
 hex = "0.4"
 base64 = "0.22"
 rusqlite = { workspace = true }
-bincode = { workspace = true }
 
 [features]
 default = ["pdf", "vello", "remote"]
 pdf = ["dep:poppler-rs", "journal-canvas/pdf"]
 vello = ["dep:glow", "dep:libloading", "dep:journal-widgets", "journal-canvas/vello"]
 remote = ["journal-storage/remote"]
+
+[package.metadata.cargo-machete]
+# `cairo-rs` is the crate name; the lib it ships is `cairo`. Used as
+# `cairo::*` in thumbnail.rs, pdf_export.rs, canvas_widget.rs etc. —
+# machete only matches by Cargo.toml name.
+# `poppler-rs` is feature-gated behind `pdf` and used in template_manager.rs.
+ignored = ["cairo-rs", "poppler-rs"]

@@ -332,6 +332,12 @@ impl RemoteNotebookStore {
     /// each id is sent as a cloud-delete and added to the
     /// `successfully_deleted` field of the report so the caller can
     /// `purge_deleted_stroke` locally.
+    // Each argument carries a distinct cloud-sync concern (notebook
+    // header / per-table rows / tombstones / visibility / progress).
+    // Bundling them into a context struct would force the caller to
+    // build that struct only to immediately destructure it inside —
+    // not worth it. Revisit if the count grows past 10.
+    #[allow(clippy::too_many_arguments)]
     pub fn sync_notebook(
         &mut self,
         notebook: &Notebook,

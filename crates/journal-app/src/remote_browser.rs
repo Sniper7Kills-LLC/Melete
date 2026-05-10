@@ -670,7 +670,7 @@ pub fn pick_visibility(
         .build();
 
     let header = Label::builder()
-        .label(&format!("Publish {} as:", title_hint))
+        .label(format!("Publish {} as:", title_hint))
         .halign(gtk4::Align::Start)
         .build();
     header.add_css_class("title-4");

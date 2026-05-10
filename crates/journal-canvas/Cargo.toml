@@ -13,7 +13,6 @@ chrono = { workspace = true }
 serde = { workspace = true }
 poppler-rs = { version = "0.24", features = ["v22_7"], optional = true }
 vello = { version = "0.8", optional = true }
-parley = { version = "0.9", optional = true }
 pollster = { version = "0.4", optional = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif"], optional = true }
 
@@ -30,7 +29,12 @@ default = ["pdf", "desktop"]
 desktop = ["dep:gtk4"]
 # `pdf` rasterises PDF pages via Poppler+Cairo, so it requires `desktop`.
 pdf = ["dep:poppler-rs", "desktop"]
-vello = ["dep:vello", "dep:parley", "dep:pollster", "dep:image"]
+vello = ["dep:vello", "dep:pollster", "dep:image"]
 
 [dev-dependencies]
 toml = { workspace = true }
+
+[package.metadata.cargo-machete]
+# Used inside `#[cfg(feature = "pdf")]` in vello_renderer.rs — cargo-machete
+# doesn't follow feature-gated `use` statements.
+ignored = ["poppler-rs"]

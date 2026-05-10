@@ -8,7 +8,6 @@ journal-core = { path = "../journal-core" }
 # Pull in just the data types from journal-canvas (`BackgroundConfig`,
 # `GridSettings`) — no GTK/Cairo. Desktop / wasm builds both compile.
 journal-canvas = { path = "../journal-canvas", default-features = false }
-chrono = { workspace = true }
 serde = { workspace = true }
 toml = { workspace = true }
 thiserror = { workspace = true }

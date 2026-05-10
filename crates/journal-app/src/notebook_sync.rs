@@ -479,7 +479,7 @@ pub fn request_metadata_resync(state: &SharedState, notebook_id: NotebookId) {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 enum PublishEvent {
-    StrokeCreated {
+    Created {
         notebook_id: NotebookId,
         page_id: PageId,
         stroke: Stroke,
@@ -490,19 +490,19 @@ enum PublishEvent {
         /// agree on which write is newer.
         enqueued_at: String,
     },
-    StrokeUpdated {
+    Updated {
         stroke: Stroke,
         enqueued_at: String,
     },
     /// Carries `notebook_id` so the worker thread can find the
     /// owning `.journal` file and hard-purge the soft-deleted row
     /// once the cloud confirms the delete.
-    StrokeDeleted {
+    Deleted {
         notebook_id: NotebookId,
         stroke_id: uuid::Uuid,
         enqueued_at: String,
     },
-    StrokeReplaced {
+    Replaced {
         notebook_id: NotebookId,
         page_id: PageId,
         old_id: uuid::Uuid,
@@ -532,13 +532,16 @@ mod queue {
     /// recreate the `pending` table when the stored version doesn't
     /// match — better than silently reading garbage from the prior
     /// format and losing every queued op.
-    /// v3: PublishEvent::StrokeDeleted gained `notebook_id` so the
+    /// v3: PublishEvent::Deleted gained `notebook_id` so the
     /// worker can hard-purge the soft-deleted local row immediately
     /// after the cloud confirms.
     /// v4: every PublishEvent variant gained `enqueued_at` so the
     /// LWW timestamp seen by the cloud is the actual op time, not
     /// the worker's later batch-encode time.
-    const SCHEMA_VERSION: i32 = 4;
+    /// v5: PublishEvent variants renamed (StrokeCreated→Created etc.).
+    /// JSON serialization writes the variant name verbatim, so rows
+    /// from older sessions deserialize as garbage; drop them.
+    const SCHEMA_VERSION: i32 = 5;
 
     fn open() -> rusqlite::Result<Connection> {
         let path = db_path();
@@ -613,39 +616,6 @@ mod queue {
         Ok(c.last_insert_rowid())
     }
 
-    /// Atomically claim the oldest row — DELETE...RETURNING removes
-    /// it from the table in the same statement, so racing workers
-    /// can never grab the same row. Caller is responsible for
-    /// re-inserting the payload on transient HTTP failure (see
-    /// `requeue`). Returns `None` when the queue is empty.
-    pub fn claim() -> rusqlite::Result<Option<(i64, PublishEvent)>> {
-        let c = conn().lock().unwrap();
-        // SQLite ≥ 3.35 supports DELETE ... RETURNING. The subquery
-        // pins the lowest-id row; the DELETE atomically removes it
-        // and returns the payload to the caller.
-        let row: Option<(i64, Vec<u8>)> = c
-            .query_row(
-                "DELETE FROM pending WHERE id = (SELECT id FROM pending ORDER BY id LIMIT 1) RETURNING id, payload",
-                [],
-                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)),
-            )
-            .optional()?;
-        let Some((id, payload)) = row else { return Ok(None) };
-        match serde_json::from_slice::<PublishEvent>(&payload) {
-            Ok(ev) => Ok(Some((id, ev))),
-            Err(e) => {
-                // Row was unparseable — already removed by the
-                // DELETE. Just log and let caller try the next.
-                tracing::warn!(
-                    "notebook_sync queue: dropped unparseable row {} ({})",
-                    id,
-                    e
-                );
-                Ok(None)
-            }
-        }
-    }
-
     /// Re-insert a row that failed to publish so it gets retried on
     /// the next worker wake. Used when a worker's HTTP call returns
     /// a transient error; persistent errors (e.g. ConditionalCheck —
@@ -718,10 +688,10 @@ fn lock_for(id: uuid::Uuid) -> Arc<Mutex<()>> {
 
 fn ids_touched(ev: &PublishEvent) -> Vec<uuid::Uuid> {
     let mut out = match ev {
-        PublishEvent::StrokeCreated { stroke, .. } => vec![stroke.id],
-        PublishEvent::StrokeUpdated { stroke, .. } => vec![stroke.id],
-        PublishEvent::StrokeDeleted { stroke_id, .. } => vec![*stroke_id],
-        PublishEvent::StrokeReplaced {
+        PublishEvent::Created { stroke, .. } => vec![stroke.id],
+        PublishEvent::Updated { stroke, .. } => vec![stroke.id],
+        PublishEvent::Deleted { stroke_id, .. } => vec![*stroke_id],
+        PublishEvent::Replaced {
             old_id,
             new_strokes,
             ..
@@ -905,7 +875,7 @@ fn worker_loop() {
                 std::collections::HashMap::new();
             for (_, ev) in &batch {
                 match ev {
-                    PublishEvent::StrokeCreated {
+                    PublishEvent::Created {
                         notebook_id,
                         page_id,
                         stroke,
@@ -921,7 +891,7 @@ fn worker_loop() {
                         };
                         entry.0.push((stroke.id, *page_id, body, enqueued_at.clone()));
                     }
-                    PublishEvent::StrokeUpdated { stroke, .. } => {
+                    PublishEvent::Updated { stroke, .. } => {
                         // Updates need a notebook_id + page_id, which
                         // StrokeUpdated doesn't carry. Fall back to
                         // the per-row update path for these — they're
@@ -930,7 +900,7 @@ fn worker_loop() {
                             tracing::warn!("update {}: {}", stroke.id, e);
                         }
                     }
-                    PublishEvent::StrokeDeleted {
+                    PublishEvent::Deleted {
                         notebook_id,
                         stroke_id,
                         enqueued_at,
@@ -938,7 +908,7 @@ fn worker_loop() {
                         let entry = by_nb.entry(*notebook_id).or_default();
                         entry.1.push((*stroke_id, enqueued_at.clone()));
                     }
-                    PublishEvent::StrokeReplaced {
+                    PublishEvent::Replaced {
                         notebook_id,
                         page_id,
                         old_id,
@@ -1080,10 +1050,10 @@ fn worker_loop() {
 fn enqueue(ev: PublishEvent) {
     ensure_pool();
     let kind = match &ev {
-        PublishEvent::StrokeCreated { stroke, .. } => format!("create id={}", stroke.id),
-        PublishEvent::StrokeUpdated { stroke, .. } => format!("update id={}", stroke.id),
-        PublishEvent::StrokeDeleted { stroke_id, .. } => format!("delete id={}", stroke_id),
-        PublishEvent::StrokeReplaced { old_id, new_strokes, .. } => {
+        PublishEvent::Created { stroke, .. } => format!("create id={}", stroke.id),
+        PublishEvent::Updated { stroke, .. } => format!("update id={}", stroke.id),
+        PublishEvent::Deleted { stroke_id, .. } => format!("delete id={}", stroke_id),
+        PublishEvent::Replaced { old_id, new_strokes, .. } => {
             format!("replace old={} children={}", old_id, new_strokes.len())
         }
     };
@@ -1135,7 +1105,7 @@ pub fn on_local_stroke_created(state: &SharedState, page_id: PageId, stroke: &St
         return;
     }
     tracing::debug!("notebook_sync: enqueue create {} for {:?}", stroke.id, notebook_id);
-    enqueue(PublishEvent::StrokeCreated {
+    enqueue(PublishEvent::Created {
         notebook_id,
         page_id,
         stroke: stroke.clone(),
@@ -1158,7 +1128,7 @@ pub fn on_local_stroke_deleted(state: &SharedState, page_id: PageId, stroke_id: 
         return;
     }
     tracing::debug!("notebook_sync: enqueue delete {} for {:?}", stroke_id, notebook_id);
-    enqueue(PublishEvent::StrokeDeleted {
+    enqueue(PublishEvent::Deleted {
         notebook_id,
         stroke_id,
         enqueued_at: chrono::Utc::now().to_rfc3339(),
@@ -1176,7 +1146,7 @@ pub fn on_local_stroke_updated(state: &SharedState, page_id: PageId, stroke: &St
         return;
     }
     tracing::debug!("notebook_sync: enqueue update {} for {:?}", stroke.id, notebook_id);
-    enqueue(PublishEvent::StrokeUpdated {
+    enqueue(PublishEvent::Updated {
         stroke: stroke.clone(),
         enqueued_at: chrono::Utc::now().to_rfc3339(),
     });
@@ -1202,7 +1172,7 @@ pub fn on_local_stroke_replaced(
         new_strokes.len(),
         notebook_id
     );
-    enqueue(PublishEvent::StrokeReplaced {
+    enqueue(PublishEvent::Replaced {
         notebook_id,
         page_id,
         old_id,
