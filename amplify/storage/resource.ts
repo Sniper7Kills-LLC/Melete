@@ -7,7 +7,11 @@ export const storage = defineStorage({
       allow.guest.to(['read']),
       allow.authenticated.to(['read']),
     ],
-    'protected/{entity_id}/templates/*': [
+    // {entity_id} must sit immediately before the ending wildcard
+    // (Amplify Gen 2 storage rule). The lambda + Rust client compose
+    // the deeper `templates/{templateId}/assets/{sha256}` suffix
+    // under this prefix; the wildcard covers it all.
+    'protected/{entity_id}/*': [
       allow.entity('identity').to(['read', 'write', 'delete']),
     ],
   }),
