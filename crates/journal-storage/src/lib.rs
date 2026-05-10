@@ -17,11 +17,17 @@ pub mod multi_file_backend;
 pub mod sqlite_backend;
 pub mod template_migration;
 
-/// Phase 6.3 remote (AWS Amplify) template store. Only the build-time
-/// config skeleton lands here — issue #6 will add the network client.
+/// Phase 6.3 remote (AWS Amplify) template store. Speaks Cognito +
+/// AppSync over plain HTTPS to keep the dependency footprint small;
+/// SigV4 for S3 is hand-rolled on top of `sha2` + `hmac`.
 #[cfg(feature = "remote")]
 pub mod remote_template_store {
+    pub mod auth;
     pub mod config;
+    pub mod graphql;
+    pub mod identity;
+    pub mod s3;
+    pub mod store;
 }
 
 // SQLite-specific store modules. Crate-internal: only `SqliteBackend`

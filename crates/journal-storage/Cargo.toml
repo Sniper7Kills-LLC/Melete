@@ -17,6 +17,8 @@ toml = { workspace = true }
 sha2 = "0.10"
 hex = "0.4"
 dirs = { workspace = true }
+hmac = { version = "0.12", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -24,8 +26,9 @@ sha2 = "0.10"
 hex = "0.4"
 
 [features]
-# Enables the remote (AWS Amplify) template store. Empty for now —
-# issue #6 will populate this with `reqwest` + the AWS SDK crates.
-# This crate's `build.rs` and the `remote_template_store::config`
-# module are gated on this feature.
-remote = []
+# Enables the remote (AWS Amplify) template store. Pulls in `reqwest`
+# (blocking + rustls), `hmac` for SigV4 signing, and the
+# `remote_template_store::*` modules. Cognito + AppSync are spoken
+# directly over HTTPS to avoid pulling the full AWS SDK; SigV4 for
+# S3 is hand-rolled on top of `sha2` + `hmac`.
+remote = ["dep:reqwest", "dep:hmac"]
