@@ -6,12 +6,14 @@ import { auth } from './auth/resource';
 import { data } from './data/resource';
 import { storage } from './storage/resource';
 import { assetPresign } from './functions/asset-presign/resource';
+import { syncStrokesBatch } from './functions/sync-strokes-batch/resource';
 
 export const backend = defineBackend({
   auth,
   data,
   storage,
   assetPresign,
+  syncStrokesBatch,
 });
 
 // Enable USER_PASSWORD_AUTH on the Cognito App Client. The Rust
@@ -45,5 +47,28 @@ presignFn.addToRolePolicy(
     resources: [
       `${bucket.bucketArn}/protected/\${cognito-identity.amazonaws.com:sub}/templates/*`,
     ],
+  }),
+);
+
+// Wire the batch-sync Lambda to the RemoteStroke DynamoDB table.
+// Amplify Gen 2 generates the table per-environment; we look it up
+// via the model's auto-generated resource and pass the resolved
+// table name + ARN as env / IAM grants on the function.
+const remoteStrokeTable =
+  backend.data.resources.tables['RemoteStroke'];
+const batchFn = backend.syncStrokesBatch.resources.lambda as LambdaFunction;
+batchFn.addEnvironment(
+  'REMOTE_STROKE_TABLE_NAME',
+  remoteStrokeTable.tableName,
+);
+batchFn.addToRolePolicy(
+  new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: [
+      'dynamodb:BatchWriteItem',
+      'dynamodb:PutItem',
+      'dynamodb:DeleteItem',
+    ],
+    resources: [remoteStrokeTable.tableArn],
   }),
 );

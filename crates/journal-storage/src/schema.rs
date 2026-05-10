@@ -193,6 +193,33 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         }
         conn.pragma_update(None, "user_version", 9)?;
     }
+    if v < 10 {
+        // Soft-delete + change-tracking columns on strokes:
+        //   `created_at` — RFC3339 of insert
+        //   `updated_at` — RFC3339, bumped on every mutation incl. soft-delete
+        //   `deleted_at` — RFC3339 once erased; reads filter on NULL
+        // Sync uses these to push only the delta the cloud needs:
+        //  cloud row missing → push create with same timestamps
+        //  local updated_at > cloud → push update
+        //  local deleted_at set → push delete + then `purge_deleted` locally
+        for col in ["created_at", "updated_at", "deleted_at"] {
+            if !column_exists(conn, "strokes", col)? {
+                conn.execute(
+                    &format!("ALTER TABLE strokes ADD COLUMN {} TEXT NULL", col),
+                    [],
+                )?;
+            }
+        }
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_strokes_deleted_at ON strokes(deleted_at)",
+            [],
+        )?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_strokes_updated_at ON strokes(updated_at)",
+            [],
+        )?;
+        conn.pragma_update(None, "user_version", 10)?;
+    }
     Ok(())
 }
 

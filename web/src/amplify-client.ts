@@ -73,7 +73,66 @@ export interface BrushRow {
   updatedAt?: string | null;
 }
 
-export type SavedKind = 'PageTemplate' | 'NotebookTemplate' | 'Brush';
+export type SavedKind =
+  | 'PageTemplate'
+  | 'NotebookTemplate'
+  | 'Brush'
+  | 'Notebook';
+
+export interface NotebookRow {
+  id: string;
+  owner?: string | null;
+  name: string;
+  description?: string | null;
+  visibility: Visibility;
+  /** JSON-encoded `journal_core::NotebookKind` (Standard | Planner). */
+  kindJson?: string | null;
+  /** JSON-encoded `Vec<TemplateId>` for the assignedTemplates list. */
+  assignedTemplatesJson?: string | null;
+  updatedAtSort: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface RemoteSectionRow {
+  id: string;
+  owner?: string | null;
+  notebookId: string;
+  parentSectionId?: string | null;
+  name: string;
+  position: number;
+  allowedTemplatesJson?: string | null;
+}
+
+export interface RemotePageRow {
+  id: string;
+  owner?: string | null;
+  notebookId: string;
+  sectionId: string;
+  templateId?: string | null;
+  position: number;
+  name?: string | null;
+  plannerAddressJson?: string | null;
+  widgetOverridesJson?: string | null;
+  widgetDataJson?: string | null;
+  flagged?: boolean | null;
+  createdAtIso?: string | null;
+  modifiedAtIso?: string | null;
+}
+
+export interface RemoteStrokeRow {
+  id: string;
+  owner?: string | null;
+  notebookId: string;
+  pageId: string;
+  /** JSON-encoded `journal_core::Stroke`. */
+  strokeJson: string;
+  createdAt: string;
+  /** LWW clock — every mutation bumps this. */
+  updatedAtIso?: string | null;
+  /** Set when the stroke is soft-deleted; readers filter on this. */
+  deletedAtIso?: string | null;
+}
 
 export interface SavedTemplateRow {
   id: string;
@@ -288,7 +347,26 @@ interface ForkArgs {
   id: string;
 }
 
+interface UpsertStrokesBatchInput {
+  notebookId: string;
+  /** AWSJSON — stringified array of UpsertItem on the wire. */
+  items: string;
+}
+interface StrokesBatchResult {
+  notebookId: string;
+  upserted: number;
+  unprocessed: number;
+  ids?: string[] | null;
+}
+interface SubscribeStrokesBatchArgs {
+  notebookId: string;
+}
+
 interface MutationOps {
+  upsertStrokesBatch(
+    args: UpsertStrokesBatchInput,
+    opts?: { authMode?: AuthMode },
+  ): Promise<MutationResult<StrokesBatchResult>>;
   publishPageTemplate(args: PublishArgs): Promise<MutationResult<PageTemplateRow>>;
   publishNotebookTemplate(
     args: PublishArgs,
@@ -301,14 +379,138 @@ interface MutationOps {
   forkBrush(args: ForkArgs): Promise<MutationResult<BrushRow>>;
 }
 
+interface NotebookUpdateInput {
+  id: string;
+  name?: string;
+  description?: string | null;
+  visibility?: Visibility;
+  kindJson?: string | null;
+  assignedTemplatesJson?: string | null;
+  updatedAtSort: string;
+}
+
+interface NotebookOps {
+  list(opts?: ListOpts<NotebookRow>): Promise<ListResult<NotebookRow>>;
+  listNotebooksByOwner(
+    args: ByOwnerArgs,
+    opts?: ByOwnerOpts,
+  ): Promise<ListResult<NotebookRow>>;
+  get(args: GetArgs, opts?: GetOpts): Promise<GetResult<NotebookRow>>;
+  update(
+    input: NotebookUpdateInput,
+    opts?: UpdateOpts,
+  ): Promise<GetResult<NotebookRow>>;
+  delete(
+    args: DeleteArgs,
+    opts?: DeleteOpts,
+  ): Promise<GetResult<NotebookRow>>;
+}
+
+interface ByNotebookArgs {
+  notebookId: string;
+}
+interface ByNotebookOpts {
+  authMode?: AuthMode;
+  limit?: number;
+}
+interface ByPageArgs {
+  pageId: string;
+}
+
+interface ObserveSubscription {
+  unsubscribe(): void;
+}
+interface ObserveOpts<T> {
+  filter?: Partial<Record<keyof T, { eq?: unknown }>>;
+  authMode?: AuthMode;
+}
+
+interface RemoteSectionOps {
+  listRemoteSectionsByNotebook(
+    args: ByNotebookArgs,
+    opts?: ByNotebookOpts,
+  ): Promise<ListResult<RemoteSectionRow>>;
+}
+interface RemotePageOps {
+  listRemotePagesByNotebook(
+    args: ByNotebookArgs,
+    opts?: ByNotebookOpts,
+  ): Promise<ListResult<RemotePageRow>>;
+}
+
+interface RemoteStrokeOps {
+  listRemoteStrokesByNotebook(
+    args: ByNotebookArgs,
+    opts?: ByNotebookOpts,
+  ): Promise<ListResult<RemoteStrokeRow>>;
+  listRemoteStrokesByPage(
+    args: ByPageArgs,
+    opts?: ByNotebookOpts,
+  ): Promise<ListResult<RemoteStrokeRow>>;
+  observeQuery(opts: ObserveOpts<RemoteStrokeRow>): {
+    subscribe(handler: {
+      next?: (snap: { items: RemoteStrokeRow[] }) => void;
+      error?: (e: unknown) => void;
+    }): ObserveSubscription;
+  };
+  /**
+   * AppSync auto-generated `onCreate{Model}` subscription. Emits a
+   * single row per server-side create. Filter is optional but using
+   * one keeps the wire chatter scoped to a single notebook.
+   */
+  onCreate(opts: ObserveOpts<RemoteStrokeRow>): {
+    subscribe(handler: {
+      next?: (item: RemoteStrokeRow) => void;
+      error?: (e: unknown) => void;
+    }): ObserveSubscription;
+  };
+  onUpdate(opts: ObserveOpts<RemoteStrokeRow>): {
+    subscribe(handler: {
+      next?: (item: RemoteStrokeRow) => void;
+      error?: (e: unknown) => void;
+    }): ObserveSubscription;
+  };
+  /**
+   * `onDelete` emits the deleted row's id (other fields may be null
+   * — only the key columns are guaranteed to be populated by AppSync).
+   */
+  onDelete(opts: ObserveOpts<RemoteStrokeRow>): {
+    subscribe(handler: {
+      next?: (item: RemoteStrokeRow) => void;
+      error?: (e: unknown) => void;
+    }): ObserveSubscription;
+  };
+}
+
+interface SubscriptionsOps {
+  /**
+   * Custom subscription wired in `amplify/data/resource.ts` to fan
+   * out the Lambda-backed `syncStrokesBatch` mutation's affected
+   * id lists. Replaces the per-row onCreate/onDelete subscriptions
+   * for batched ops (BatchWriteItem bypasses AppSync subscriptions
+   * so we route via this instead).
+   */
+  onStrokesBatchSync(args: SubscribeStrokesBatchArgs, opts?: { authMode?: AuthMode }): {
+    subscribe(handler: {
+      next?: (item: StrokesBatchResult) => void;
+      error?: (e: unknown) => void;
+    }): { unsubscribe(): void };
+  };
+}
+
 interface AmplifyDataClient {
   models: {
     PageTemplate: PageTemplateOps;
     NotebookTemplate: NotebookTemplateOps;
     Brush: BrushOps;
     SavedTemplate: SavedTemplateOps;
+    Notebook: NotebookOps;
+    RemoteSection: RemoteSectionOps;
+    RemotePage: RemotePageOps;
+    RemoteStroke: RemoteStrokeOps;
   };
   mutations: MutationOps;
+  subscriptions: SubscriptionsOps;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentional, see comment above

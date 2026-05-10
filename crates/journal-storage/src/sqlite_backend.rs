@@ -153,6 +153,19 @@ impl StrokeStore for SqliteBackend {
     fn query_strokes_in_rect(&mut self, page_id: PageId, rect: Rect) -> Result<Vec<Stroke>> {
         stroke_store::query_strokes_in_rect(self.db.conn(), page_id, rect)
     }
+    fn list_deleted_strokes(
+        &mut self,
+        _notebook_id: journal_core::NotebookId,
+    ) -> Result<Vec<(Uuid, String)>> {
+        // Single-file backend has only one notebook anyway.
+        stroke_store::list_deleted(self.db.conn())
+    }
+    fn purge_deleted_stroke(&mut self, id: Uuid) -> Result<()> {
+        stroke_store::purge_deleted(self.db.conn(), id)
+    }
+    fn is_stroke_deleted(&mut self, id: Uuid) -> Result<bool> {
+        stroke_store::is_deleted(self.db.conn(), id)
+    }
 }
 
 impl BrushStore for SqliteBackend {

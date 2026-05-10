@@ -11,6 +11,7 @@ import { Link } from 'react-router-dom';
 import {
   client,
   type BrushRow as Brush,
+  type NotebookRow as Notebook,
   type NotebookTemplateRow as NotebookTemplate,
   type PageTemplateRow as PageTemplate,
   type SavedTemplateRow,
@@ -23,7 +24,7 @@ type LoadState<T> =
   | { status: 'ok'; rows: T[] }
   | { status: 'err'; message: string };
 
-type ModelKind = 'PageTemplate' | 'NotebookTemplate' | 'Brush';
+type ModelKind = 'PageTemplate' | 'NotebookTemplate' | 'Brush' | 'Notebook';
 
 interface RowLike {
   id: string;
@@ -95,6 +96,15 @@ async function publishRow(
       return client.mutations.publishNotebookTemplate({ id, visibility });
     case 'Brush':
       return client.mutations.publishBrush({ id, visibility });
+    case 'Notebook':
+      // No publish* pipeline mutation for notebooks (no fork/clone
+      // semantic — visibility just gates who can read the snapshot).
+      // Plain update against the model row is enough.
+      return client.models.Notebook.update({
+        id,
+        visibility,
+        updatedAtSort: new Date().toISOString(),
+      });
   }
 }
 
@@ -106,6 +116,8 @@ async function deleteRow(kind: ModelKind, id: string) {
       return client.models.NotebookTemplate.delete({ id });
     case 'Brush':
       return client.models.Brush.delete({ id });
+    case 'Notebook':
+      return client.models.Notebook.delete({ id });
   }
 }
 
@@ -119,18 +131,30 @@ function editHrefFor(kind: ModelKind, id: string): string | null {
       return `/templeter?edit=${id}`;
     case 'Brush':
       return `/tooler?edit=${id}`;
+    case 'Notebook':
+      // Notebooks are not editable in the browser — strokes only flow
+      // from the desktop. Surface a "View" link to the live viewer.
+      return `/n/${id}`;
   }
 }
 
-function shareKindFor(kind: ModelKind): 'page' | 'notebook' | 'brush' {
-  switch (kind) {
-    case 'PageTemplate':
-      return 'page';
-    case 'NotebookTemplate':
-      return 'notebook';
-    case 'Brush':
-      return 'brush';
+function editLabelFor(kind: ModelKind): string {
+  return kind === 'Notebook' ? 'View' : 'Edit';
+}
+
+function shareUrlFor(kind: ModelKind, id: string): string {
+  // Notebooks share via the dedicated /n/:id viewer route, not the
+  // generic /t/:kind/:id template share page.
+  if (kind === 'Notebook') {
+    return `${window.location.origin}/n/${id}`;
   }
+  const slug =
+    kind === 'PageTemplate'
+      ? 'page'
+      : kind === 'NotebookTemplate'
+        ? 'notebook'
+        : 'brush';
+  return `${window.location.origin}/t/${slug}/${id}`;
 }
 
 function ShareLinkButton({
@@ -142,7 +166,7 @@ function ShareLinkButton({
 }) {
   const [copied, setCopied] = useState(false);
   function copy() {
-    const url = `${window.location.origin}/t/${shareKindFor(kind)}/${row.id}`;
+    const url = shareUrlFor(kind, row.id);
     void navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
@@ -342,7 +366,7 @@ function MySection<T extends RowLike>({
                   to={editHrefFor(kind, row.id)!}
                   className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
                 >
-                  Edit
+                  {editLabelFor(kind)}
                 </Link>
               )}
               <PublishMenu
@@ -385,6 +409,9 @@ function MyContent({ ownerSub }: { ownerSub: string }) {
   const [brushes, patchBrushes] = useMyList<Brush>(ownerSub, (sub) =>
     client.models.Brush.listBrushesByOwner({ owner: sub }),
   );
+  const [myNotebooks, patchMyNotebooks] = useMyList<Notebook>(ownerSub, (sub) =>
+    client.models.Notebook.listNotebooksByOwner({ owner: sub }),
+  );
   const [saved, patchSaved] = useMyList<SavedTemplateRow>(ownerSub, (sub) =>
     client.models.SavedTemplate.listSavedTemplatesByOwner({ owner: sub }),
   );
@@ -420,6 +447,12 @@ function MyContent({ ownerSub }: { ownerSub: string }) {
           kind="Brush"
           state={brushes}
           patch={patchBrushes}
+        />
+        <MySection
+          title="Notebooks"
+          kind="Notebook"
+          state={myNotebooks}
+          patch={patchMyNotebooks}
         />
         <SavedSection state={saved} patch={patchSaved} />
       </div>

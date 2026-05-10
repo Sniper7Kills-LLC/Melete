@@ -21,6 +21,7 @@ import { Tooler } from "./pages/Tooler";
 import { Gallery } from "./pages/Gallery";
 import { My } from "./pages/My";
 import { Share } from "./pages/Share";
+import { NotebookViewer } from "./pages/NotebookViewer";
 import { useUnits } from "./store/unitsStore";
 
 // Configure Amplify before any GraphQL or auth call. `amplify_outputs.json`
@@ -142,6 +143,7 @@ function App() {
               />
               <Route path="/my" element={<My />} />
               <Route path="/t/:kind/:id" element={<Share />} />
+              <Route path="/n/:id" element={<NotebookViewer />} />
               <Route
                 path="*"
                 element={

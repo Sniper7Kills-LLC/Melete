@@ -45,6 +45,12 @@ struct SidebarCtx {
 impl SidebarCtx {
     fn refresh(&self) {
         refresh_sections(self);
+        // Side effect: any sidebar refresh implies a section / page /
+        // bookmark mutation just landed in SQLite. Schedule a
+        // debounced metadata resync so live-sync subscribers see the
+        // structural change without waiting for the next stroke.
+        #[cfg(feature = "remote")]
+        crate::notebook_sync::request_metadata_resync(&self.state, self.notebook_id);
     }
 }
 
@@ -1078,10 +1084,15 @@ fn attach_page_context_menu(ctx: &SidebarCtx, row: &GtkBox, page: &Page) {
                 let ctx = ctx.clone();
                 let page = page.clone();
                 delete_btn.connect_clicked(move |_| {
-                    if let Err(e) = ctx.db.borrow_mut().delete_page(page.id) {
-                        tracing::error!("delete page {:?}: {}", page.id, e);
-                    } else {
-                        ctx.refresh();
+                    // Bind the Result before the match so the RefMut from
+                    // borrow_mut() drops immediately. Otherwise it lives
+                    // until end of the if-let / match, and ctx.refresh()
+                    // (which re-borrows backend through the bookmark
+                    // sidebar) panics with "RefCell already borrowed".
+                    let res = ctx.db.borrow_mut().delete_page(page.id);
+                    match res {
+                        Ok(()) => ctx.refresh(),
+                        Err(e) => tracing::error!("delete page {:?}: {}", page.id, e),
                     }
                     win.close();
                 });
@@ -1411,6 +1422,13 @@ fn attach_section_drop_target(
         true
     });
     wrapper.add_controller(target);
+}
+
+/// Re-pull strokes for the given page from the backend into
+/// `state.strokes`. Called after notebook_sync merges remote strokes
+/// so the canvas reflects them without a page change.
+pub fn reload_current_page_strokes(state: &SharedState, page_id: PageId) {
+    state::set_current_page(state, page_id);
 }
 
 fn load_page(state: &SharedState, page: &Page, canvas: &DrawingArea) {

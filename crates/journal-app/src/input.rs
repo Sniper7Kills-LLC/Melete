@@ -634,6 +634,8 @@ fn finish_stroke(state: &SharedState) {
         if let Err(e) = db.borrow_mut().insert_stroke(&stroke, page_id) {
             tracing::error!("failed to persist stroke for {:?}: {}", page_id, e);
         }
+        #[cfg(feature = "remote")]
+        crate::notebook_sync::on_local_stroke_created(state, page_id, &stroke);
     }
 }
 
@@ -669,6 +671,14 @@ fn erase_at(state: &SharedState, sx: f64, sy: f64, area: &gtk4::Widget) {
         return;
     }
 
+    let t0 = std::time::Instant::now();
+    let n = to_remove.len();
+    tracing::info!(
+        "STROKE_MOD erase batch: {} strokes from page {:?}",
+        n,
+        page_id
+    );
+
     {
         let mut s = state.borrow_mut();
         for stroke in &to_remove {
@@ -677,16 +687,28 @@ fn erase_at(state: &SharedState, sx: f64, sy: f64, area: &gtk4::Widget) {
         }
     }
 
+    let mut sqlite_failures = 0usize;
     for stroke in &to_remove {
+        tracing::debug!("STROKE_MOD erase: delete id={} page={:?}", stroke.id, page_id);
         if let Err(e) = db.borrow_mut().delete_stroke(stroke.id) {
+            sqlite_failures += 1;
             tracing::warn!(
-                "erase: failed to delete stroke {} for page {:?}: {}",
+                "STROKE_MOD erase: SQLite delete FAILED id={} page={:?}: {}",
                 stroke.id,
                 page_id,
                 e
             );
         }
+        #[cfg(feature = "remote")]
+        crate::notebook_sync::on_local_stroke_deleted(state, page_id, stroke.id);
     }
+
+    tracing::info!(
+        "STROKE_MOD erase batch done: {}/{} sqlite OK in {:?}",
+        n - sqlite_failures,
+        n,
+        t0.elapsed()
+    );
 
     area.queue_draw();
 }
@@ -871,6 +893,11 @@ fn partial_erase_at(state: &SharedState, sx: f64, sy: f64, area: &gtk4::Widget) 
         return;
     }
 
+    let t0 = std::time::Instant::now();
+    let mut splits = 0usize;
+    let mut total_children = 0usize;
+    let n_candidates = candidates.len();
+
     let mut did_split = false;
 
     for stroke in &candidates {
@@ -880,6 +907,8 @@ fn partial_erase_at(state: &SharedState, sx: f64, sy: f64, area: &gtk4::Widget) 
             continue;
         }
         did_split = true;
+        splits += 1;
+        total_children += children.len();
 
         {
             let mut s = state.borrow_mut();
@@ -890,19 +919,37 @@ fn partial_erase_at(state: &SharedState, sx: f64, sy: f64, area: &gtk4::Widget) 
             s.history.push_replace(stroke.clone(), children.clone());
         }
 
+        tracing::debug!(
+            "STROKE_MOD partial_erase: replace id={} -> {} children on page {:?}",
+            stroke.id,
+            children.len(),
+            page_id
+        );
         if let Err(e) = db
             .borrow_mut()
             .replace_stroke(stroke.id, &children, page_id)
         {
             tracing::warn!(
-                "partial_erase: replace_stroke failed for {}: {}",
+                "STROKE_MOD partial_erase: SQLite replace_stroke FAILED id={}: {}",
                 stroke.id,
                 e
             );
         }
+        #[cfg(feature = "remote")]
+        crate::notebook_sync::on_local_stroke_replaced(
+            state, page_id, stroke.id, &children,
+        );
     }
 
     if did_split {
+        tracing::info!(
+            "STROKE_MOD partial_erase batch done: {}/{} candidates split, {} children, in {:?} on page {:?}",
+            splits,
+            n_candidates,
+            total_children,
+            t0.elapsed(),
+            page_id
+        );
         area.queue_draw();
     }
 }
@@ -1205,6 +1252,8 @@ fn finish_selection(state: &SharedState) {
                 if let Err(e) = db.borrow_mut().update_stroke(st, pid) {
                     tracing::warn!("resize: update_stroke {}: {}", st.id, e);
                 }
+                #[cfg(feature = "remote")]
+                crate::notebook_sync::on_local_stroke_updated(state, pid, st);
             }
         }
 
@@ -1306,11 +1355,15 @@ fn finish_selection(state: &SharedState) {
                     e
                 );
             }
+            #[cfg(feature = "remote")]
+            crate::notebook_sync::on_local_stroke_updated(state, pid, stroke);
         }
         for (old, new) in &lasso_replacements {
             if let Err(e) = db.borrow_mut().replace_stroke(old.id, new, pid) {
                 tracing::warn!("lasso split: replace_stroke failed for {}: {}", old.id, e);
             }
+            #[cfg(feature = "remote")]
+            crate::notebook_sync::on_local_stroke_replaced(state, pid, old.id, new);
         }
         let _ = moved_ids;
     }
@@ -1347,16 +1400,34 @@ pub fn delete_selection(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
         s.selected_stroke_ids.clear();
     }
 
+    let t0 = std::time::Instant::now();
+    let n = ids.len();
+    tracing::info!(
+        "STROKE_MOD delete_selection: {} strokes from page {:?}",
+        n,
+        page_id
+    );
+    let mut sqlite_failures = 0usize;
     for id in &ids {
+        tracing::debug!("STROKE_MOD delete_selection: id={} page={:?}", id, page_id);
         if let Err(e) = db.borrow_mut().delete_stroke(*id) {
+            sqlite_failures += 1;
             tracing::warn!(
-                "delete_selection: failed to delete stroke {} for page {:?}: {}",
+                "STROKE_MOD delete_selection: SQLite delete FAILED id={} page={:?}: {}",
                 id,
                 page_id,
                 e
             );
         }
+        #[cfg(feature = "remote")]
+        crate::notebook_sync::on_local_stroke_deleted(state, page_id, *id);
     }
+    tracing::info!(
+        "STROKE_MOD delete_selection done: {}/{} sqlite OK in {:?}",
+        n - sqlite_failures,
+        n,
+        t0.elapsed()
+    );
 
     area.queue_draw();
 }
@@ -1381,7 +1452,8 @@ pub fn undo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
                 if let Err(e) = db.borrow_mut().delete_stroke(stroke.id) {
                     tracing::warn!("undo AddStroke: delete failed for {}: {}", stroke.id, e);
                 }
-                let _ = pid;
+                #[cfg(feature = "remote")]
+                crate::notebook_sync::on_local_stroke_deleted(state, pid, stroke.id);
             }
         }
         Op::RemoveStroke(stroke) => {
@@ -1395,6 +1467,8 @@ pub fn undo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
                 if let Err(e) = db.borrow_mut().insert_stroke(&stroke, pid) {
                     tracing::warn!("undo RemoveStroke: insert failed for {}: {}", stroke.id, e);
                 }
+                #[cfg(feature = "remote")]
+                crate::notebook_sync::on_local_stroke_created(state, pid, &stroke);
             }
         }
         Op::MoveStrokes { ids, dx, dy } => {
@@ -1421,6 +1495,8 @@ pub fn undo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
             if let Some(pid) = page_id {
                 for child in &new {
                     let _ = db.borrow_mut().delete_stroke(child.id);
+                    #[cfg(feature = "remote")]
+                    crate::notebook_sync::on_local_stroke_deleted(state, pid, child.id);
                 }
                 if let Err(e) = db.borrow_mut().insert_stroke(&old, pid) {
                     tracing::warn!(
@@ -1429,6 +1505,8 @@ pub fn undo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
                         e
                     );
                 }
+                #[cfg(feature = "remote")]
+                crate::notebook_sync::on_local_stroke_created(state, pid, &old);
             }
         }
         Op::TransformStrokes {
@@ -1479,6 +1557,8 @@ pub fn redo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
                 if let Err(e) = db.borrow_mut().insert_stroke(&stroke, pid) {
                     tracing::warn!("redo AddStroke: insert failed for {}: {}", stroke.id, e);
                 }
+                #[cfg(feature = "remote")]
+                crate::notebook_sync::on_local_stroke_created(state, pid, &stroke);
             }
         }
         Op::RemoveStroke(stroke) => {
@@ -1492,7 +1572,8 @@ pub fn redo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
                 if let Err(e) = db.borrow_mut().delete_stroke(stroke.id) {
                     tracing::warn!("redo RemoveStroke: delete failed for {}: {}", stroke.id, e);
                 }
-                let _ = pid;
+                #[cfg(feature = "remote")]
+                crate::notebook_sync::on_local_stroke_deleted(state, pid, stroke.id);
             }
         }
         Op::MoveStrokes { ids, dx, dy } => {
@@ -1520,6 +1601,8 @@ pub fn redo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
                 if let Err(e) = db.borrow_mut().replace_stroke(old.id, &new, pid) {
                     tracing::warn!("redo ReplaceStroke: failed for {}: {}", old.id, e);
                 }
+                #[cfg(feature = "remote")]
+                crate::notebook_sync::on_local_stroke_replaced(state, pid, old.id, &new);
             }
         }
         Op::TransformStrokes {
@@ -1569,6 +1652,8 @@ fn apply_move(state: &SharedState, ids: &[Uuid], dx: f64, dy: f64) {
             if let Err(e) = db.borrow_mut().update_stroke(st, pid) {
                 tracing::warn!("apply_move update_stroke {}: {}", st.id, e);
             }
+            #[cfg(feature = "remote")]
+            crate::notebook_sync::on_local_stroke_updated(state, pid, st);
         }
     }
 }
@@ -1604,6 +1689,8 @@ fn apply_scale(state: &SharedState, ids: &[Uuid], anchor_x: f64, anchor_y: f64, 
             if let Err(e) = db.borrow_mut().update_stroke(st, pid) {
                 tracing::warn!("apply_scale update_stroke {}: {}", st.id, e);
             }
+            #[cfg(feature = "remote")]
+            crate::notebook_sync::on_local_stroke_updated(state, pid, st);
         }
     }
 }
@@ -1677,6 +1764,8 @@ pub fn paste_clipboard(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
         if let Err(e) = backend.borrow_mut().insert_stroke(st, page_id) {
             tracing::error!("paste_clipboard: insert_stroke failed for {}: {}", st.id, e);
         }
+        #[cfg(feature = "remote")]
+        crate::notebook_sync::on_local_stroke_created(state, page_id, st);
     }
 
     tracing::info!("pasted {} stroke(s)", new_strokes.len());

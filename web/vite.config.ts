@@ -38,6 +38,8 @@ export default defineConfig({
     dedupe: [
       "aws-amplify",
       "@aws-amplify/core",
+      "@aws-amplify/api",
+      "@aws-amplify/api-graphql",
       "@aws-amplify/ui-react",
       "react",
       "react-dom",

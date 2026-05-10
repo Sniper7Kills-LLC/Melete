@@ -15,10 +15,33 @@ pub fn insert_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Res
         .map(serde_json::to_string)
         .transpose()?;
     let bbox = stroke.bounding_box;
+    let now = chrono::Utc::now().to_rfc3339();
+    tracing::debug!(
+        "STROKE_MOD sqlite upsert: id={} page={:?} points={} updated_at={}",
+        stroke.id,
+        page_id,
+        stroke.points.len(),
+        now
+    );
 
+    // UPSERT: undo of a delete re-inserts the same id, but the row
+    // still exists soft-deleted. Clear deleted_at + bump updated_at +
+    // refresh fields. Same INSERT path covers fresh inserts.
     conn.execute(
-        "INSERT INTO strokes (id, page_id, points_blob, pen_json, zoom_at_creation, bbox_x, bbox_y, bbox_w, bbox_h, brush_recipe_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO strokes (id, page_id, points_blob, pen_json, zoom_at_creation, bbox_x, bbox_y, bbox_w, bbox_h, brush_recipe_json, created_at, updated_at, deleted_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11, NULL)
+         ON CONFLICT(id) DO UPDATE SET
+           page_id = excluded.page_id,
+           points_blob = excluded.points_blob,
+           pen_json = excluded.pen_json,
+           zoom_at_creation = excluded.zoom_at_creation,
+           bbox_x = excluded.bbox_x,
+           bbox_y = excluded.bbox_y,
+           bbox_w = excluded.bbox_w,
+           bbox_h = excluded.bbox_h,
+           brush_recipe_json = excluded.brush_recipe_json,
+           updated_at = excluded.updated_at,
+           deleted_at = NULL",
         params![
             uuid_to_blob(stroke.id),
             uuid_to_blob(page_id.0),
@@ -30,6 +53,7 @@ pub fn insert_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Res
             bbox.width,
             bbox.height,
             recipe_json,
+            now,
         ],
     )?;
 
@@ -52,14 +76,78 @@ pub fn insert_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Res
     Ok(())
 }
 
+/// Soft-delete: stamp `deleted_at` (and bump `updated_at`) instead of
+/// removing the row. Reads filter the row out via `WHERE deleted_at
+/// IS NULL`; sync finds rows-to-cloud-delete via the inverse
+/// predicate; cloud-pull skips re-merging ids that are
+/// present-but-deleted locally.
 pub fn delete_stroke(conn: &Connection, id: uuid::Uuid) -> Result<()> {
-    let removed = conn.execute(
-        "DELETE FROM strokes WHERE id = ?1",
-        params![uuid_to_blob(id)],
+    let now = chrono::Utc::now().to_rfc3339();
+    let updated = conn.execute(
+        "UPDATE strokes SET deleted_at = ?1, updated_at = ?1 WHERE id = ?2 AND deleted_at IS NULL",
+        params![now, uuid_to_blob(id)],
     )?;
-    if removed == 0 {
+    if updated == 0 {
+        // Either the stroke never existed or was already deleted.
+        // Treat both as already-in-target-state — callers do
+        // best-effort sync follow-up regardless.
+        tracing::debug!("STROKE_MOD sqlite soft-delete: id={} NOT FOUND (already deleted or absent)", id);
         return Err(StorageError::NotFound);
     }
+    tracing::debug!("STROKE_MOD sqlite soft-delete OK: id={} deleted_at={}", id, now);
+    // Drop from rtree so spatial queries don't return stale geometry.
+    let _ = conn.execute(
+        "DELETE FROM strokes_rtree WHERE id = (SELECT rowid FROM strokes WHERE id = ?1)",
+        params![uuid_to_blob(id)],
+    );
+    Ok(())
+}
+
+/// True when the local DB has the stroke marked as soft-deleted.
+/// Used by the cloud-pull path to skip re-inserting into the live
+/// view (the row is still in SQLite under the soft-delete predicate).
+pub fn is_deleted(conn: &Connection, id: uuid::Uuid) -> Result<bool> {
+    let row: Option<Option<String>> = conn
+        .query_row(
+            "SELECT deleted_at FROM strokes WHERE id = ?1",
+            params![uuid_to_blob(id)],
+            |r| r.get(0),
+        )
+        .ok();
+    Ok(matches!(row, Some(Some(_))))
+}
+
+/// List every (id, deleted_at) for strokes the user has erased
+/// locally. Sync uses this to push cloud deletes; after a successful
+/// delete, sync should also `purge_deleted` to free the row.
+pub fn list_deleted(conn: &Connection) -> Result<Vec<(uuid::Uuid, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, deleted_at FROM strokes WHERE deleted_at IS NOT NULL ORDER BY deleted_at",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        let id: Vec<u8> = r.get(0)?;
+        let ts: String = r.get(1)?;
+        Ok((id, ts))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (id, ts) = r?;
+        if let Ok(uuid) = blob_to_uuid(&id) {
+            out.push((uuid, ts));
+        }
+    }
+    Ok(out)
+}
+
+/// Hard-remove a soft-deleted stroke. Sync calls this after the
+/// cloud-delete mutation succeeds (or returns "row already gone")
+/// so the local table doesn't grow unbounded with tombstones.
+#[allow(dead_code)]
+pub fn purge_deleted(conn: &Connection, id: uuid::Uuid) -> Result<()> {
+    conn.execute(
+        "DELETE FROM strokes WHERE id = ?1 AND deleted_at IS NOT NULL",
+        params![uuid_to_blob(id)],
+    )?;
     Ok(())
 }
 
@@ -73,9 +161,11 @@ pub fn update_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Res
         .transpose()?;
     let bbox = stroke.bounding_box;
 
+    let now = chrono::Utc::now().to_rfc3339();
     let updated = conn.execute(
         "UPDATE strokes SET points_blob = ?1, pen_json = ?2, zoom_at_creation = ?3,
-         bbox_x = ?4, bbox_y = ?5, bbox_w = ?6, bbox_h = ?7, brush_recipe_json = ?8
+         bbox_x = ?4, bbox_y = ?5, bbox_w = ?6, bbox_h = ?7, brush_recipe_json = ?8,
+         updated_at = ?11
          WHERE id = ?9 AND page_id = ?10",
         params![
             blob,
@@ -88,6 +178,7 @@ pub fn update_stroke(conn: &Connection, stroke: &Stroke, page_id: PageId) -> Res
             recipe_json,
             uuid_to_blob(stroke.id),
             uuid_to_blob(page_id.0),
+            now,
         ],
     )?;
     if updated == 0 {
@@ -119,6 +210,12 @@ pub fn replace_stroke(
     new_strokes: &[Stroke],
     page_id: PageId,
 ) -> Result<()> {
+    tracing::debug!(
+        "STROKE_MOD sqlite replace: old={} -> {} children on page {:?}",
+        old_id,
+        new_strokes.len(),
+        page_id
+    );
     delete_stroke(conn, old_id)?;
     for s in new_strokes {
         insert_stroke(conn, s, page_id)?;
@@ -127,6 +224,7 @@ pub fn replace_stroke(
 }
 
 pub fn delete_strokes_batch(conn: &Connection, ids: &[uuid::Uuid]) -> Result<()> {
+    tracing::debug!("STROKE_MOD sqlite delete_strokes_batch: {} ids", ids.len());
     for id in ids {
         let _ = delete_stroke(conn, *id);
     }
@@ -136,7 +234,7 @@ pub fn delete_strokes_batch(conn: &Connection, ids: &[uuid::Uuid]) -> Result<()>
 pub fn list_strokes_for_page(conn: &Connection, page_id: PageId) -> Result<Vec<Stroke>> {
     let mut stmt = conn.prepare(
         "SELECT id, points_blob, pen_json, zoom_at_creation, bbox_x, bbox_y, bbox_w, bbox_h, brush_recipe_json
-         FROM strokes WHERE page_id = ?1 ORDER BY rowid ASC",
+         FROM strokes WHERE page_id = ?1 AND deleted_at IS NULL ORDER BY rowid ASC",
     )?;
     let rows = stmt.query_map(params![uuid_to_blob(page_id.0)], row_to_stroke)?;
     let mut out = Vec::new();
@@ -157,7 +255,7 @@ pub fn query_strokes_in_rect(
         "SELECT s.id, s.points_blob, s.pen_json, s.zoom_at_creation, s.bbox_x, s.bbox_y, s.bbox_w, s.bbox_h, s.brush_recipe_json
          FROM strokes_rtree r
          JOIN strokes s ON s.rowid = r.id
-         WHERE s.page_id = ?1
+         WHERE s.page_id = ?1 AND s.deleted_at IS NULL
            AND r.max_x >= ?2 AND r.min_x <= ?3
            AND r.max_y >= ?4 AND r.min_y <= ?5
          ORDER BY s.rowid ASC",

@@ -496,6 +496,144 @@ fn build_menu_button(
         vbox.append(&browse_btn);
     }
 
+    // Notebook sync — push the current notebook's snapshot to the
+    // cloud + (when toggled on) live-stream every new stroke. Sensitive
+    // only when a notebook is open + the user is signed in. Two
+    // buttons: "Push snapshot now" (one-shot) and "Live sync"
+    // (toggle). Per-notebook enabled state is kept in a process-local
+    // set inside `notebook_sync::ENABLED`.
+    #[cfg(feature = "remote")]
+    {
+        vbox.append(&Separator::new(Orientation::Horizontal));
+        let push_btn = Button::with_label("Sync notebook to cloud");
+        push_btn.set_sensitive(false);
+        {
+            let parent = parent.clone();
+            let state = state.clone();
+            let popover_clone = popover.clone();
+            let current_notebook = current_notebook.clone();
+            push_btn.connect_clicked(move |_| {
+                popover_clone.popdown();
+                let Some(nb_id) = *current_notebook.borrow() else {
+                    return;
+                };
+                sync_with_smart_visibility(
+                    &parent,
+                    state.clone(),
+                    nb_id,
+                    /* live_after = */ false,
+                );
+            });
+        }
+        vbox.append(&push_btn);
+
+        let visibility_btn = Button::with_label("Notebook visibility…");
+        visibility_btn.set_sensitive(false);
+        {
+            let parent = parent.clone();
+            let popover_clone = popover.clone();
+            let current_notebook = current_notebook.clone();
+            visibility_btn.connect_clicked(move |_| {
+                popover_clone.popdown();
+                let Some(nb_id) = *current_notebook.borrow() else {
+                    return;
+                };
+                let parent_for_dialog = parent.clone();
+                ask_visibility_then(
+                    &parent,
+                    "Notebook visibility",
+                    "Pick who can read this notebook on the web. Private = signed-in owner only. Unlisted = anyone with the link. Public = browsable.",
+                    move |chosen: crate::notebook_sync::NotebookVisibility| {
+                        match crate::notebook_sync::set_remote_visibility(nb_id, chosen) {
+                            Ok(()) => {
+                                tracing::info!(
+                                    "notebook_sync: visibility set to {:?} for {:?}",
+                                    chosen,
+                                    nb_id
+                                );
+                                let dialog = gtk4::AlertDialog::builder()
+                                    .message("Visibility updated")
+                                    .detail(format!("Set to {:?}.", chosen))
+                                    .build();
+                                dialog.show(Some(&parent_for_dialog));
+                            }
+                            Err(e) => {
+                                tracing::error!("notebook_sync: set_visibility failed for {:?}: {:#}", nb_id, e);
+                                let dialog = gtk4::AlertDialog::builder()
+                                    .message("Visibility change failed")
+                                    .detail(format!("{:#}", e))
+                                    .build();
+                                dialog.show(Some(&parent_for_dialog));
+                            }
+                        }
+                    },
+                );
+            });
+        }
+        vbox.append(&visibility_btn);
+        let visibility_btn_for_tick = visibility_btn.clone();
+
+        let live_check = gtk4::CheckButton::with_label("Live sync (push every stroke)");
+        live_check.set_sensitive(false);
+        {
+            let parent = parent.clone();
+            let state = state.clone();
+            let current_notebook = current_notebook.clone();
+            live_check.connect_toggled(move |btn| {
+                let Some(nb_id) = *current_notebook.borrow() else {
+                    btn.set_active(false);
+                    return;
+                };
+                if btn.is_active() {
+                    sync_with_smart_visibility(
+                        &parent,
+                        state.clone(),
+                        nb_id,
+                        /* live_after = */ true,
+                    );
+                } else {
+                    tracing::info!("notebook_sync: live sync OFF for {:?}", nb_id);
+                    crate::notebook_sync::disable(nb_id);
+                }
+            });
+        }
+        vbox.append(&live_check);
+
+        // Keep both controls in sync with notebook-open + signed-in
+        // state. We used to hang this off `push_btn.add_tick_callback`
+        // but tick callbacks only fire while the widget is mapped —
+        // and the popover's children stay unmapped until the user
+        // clicks the hamburger. That made the live-sync toggle look
+        // perpetually OFF even after autosync flipped the flag.
+        // glib::timeout_add_local runs on the main loop regardless
+        // of widget visibility, so the UI now reflects the flag the
+        // moment it changes.
+        {
+            let push_btn_tick = push_btn.clone();
+            let live_check_tick = live_check.clone();
+            let visibility_btn_tick = visibility_btn_for_tick.clone();
+            let current_notebook_tick = current_notebook.clone();
+            gtk4::glib::timeout_add_local(
+                std::time::Duration::from_millis(250),
+                move || {
+                    let has_nb = current_notebook_tick.borrow().is_some();
+                    let signed = crate::sign_in_modal::is_signed_in();
+                    let on = has_nb && signed;
+                    push_btn_tick.set_sensitive(on);
+                    live_check_tick.set_sensitive(on);
+                    visibility_btn_tick.set_sensitive(on);
+                    if let Some(nb_id) = *current_notebook_tick.borrow() {
+                        let actual = crate::notebook_sync::is_enabled(nb_id);
+                        if live_check_tick.is_active() != actual {
+                            live_check_tick.set_active(actual);
+                        }
+                    }
+                    gtk4::glib::ControlFlow::Continue
+                },
+            );
+        }
+    }
+
     {
         let tool_btn = tool_btn.clone();
         dev_check.connect_toggled(move |btn| {
@@ -696,6 +834,65 @@ pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
     *win.borrow().current_notebook.borrow_mut() = Some(notebook_id);
     *win.borrow().current_sidebar.borrow_mut() = Some(view.sidebar_root);
     win.borrow().stack.set_visible_child_name(NOTEBOOK_NAME);
+
+    // Pull any cloud-side strokes the local DB doesn't have yet, on a
+    // worker thread so the UI stays responsive while AppSync paginates
+    // through up to a few thousand stroke rows. The poller below
+    // applies the result back on the main thread.
+    #[cfg(feature = "remote")]
+    spawn_pull_with_progress(&parent, win.clone(), state.clone(), notebook_id);
+
+    // Auto-enable Live Sync per `AppConfig::autosync_default`. On
+    // first-time open of a notebook (not yet in the cloud), kick a
+    // silent full sync so existing strokes mirror up. Subsequent
+    // opens just flip the live flag.
+    //
+    // The visibility lookup is a single sync HTTP GET (~100 ms) and
+    // runs on the main thread. The actual push is non-blocking via
+    // `spawn_sync`. Acceptable freeze for a one-time per-notebook
+    // open.
+    #[cfg(feature = "remote")]
+    {
+        let cfg = crate::config::load();
+        if cfg.autosync_default && crate::sign_in_modal::is_signed_in() {
+            crate::notebook_sync::mark_enabled_external(notebook_id);
+            tracing::info!("notebook_sync: autosync_default ON for {:?}", notebook_id);
+            use crate::notebook_sync::NotebookVisibility;
+            match crate::notebook_sync::fetch_remote_visibility(notebook_id) {
+                Ok(Some(v)) => {
+                    tracing::debug!(
+                        "notebook_sync: autosync — already pushed ({:?}), skipping initial sync",
+                        v
+                    );
+                }
+                Ok(None) => {
+                    match crate::notebook_sync::spawn_sync(
+                        &state,
+                        notebook_id,
+                        NotebookVisibility::Private,
+                        false,
+                    ) {
+                        Ok(_) => tracing::info!(
+                            "notebook_sync: autosync initial sync started for {:?}",
+                            notebook_id
+                        ),
+                        Err(e) => tracing::warn!(
+                            "notebook_sync: autosync initial sync failed for {:?}: {:#}",
+                            notebook_id,
+                            e
+                        ),
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "notebook_sync: autosync visibility lookup failed for {:?}: {:#}",
+                        notebook_id,
+                        e
+                    );
+                }
+            }
+        }
+    }
 }
 
 fn build_home_into(win: &SharedWindow) {
@@ -1032,4 +1229,327 @@ fn build_cheatsheet_button() -> MenuButton {
         .popover(&popover)
         .tooltip_text("Keyboard shortcuts")
         .build()
+}
+
+
+#[cfg(feature = "remote")]
+fn ask_visibility_then(
+    parent: &ApplicationWindow,
+    title: &str,
+    detail: &str,
+    on_pick: impl Fn(crate::notebook_sync::NotebookVisibility) + 'static,
+) {
+    use crate::notebook_sync::NotebookVisibility;
+    // GTK4's AlertDialog supports a button list with a default. Order
+    // matters: index 0 is the "first" / default action. Putting Private
+    // there matches the requirement that visibility default to PRIVATE.
+    // GTK4 also supports cancel/default index hints to handle the
+    // Escape key and the Enter key respectively.
+    let dialog = gtk4::AlertDialog::builder()
+        .message(title)
+        .detail(detail)
+        .buttons(["Private", "Unlisted", "Public", "Cancel"])
+        .default_button(0)
+        .cancel_button(3)
+        .modal(true)
+        .build();
+    let parent = parent.clone();
+    dialog.choose(
+        Some(&parent),
+        gtk4::gio::Cancellable::NONE,
+        move |res| {
+            let idx = match res {
+                Ok(i) => i,
+                Err(_) => return,
+            };
+            let visibility = match idx {
+                0 => NotebookVisibility::Private,
+                1 => NotebookVisibility::Unlisted,
+                2 => NotebookVisibility::Public,
+                _ => return,
+            };
+            on_pick(visibility);
+        },
+    );
+}
+
+/// Push the notebook to the cloud, prompting for visibility only on
+/// the first push. Subsequent pushes reuse the remote row's existing
+/// visibility silently. `live_after` flips the live-sync flag on after
+/// the upload completes — used by the "Live sync" toggle.
+#[cfg(feature = "remote")]
+fn sync_with_smart_visibility(
+    parent: &ApplicationWindow,
+    state: SharedState,
+    nb_id: NotebookId,
+    live_after: bool,
+) {
+    use crate::notebook_sync::NotebookVisibility;
+    let parent_owned = parent.clone();
+    match crate::notebook_sync::fetch_remote_visibility(nb_id) {
+        Ok(Some(existing)) => {
+            // Already pushed — reuse the existing visibility silently.
+            run_sync(&parent_owned, state, nb_id, existing, live_after);
+        }
+        Ok(None) => {
+            // Never pushed — prompt for the initial visibility.
+            let parent_for_prompt = parent_owned.clone();
+            let parent_for_run = parent_owned.clone();
+            ask_visibility_then(
+                &parent_for_prompt,
+                "First sync — pick visibility",
+                "This notebook hasn't been pushed before. Pick who can see it on the web. You can change this later from the notebook settings.",
+                move |chosen: NotebookVisibility| {
+                    run_sync(&parent_for_run, state.clone(), nb_id, chosen, live_after);
+                },
+            );
+        }
+        Err(e) => {
+            tracing::error!("notebook_sync: fetch_remote_visibility failed for {:?}: {:#}", nb_id, e);
+            let dialog = gtk4::AlertDialog::builder()
+                .message("Cloud lookup failed")
+                .detail(format!("{:#}", e))
+                .build();
+            dialog.show(Some(&parent_owned));
+        }
+    }
+}
+
+/// Open a progress window and spin up a background sync. The window
+/// is non-modal-but-transient — the user can't close it via Escape
+/// (no decorations) and can't draw on the canvas while it's up
+/// because we set `set_modal(true)`. Polls the worker's
+/// `Arc<Mutex<SyncJobState>>` every 150 ms and updates the bar.
+#[cfg(feature = "remote")]
+fn run_sync(
+    parent: &ApplicationWindow,
+    state: SharedState,
+    nb_id: NotebookId,
+    visibility: crate::notebook_sync::NotebookVisibility,
+    live_after: bool,
+) {
+    let job = match crate::notebook_sync::spawn_sync(&state, nb_id, visibility, live_after) {
+        Ok(j) => j,
+        Err(e) => {
+            tracing::error!("notebook_sync: spawn_sync failed for {:?}: {:#}", nb_id, e);
+            let dialog = gtk4::AlertDialog::builder()
+                .message("Sync failed to start")
+                .detail(format!("{:#}", e))
+                .build();
+            dialog.show(Some(parent));
+            return;
+        }
+    };
+
+    // Build the progress window. No close button — we drive the close
+    // ourselves once the worker reports `finished`.
+    let win = gtk4::Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .deletable(false)
+        .resizable(false)
+        .default_width(420)
+        .title("Syncing notebook")
+        .build();
+    let vbox = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(20)
+        .margin_end(20)
+        .build();
+    let phase_label = Label::builder()
+        .halign(Align::Start)
+        .label("Connecting…")
+        .build();
+    let counter_label = Label::builder()
+        .halign(Align::Start)
+        .label("")
+        .build();
+    counter_label.add_css_class("dim-label");
+    let bar = gtk4::ProgressBar::new();
+    bar.set_show_text(false);
+    vbox.append(&phase_label);
+    vbox.append(&bar);
+    vbox.append(&counter_label);
+    win.set_child(Some(&vbox));
+    win.present();
+
+    let win_clone = win.clone();
+    let parent_for_done = parent.clone();
+    let job_state_for_tick = job.state.clone();
+    let state_for_purge = state.clone();
+
+    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
+        let snapshot = job_state_for_tick.lock().unwrap().clone();
+        if !snapshot.phase.is_empty() {
+            phase_label.set_text(&snapshot.phase);
+        }
+        if snapshot.total > 0 {
+            let frac = (snapshot.done as f64) / (snapshot.total as f64);
+            bar.set_fraction(frac.clamp(0.0, 1.0));
+            counter_label.set_text(&format!("{} / {}", snapshot.done, snapshot.total));
+        } else {
+            bar.pulse();
+            counter_label.set_text("");
+        }
+        if let Some(result) = snapshot.finished {
+            win_clone.close();
+            match result {
+                Ok(report) => {
+                    tracing::info!(
+                        "notebook_sync: synced {:?} ({:?}, live_after={}): sections={} pages={} strokes={} purged={}",
+                        nb_id,
+                        visibility,
+                        live_after,
+                        report.sections_upserted,
+                        report.pages_upserted,
+                        report.strokes_upserted,
+                        report.strokes_purged.len(),
+                    );
+                    // Don't hard-purge — the soft-deleted local rows
+                    // are the tombstone that prevents
+                    // apply_pulled_strokes from re-merging the same
+                    // ids on a future pull. See comment in
+                    // sync_notebook_now for the full rationale.
+                    let _ = state_for_purge.borrow();
+                    if !live_after {
+                        let dialog = gtk4::AlertDialog::builder()
+                            .message("Notebook synced")
+                            .detail(format!(
+                                "Visibility: {:?}\nSections: {}\nPages: {}\nStrokes: {}\nLocal tombstones cleared: {}",
+                                visibility,
+                                report.sections_upserted,
+                                report.pages_upserted,
+                                report.strokes_upserted,
+                                report.strokes_purged.len(),
+                            ))
+                            .build();
+                        dialog.show(Some(&parent_for_done));
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("notebook_sync: sync failed for {:?}: {}", nb_id, e);
+                    if live_after {
+                        // Roll back the optimistic enable from spawn_sync
+                        // so the toggle reflects reality.
+                        crate::notebook_sync::disable(nb_id);
+                    }
+                    let dialog = gtk4::AlertDialog::builder()
+                        .message(if live_after {
+                            "Live sync failed to start"
+                        } else {
+                            "Sync failed"
+                        })
+                        .detail(e)
+                        .build();
+                    dialog.show(Some(&parent_for_done));
+                }
+            }
+            return gtk4::glib::ControlFlow::Break;
+        }
+        gtk4::glib::ControlFlow::Continue
+    });
+}
+
+/// Background pull-on-open. Pops a small modal "Checking cloud…" window
+/// while the worker fetches; once the worker finishes, applies the
+/// pulled strokes to local SQLite on the main thread, then refreshes
+/// the current page so newly-merged strokes hit the canvas.
+#[cfg(feature = "remote")]
+fn spawn_pull_with_progress(
+    parent: &ApplicationWindow,
+    win: SharedWindow,
+    state: SharedState,
+    notebook_id: NotebookId,
+) {
+    let job = crate::notebook_sync::spawn_pull(notebook_id);
+
+    let progress_win = gtk4::Window::builder()
+        .transient_for(parent)
+        .modal(true)
+        .deletable(false)
+        .resizable(false)
+        .default_width(360)
+        .title("Checking cloud")
+        .build();
+    let vbox = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(8)
+        .margin_top(16)
+        .margin_bottom(16)
+        .margin_start(20)
+        .margin_end(20)
+        .build();
+    let phase = Label::builder()
+        .halign(Align::Start)
+        .label("Checking cloud…")
+        .build();
+    let bar = gtk4::ProgressBar::new();
+    bar.set_show_text(false);
+    vbox.append(&phase);
+    vbox.append(&bar);
+    progress_win.set_child(Some(&vbox));
+    progress_win.present();
+
+    let job_state = job.state.clone();
+    let win_clone = win.clone();
+    let pw = progress_win.clone();
+    gtk4::glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
+        // Snapshot fields we need without holding the lock through any
+        // potentially-blocking work.
+        let (current_phase, finished) = {
+            let g = job_state.lock().unwrap();
+            (g.phase.clone(), g.finished.is_some())
+        };
+        if !current_phase.is_empty() {
+            phase.set_text(&current_phase);
+        }
+        bar.pulse();
+        if !finished {
+            return gtk4::glib::ControlFlow::Continue;
+        }
+        // Take ownership of the result so we can drop the lock before
+        // the (long-ish) backend write.
+        let outcome = job_state.lock().unwrap().finished.take();
+        pw.close();
+        match outcome {
+            Some(Ok(strokes)) => {
+                if strokes.is_empty() {
+                    tracing::debug!(
+                        "notebook_sync: no cloud strokes for {:?}",
+                        notebook_id
+                    );
+                    return gtk4::glib::ControlFlow::Break;
+                }
+                let report = crate::notebook_sync::apply_pulled_strokes(
+                    &state,
+                    notebook_id,
+                    strokes,
+                );
+                tracing::info!(
+                    "notebook_sync: pulled {} stroke(s) from cloud for {:?} (skipped {} duplicates)",
+                    report.strokes_inserted,
+                    notebook_id,
+                    report.strokes_skipped_duplicate
+                );
+                if report.strokes_inserted > 0 {
+                    if let Some(pid) = state.borrow().current_page_id {
+                        crate::views::notebook::reload_current_page_strokes(&state, pid);
+                    }
+                    win_clone.borrow().canvas.queue_draw();
+                }
+            }
+            Some(Err(e)) => {
+                tracing::warn!(
+                    "notebook_sync: pull failed for {:?}: {}",
+                    notebook_id,
+                    e
+                );
+            }
+            None => {}
+        }
+        gtk4::glib::ControlFlow::Break
+    });
 }

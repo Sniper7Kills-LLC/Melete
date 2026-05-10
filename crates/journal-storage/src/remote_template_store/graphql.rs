@@ -70,6 +70,23 @@ pub fn body(query: &str, operation_name: Option<&str>, variables: Value) -> Stri
 }
 
 #[cfg(feature = "remote")]
+fn shared_client() -> &'static reqwest::blocking::Client {
+    use std::sync::OnceLock;
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        // Connection pool + HTTP/2 keep-alive cuts the per-request TLS
+        // handshake cost from ~150 ms to ~0. Without this, every
+        // mutation rebuilds the TLS connection — visible as 1–2 s
+        // per-stroke latency during eraser bursts.
+        reqwest::blocking::Client::builder()
+            .pool_max_idle_per_host(16)
+            .pool_idle_timeout(std::time::Duration::from_secs(60))
+            .build()
+            .expect("build shared graphql client")
+    })
+}
+
+#[cfg(feature = "remote")]
 pub fn post(
     data_url: &str,
     id_token: &str,
@@ -78,20 +95,27 @@ pub fn post(
     variables: Value,
 ) -> Result<Value, GraphQlError> {
     let payload = body(query, operation_name, variables);
-    let client = reqwest::blocking::Client::builder()
-        .build()
-        .map_err(|e| GraphQlError::Transport(e.to_string()))?;
-    let resp = client
+    let started = std::time::Instant::now();
+    let op = operation_name
+        .or_else(|| query.split_whitespace().nth(1))
+        .unwrap_or("?");
+    tracing::trace!("graphql post {} ({} bytes)", op, payload.len());
+    let resp = shared_client()
         .post(data_url)
         .header("Content-Type", "application/json")
         .header("Authorization", id_token)
         .body(payload)
         .send()
-        .map_err(|e| GraphQlError::Transport(e.to_string()))?;
+        .map_err(|e| {
+            tracing::warn!("graphql {} transport: {}", op, e);
+            GraphQlError::Transport(e.to_string())
+        })?;
     let status = resp.status().as_u16();
     let text = resp
         .text()
         .map_err(|e| GraphQlError::Transport(e.to_string()))?;
+    let elapsed_ms = started.elapsed().as_millis();
+    tracing::debug!("graphql {} -> {} in {} ms", op, status, elapsed_ms);
     if status >= 500 {
         return Err(GraphQlError::Http { status, body: text });
     }

@@ -313,6 +313,8 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
             };
             new_cfg.developer_mode = inputs.developer_mode;
             new_cfg.stylus_top_action = inputs.stylus_top_action;
+            new_cfg.sync_worker_count = inputs.sync_worker_count.clamp(1, 16);
+            new_cfg.autosync_default = inputs.autosync_default;
             if let Err(e) = crate::config::save(&new_cfg) {
                 tracing::error!("save config: {e}");
             }
@@ -453,6 +455,35 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
     dev_group.add(&dev_row);
     page.add(&dev_group);
 
+    // ── Cloud sync ──────────────────────────────────────────────────
+    #[cfg(feature = "remote")]
+    let (sync_workers_row, autosync_row) = {
+        let sync_group = adw::PreferencesGroup::builder()
+            .title("Cloud sync")
+            .description(
+                "Notebook sync to AWS. Worker count controls how many \
+                 stroke uploads run in parallel — higher = faster eraser \
+                 fan-out, more concurrent connections.",
+            )
+            .build();
+
+        let workers_row = adw::SpinRow::with_range(1.0, 16.0, 1.0);
+        workers_row.set_title("Sync worker threads");
+        workers_row.set_subtitle("Default 4. Takes effect after relaunch.");
+        workers_row.set_value(cfg.sync_worker_count as f64);
+        sync_group.add(&workers_row);
+
+        let auto_row = adw::SwitchRow::builder()
+            .title("Auto-enable Live Sync on notebook open")
+            .subtitle("When signed in, every notebook opens with live sync already on.")
+            .active(cfg.autosync_default)
+            .build();
+        sync_group.add(&auto_row);
+
+        page.add(&sync_group);
+        (workers_row, auto_row)
+    };
+
     // ── Account ─────────────────────────────────────────────────────
     #[cfg(feature = "remote")]
     {
@@ -475,6 +506,10 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
         let text_row = text_row.clone();
         let dev_row = dev_row.clone();
         let top_action_row = top_action_row.clone();
+        #[cfg(feature = "remote")]
+        let sync_workers_row = sync_workers_row.clone();
+        #[cfg(feature = "remote")]
+        let autosync_row = autosync_row.clone();
         move || PersistInputs {
             image_path: path_state.borrow().clone(),
             text: text_row.text().to_string(),
@@ -483,6 +518,14 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
                 1 => crate::config::StylusTopAction::ColorCycle,
                 _ => crate::config::StylusTopAction::ToolCycle,
             },
+            #[cfg(feature = "remote")]
+            sync_worker_count: sync_workers_row.value() as usize,
+            #[cfg(not(feature = "remote"))]
+            sync_worker_count: 4,
+            #[cfg(feature = "remote")]
+            autosync_default: autosync_row.is_active(),
+            #[cfg(not(feature = "remote"))]
+            autosync_default: false,
         }
     };
 
@@ -549,6 +592,22 @@ pub fn open_app_settings(parent: &ApplicationWindow, state: SharedState, on_save
             persist(&snapshot_inputs());
         });
     }
+    #[cfg(feature = "remote")]
+    {
+        let persist = persist.clone();
+        let snapshot_inputs = snapshot_inputs.clone();
+        sync_workers_row.connect_changed(move |_| {
+            persist(&snapshot_inputs());
+        });
+    }
+    #[cfg(feature = "remote")]
+    {
+        let persist = persist.clone();
+        let snapshot_inputs = snapshot_inputs.clone();
+        autosync_row.connect_active_notify(move |_| {
+            persist(&snapshot_inputs());
+        });
+    }
 
     prefs.present();
 }
@@ -558,6 +617,8 @@ struct PersistInputs {
     text: String,
     developer_mode: bool,
     stylus_top_action: crate::config::StylusTopAction,
+    sync_worker_count: usize,
+    autosync_default: bool,
 }
 
 // ── Pen presets settings dialog ───────────────────────────────────────────────

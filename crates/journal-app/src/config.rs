@@ -152,6 +152,31 @@ pub struct AppConfig {
     /// shows the welcome window on next boot.
     #[serde(default)]
     pub first_run_completed: bool,
+
+    /// Notebook cloud-sync worker pool size. Each worker fires
+    /// stroke create / update / delete mutations against AppSync in
+    /// parallel. Higher = faster eraser fan-out at the cost of more
+    /// concurrent HTTPS connections + TLS handshakes. Range 1..=16,
+    /// default 4. Workers spawn lazily on first sync event so
+    /// changing this only takes effect after a relaunch.
+    #[serde(default = "default_sync_worker_count")]
+    pub sync_worker_count: usize,
+
+    /// When true: any time the user opens a notebook the desktop
+    /// auto-enables Live Sync for it (push-on-stroke + auto-pull on
+    /// open). Off by default so the manual toggle stays opt-in.
+    /// Future paid-plan gating will read this AND the user's
+    /// entitlement.
+    #[serde(default)]
+    pub autosync_default: bool,
+}
+
+pub fn default_sync_worker_count() -> usize {
+    // Per-stroke locking in `notebook_sync` makes parallel workers
+    // safe — two ops on the same stroke id serialize on a per-id
+    // mutex, different ids run concurrently. 8 gives a good balance
+    // of throughput vs. concurrent-connection cost on AppSync.
+    8
 }
 
 /// (slug, label, font-family chain). The slug is what's persisted in
@@ -220,6 +245,8 @@ impl Default for AppConfig {
             last_seen_version: None,
             stylus_top_action: StylusTopAction::ToolCycle,
             first_run_completed: false,
+            sync_worker_count: default_sync_worker_count(),
+            autosync_default: false,
         }
     }
 }

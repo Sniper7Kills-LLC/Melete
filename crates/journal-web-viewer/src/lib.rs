@@ -255,21 +255,24 @@ impl Viewer {
             self.template_by_page.insert(page.id.0, template);
         }
 
-        // Establish a default viewport from the first page's template
-        // size so the first render paints something visible. Width /
-        // height get reset by render_page.
-        if let Some(first_page) = bundle.pages.first() {
-            if let Some(template) = self.template_by_page.get(&first_page.id.0) {
-                let (tw, th) = template.size_mm;
-                let viewport = template.default_viewport.unwrap_or(Viewport {
-                    center: Point {
-                        x: tw * 0.5,
-                        y: th * 0.5,
-                    },
-                    zoom: 1.0,
-                    rotation: 0.0,
-                });
-                self.transform = Some(ViewportTransform::new(viewport, 1.0, 1.0));
+        // Only establish the default viewport on the first load —
+        // subscription-triggered reloads must NOT clobber the user's
+        // accumulated pan/zoom. Without this guard every live event
+        // snapped the canvas back to template-center @ 1.0×.
+        if self.transform.is_none() {
+            if let Some(first_page) = bundle.pages.first() {
+                if let Some(template) = self.template_by_page.get(&first_page.id.0) {
+                    let (tw, th) = template.size_mm;
+                    let viewport = template.default_viewport.unwrap_or(Viewport {
+                        center: Point {
+                            x: tw * 0.5,
+                            y: th * 0.5,
+                        },
+                        zoom: 1.0,
+                        rotation: 0.0,
+                    });
+                    self.transform = Some(ViewportTransform::new(viewport, 1.0, 1.0));
+                }
             }
         }
 

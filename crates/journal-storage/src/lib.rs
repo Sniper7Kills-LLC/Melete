@@ -30,6 +30,13 @@ pub mod remote_template_store {
     pub mod store;
 }
 
+/// Phase 6.5 — user-notebook (the actual document) sync. Snapshot
+/// upload to S3 + per-stroke live event publishing to AppSync.
+/// Reuses the auth / identity / config / graphql / s3 building
+/// blocks from `remote_template_store`.
+#[cfg(feature = "remote")]
+pub mod remote_notebook_store;
+
 // SQLite-specific store modules. Crate-internal: only `SqliteBackend`
 // delegates to them. App and library callers must use the trait surface.
 pub(crate) mod brush_store;

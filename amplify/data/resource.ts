@@ -1,8 +1,9 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { assetPresign } from '../functions/asset-presign/resource';
+import { syncStrokesBatch } from '../functions/sync-strokes-batch/resource';
 
 const Visibility = a.enum(['PRIVATE', 'UNLISTED', 'PUBLIC']);
-const SavedKind = a.enum(['PageTemplate', 'NotebookTemplate', 'Brush']);
+const SavedKind = a.enum(['PageTemplate', 'NotebookTemplate', 'Brush', 'Notebook']);
 
 const schema = a.schema({
   // `updatedAtSort` is an RFC3339 string mirror of `updatedAt`, used as the GSI
@@ -89,6 +90,134 @@ const schema = a.schema({
       allow.owner().identityClaim('sub'),
       allow.publicApiKey().to(['read']),
       allow.authenticated().to(['read']),
+    ]),
+
+  // User notebook (the actual document, not a template). Holds just
+  // the notebook header — sections / pages / strokes live in their
+  // own per-row DDB models below so the SQLite data mirrors row-by-
+  // row to the cloud (no S3 binary blobs). `kindJson` carries the
+  // serde-tagged `NotebookKind` enum (Standard | Planner) verbatim
+  // so the desktop deserializer reads it back without a translator.
+  Notebook: a
+    .model({
+      id: a.id().required(),
+      owner: a.string(),
+      name: a.string().required(),
+      description: a.string(),
+      visibility: a.ref('Visibility').required(),
+      kindJson: a.string(),
+      assignedTemplatesJson: a.string(),
+      updatedAtSort: a.string().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('visibility').sortKeys(['updatedAtSort']).queryField('listNotebooksByVisibility'),
+      index('owner').sortKeys(['updatedAtSort']).queryField('listNotebooksByOwner'),
+    ])
+    .authorization((allow) => [
+      allow.owner().identityClaim('sub'),
+      allow.publicApiKey().to(['read']),
+      // Pre-paywall: any signed-in user can read/update/delete every
+      // notebook row. Eraser was hitting "Not Authorized" on
+      // deleteRemoteStroke because owner-only delete failed when the
+      // caller's JWT sub didn't match (token churn during testing).
+      // Tighten back to owner-only when paid plans land (#44).
+      allow.authenticated().to(['read', 'update', 'delete']),
+    ]),
+
+  // Mirror of the desktop's `sections` SQLite table. One row per
+  // local section. `parentSectionId` is null for root sections.
+  // `byNotebook` GSI feeds the web viewer's section list.
+  RemoteSection: a
+    .model({
+      id: a.id().required(),
+      owner: a.string(),
+      notebookId: a.id().required(),
+      parentSectionId: a.id(),
+      name: a.string().required(),
+      position: a.integer().required(),
+      allowedTemplatesJson: a.string(),
+    })
+    .secondaryIndexes((index) => [
+      index('notebookId').sortKeys(['position']).queryField('listRemoteSectionsByNotebook'),
+    ])
+    .authorization((allow) => [
+      allow.owner().identityClaim('sub'),
+      allow.publicApiKey().to(['read']),
+      // Pre-paywall: any signed-in user can read/update/delete every
+      // notebook row. Eraser was hitting "Not Authorized" on
+      // deleteRemoteStroke because owner-only delete failed when the
+      // caller's JWT sub didn't match (token churn during testing).
+      // Tighten back to owner-only when paid plans land (#44).
+      allow.authenticated().to(['read', 'update', 'delete']),
+    ]),
+
+  // Mirror of `pages`. JSON columns hold the serde-tagged structs
+  // verbatim so the desktop round-trips losslessly.
+  RemotePage: a
+    .model({
+      id: a.id().required(),
+      owner: a.string(),
+      notebookId: a.id().required(),
+      sectionId: a.id().required(),
+      templateId: a.id(),
+      position: a.integer().required(),
+      name: a.string(),
+      plannerAddressJson: a.string(),
+      widgetOverridesJson: a.string(),
+      widgetDataJson: a.string(),
+      flagged: a.boolean(),
+      createdAtIso: a.string(),
+      modifiedAtIso: a.string(),
+    })
+    .secondaryIndexes((index) => [
+      index('notebookId').sortKeys(['position']).queryField('listRemotePagesByNotebook'),
+      index('sectionId').sortKeys(['position']).queryField('listRemotePagesBySection'),
+    ])
+    .authorization((allow) => [
+      allow.owner().identityClaim('sub'),
+      allow.publicApiKey().to(['read']),
+      // Pre-paywall: any signed-in user can read/update/delete every
+      // notebook row. Eraser was hitting "Not Authorized" on
+      // deleteRemoteStroke because owner-only delete failed when the
+      // caller's JWT sub didn't match (token churn during testing).
+      // Tighten back to owner-only when paid plans land (#44).
+      allow.authenticated().to(['read', 'update', 'delete']),
+    ]),
+
+  // One row per stroke. Body is the JSON-serialized
+  // `journal_core::Stroke` (matches the desktop's serde shape so the
+  // web viewer reads it directly). AppSync auto-generates
+  // `onCreateRemoteStroke` / `observeQuery` for live subscribers.
+  RemoteStroke: a
+    .model({
+      id: a.id().required(),
+      owner: a.string(),
+      notebookId: a.id().required(),
+      pageId: a.id().required(),
+      strokeJson: a.string().required(),
+      // Last-writer-wins clock. Every mutation bumps `updatedAtIso`
+      // so subscribers can ignore out-of-order events. Soft-delete
+      // sets `deletedAtIso`; the row stays in the table forever as a
+      // tombstone (web filters `deletedAtIso IS NULL`). Hard delete
+      // never happens — racing creates / updates can't bring a
+      // soft-deleted stroke back without a newer `updatedAtIso`.
+      createdAt: a.string().required(),
+      updatedAtIso: a.string(),
+      deletedAtIso: a.string(),
+    })
+    .secondaryIndexes((index) => [
+      index('notebookId').sortKeys(['createdAt']).queryField('listRemoteStrokesByNotebook'),
+      index('pageId').sortKeys(['createdAt']).queryField('listRemoteStrokesByPage'),
+    ])
+    .authorization((allow) => [
+      allow.owner().identityClaim('sub'),
+      allow.publicApiKey().to(['read']),
+      // Pre-paywall: any signed-in user can read/update/delete every
+      // notebook row. Eraser was hitting "Not Authorized" on
+      // deleteRemoteStroke because owner-only delete failed when the
+      // caller's JWT sub didn't match (token churn during testing).
+      // Tighten back to owner-only when paid plans land (#44).
+      allow.authenticated().to(['read', 'update', 'delete']),
     ]),
 
   // Owner-scoped reference to a source PageTemplate / NotebookTemplate /
@@ -242,6 +371,63 @@ const schema = a.schema({
     // read access on PageTemplate re-introduces the CFN circular
     // dependency between the data + function nested stacks.
     .handler(a.handler.function(assetPresign)),
+
+  // Bulk CRUD for the desktop's stroke worker — replaces N
+  // round-trip per-stroke create/delete mutations with a single
+  // BatchWriteItem chunked at 25 ops. Lambda env is wired in
+  // `amplify/backend.ts` to the RemoteStroke table name.
+  // Single upsert path — `items` is an array of full stroke states
+  // (id, pageId, strokeJson, updatedAtIso, deletedAtIso). Lambda
+  // writes each as a PutRequest in BatchWriteItem chunks. Cloud
+  // last-writer-wins on `updatedAtIso`. There is no separate delete
+  // mutation; tombstones are upserts with `deletedAtIso` set.
+  upsertStrokesBatch: a
+    .mutation()
+    .arguments({
+      notebookId: a.id().required(),
+      items: a.json().required(),
+    })
+    .returns(a.ref('StrokesBatchResult'))
+    .authorization((allow) => [
+      allow.authenticated(),
+      allow.publicApiKey(),
+    ])
+    .handler(a.handler.function(syncStrokesBatch)),
+
+  StrokesBatchResult: a.customType({
+    notebookId: a.id().required(),
+    upserted: a.integer().required(),
+    unprocessed: a.integer().required(),
+    /** Affected ids — fan-out to subscribers as a single payload. */
+    ids: a.string().array(),
+    /** Ids the worker should requeue. Stale-skipped ids are omitted —
+     *  those are correct LWW losses, requeue would loop forever. */
+    failedIds: a.string().array(),
+  }),
+
+  // Fan-out subscription: every successful syncStrokesBatch call
+  // re-emits its (createdIds, deletedIds) tuple to all subscribers
+  // for the given notebook. Replaces the `onCreate/onDelete` per-row
+  // subscriptions that the auto-resolvers used to fire (Lambda
+  // BatchWriteItem bypasses AppSync, so those don't fire for
+  // batched ops).
+  onStrokesBatchSync: a
+    .subscription()
+    .for(a.ref('upsertStrokesBatch'))
+    .arguments({ notebookId: a.id().required() })
+    .authorization((allow) => [
+      allow.authenticated(),
+      allow.publicApiKey(),
+    ])
+    .handler(
+      a.handler.custom({
+        entry: './on-strokes-batch-sync.js',
+        // NoneDataSource — AppSync passes the source mutation's
+        // return value through to subscribers without touching
+        // backing storage.
+        dataSource: 'NONE_DS',
+      }),
+    ),
 });
 
 export type Schema = ClientSchema<typeof schema>;

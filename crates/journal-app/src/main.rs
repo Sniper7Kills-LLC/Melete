@@ -18,6 +18,8 @@ mod first_run;
 mod history;
 mod input;
 mod notebook_template_creator;
+#[cfg(feature = "remote")]
+mod notebook_sync;
 mod onboarding;
 mod pdf_export;
 #[cfg(feature = "remote")]
@@ -617,6 +619,59 @@ fn build_ui(app: &adw::Application) -> Result<()> {
             cfg.window_height = Some(h);
             if let Err(e) = config::save(&cfg) {
                 tracing::warn!("failed to save window size: {}", e);
+            }
+            // Two-phase close so we keep flushing the notebook-sync
+            // queue without hanging the user's click. The window
+            // hides instantly; a glib timeout polls `in_flight` and
+            // kills the app process once everything's drained. If the
+            // queue is empty (or sync isn't built in), close
+            // proceeds normally.
+            #[cfg(feature = "remote")]
+            {
+                let pending = crate::notebook_sync::in_flight();
+                tracing::info!(
+                    "notebook_sync: close requested, in_flight={}",
+                    pending
+                );
+                if pending > 0 {
+                    tracing::info!(
+                        "notebook_sync: window hidden, draining {} pending event(s) in background",
+                        pending
+                    );
+                    let win = window_for_close.clone();
+                    win.set_visible(false);
+                    let started = std::time::Instant::now();
+                    let max_wait = std::time::Duration::from_secs(120);
+                    gtk4::glib::timeout_add_local(
+                        std::time::Duration::from_millis(200),
+                        move || {
+                            let still = crate::notebook_sync::in_flight();
+                            let elapsed = started.elapsed();
+                            if still == 0 {
+                                tracing::info!(
+                                    "notebook_sync: queue drained in {} ms — exiting",
+                                    elapsed.as_millis()
+                                );
+                                if let Some(app) = win.application() {
+                                    app.quit();
+                                }
+                                return gtk4::glib::ControlFlow::Break;
+                            }
+                            if elapsed > max_wait {
+                                tracing::warn!(
+                                    "notebook_sync: drain timed out with {} event(s) still pending — exiting anyway",
+                                    still
+                                );
+                                if let Some(app) = win.application() {
+                                    app.quit();
+                                }
+                                return gtk4::glib::ControlFlow::Break;
+                            }
+                            gtk4::glib::ControlFlow::Continue
+                        },
+                    );
+                    return glib::Propagation::Stop;
+                }
             }
             glib::Propagation::Proceed
         });

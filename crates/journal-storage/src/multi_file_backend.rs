@@ -667,7 +667,9 @@ impl StrokeStore for MultiFileSqliteBackend {
     fn delete_stroke(&mut self, id: Uuid) -> Result<()> {
         let nid = self.notebook_for_stroke(id)?;
         self.with_conn(nid, |c| stroke_store::delete_stroke(c, id))?;
-        self.stroke_to_notebook.borrow_mut().remove(&id);
+        // Keep the stroke_to_notebook mapping — soft-delete leaves
+        // the row in place so we can later push the delete to cloud
+        // and `purge_deleted_stroke` once the cloud confirms.
         Ok(())
     }
 
@@ -708,10 +710,8 @@ impl StrokeStore for MultiFileSqliteBackend {
         }
         for (nid, group) in by_nb {
             self.with_conn(nid, |c| stroke_store::delete_strokes_batch(c, &group))?;
-            let mut cache = self.stroke_to_notebook.borrow_mut();
-            for id in &group {
-                cache.remove(id);
-            }
+            // Soft-delete: keep cache entries so later cloud-sync /
+            // purge can find the owning notebook.
         }
         Ok(())
     }
@@ -731,6 +731,29 @@ impl StrokeStore for MultiFileSqliteBackend {
         self.with_conn(nid, |c| {
             stroke_store::query_strokes_in_rect(c, page_id, rect)
         })
+    }
+
+    fn list_deleted_strokes(
+        &mut self,
+        notebook_id: NotebookId,
+    ) -> Result<Vec<(Uuid, String)>> {
+        self.with_conn(notebook_id, stroke_store::list_deleted)
+    }
+
+    fn purge_deleted_stroke(&mut self, id: Uuid) -> Result<()> {
+        let nid = self.notebook_for_stroke(id)?;
+        self.with_conn(nid, |c| stroke_store::purge_deleted(c, id))?;
+        self.stroke_to_notebook.borrow_mut().remove(&id);
+        Ok(())
+    }
+
+    fn is_stroke_deleted(&mut self, id: Uuid) -> Result<bool> {
+        let nid = match self.notebook_for_stroke(id) {
+            Ok(n) => n,
+            Err(StorageError::NotFound) => return Ok(false),
+            Err(e) => return Err(e),
+        };
+        self.with_conn(nid, |c| stroke_store::is_deleted(c, id))
     }
 }
 
