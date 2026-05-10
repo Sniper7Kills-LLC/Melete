@@ -27,7 +27,6 @@
     "@aws-sdk/client-dynamodb": "^3.687.0",
     "@aws-sdk/client-s3": "^3.687.0",
     "@aws-sdk/s3-request-presigner": "^3.687.0",
-    "@aws-sdk/util-dynamodb": "^3.687.0",
-    "aws-amplify": "^6.6.0"
+    "@aws-sdk/util-dynamodb": "^3.687.0"
   }
 }

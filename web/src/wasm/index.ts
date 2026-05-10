@@ -18,6 +18,7 @@
 
 import type { NotebookBundle, PageTemplate } from "@/types";
 import type { Brush } from "@/types/brush";
+import type { NotebookTemplate } from "@/types/notebook-template";
 
 /**
  * Read-only viewer. Mirrors §5.4 of docs/web-portal.md:
@@ -50,6 +51,10 @@ export interface Shim {
   parseBrushToml(toml: string): Brush;
   /** Serialize a `Brush` to TOML. See `serialize_brush_toml` (Rust). */
   serializeBrushToml(b: Brush): string;
+  /** Parse a TOML notebook-template document. */
+  parseNotebookTemplateToml(toml: string): NotebookTemplate;
+  /** Serialize a `NotebookTemplate` to TOML. */
+  serializeNotebookTemplateToml(t: NotebookTemplate): string;
 }
 
 // ---------------------------------------------------------------------
@@ -179,6 +184,9 @@ function realShim(): Shim {
     /** May be missing on older shim builds — Tooler falls back to JSON. */
     parse_brush_toml?: (toml: string) => Brush;
     serialize_brush_toml?: (b: Brush) => string;
+    /** May be missing on older shim builds — Templeter falls back to JSON. */
+    parse_notebook_template_toml?: (toml: string) => NotebookTemplate;
+    serialize_notebook_template_toml?: (t: NotebookTemplate) => string;
   } | null = null;
   let mockFallback: Shim | null = null;
 
@@ -199,6 +207,8 @@ function realShim(): Shim {
         serialize_template_toml: m.serialize_template_toml,
         parse_brush_toml: m.parse_brush_toml,
         serialize_brush_toml: m.serialize_brush_toml,
+        parse_notebook_template_toml: m.parse_notebook_template_toml,
+        serialize_notebook_template_toml: m.serialize_notebook_template_toml,
       };
     } catch (e) {
       console.warn(
@@ -241,6 +251,22 @@ function realShim(): Shim {
       if (mockFallback) return mockFallback.serializeBrushToml(b);
       throw new Error(
         "shim WASM brush bindings missing — rebuild via bash web/build-wasm.sh.",
+      );
+    },
+    parseNotebookTemplateToml(toml: string): NotebookTemplate {
+      if (mod && mod.parse_notebook_template_toml)
+        return mod.parse_notebook_template_toml(toml);
+      if (mockFallback) return mockFallback.parseNotebookTemplateToml(toml);
+      throw new Error(
+        "shim WASM notebook-template bindings missing — rebuild via bash web/build-wasm.sh.",
+      );
+    },
+    serializeNotebookTemplateToml(t: NotebookTemplate): string {
+      if (mod && mod.serialize_notebook_template_toml)
+        return mod.serialize_notebook_template_toml(t);
+      if (mockFallback) return mockFallback.serializeNotebookTemplateToml(t);
+      throw new Error(
+        "shim WASM notebook-template bindings missing — rebuild via bash web/build-wasm.sh.",
       );
     },
   };
@@ -397,6 +423,25 @@ export function mockShim(): Shim {
       return [
         "# WARNING: this is a mock TOML preview.",
         "# Real output will come from journal-web-shim::serialize_brush_toml.",
+        "",
+        "[preview-as-json]",
+        ...json.split("\n").map((line) => `# ${line}`),
+      ].join("\n");
+    },
+    parseNotebookTemplateToml(toml: string): NotebookTemplate {
+      console.info(
+        "[mock-shim] parseNotebookTemplateToml (stub)",
+        toml.slice(0, 80),
+      );
+      throw new Error(
+        "mockShim.parseNotebookTemplateToml is not implemented; wire real WASM.",
+      );
+    },
+    serializeNotebookTemplateToml(t: NotebookTemplate): string {
+      const json = JSON.stringify(t, null, 2);
+      return [
+        "# WARNING: this is a mock TOML preview.",
+        "# Real output will come from journal-web-shim::serialize_notebook_template_toml.",
         "",
         "[preview-as-json]",
         ...json.split("\n").map((line) => `# ${line}`),

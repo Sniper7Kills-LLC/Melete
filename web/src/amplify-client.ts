@@ -73,6 +73,19 @@ export interface BrushRow {
   updatedAt?: string | null;
 }
 
+export type SavedKind = 'PageTemplate' | 'NotebookTemplate' | 'Brush';
+
+export interface SavedTemplateRow {
+  id: string;
+  owner?: string | null;
+  kind: SavedKind;
+  sourceId: string;
+  sourceName?: string | null;
+  savedAt: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
 // Loosely-typed client. Amplify's `generateClient<Schema>()` would give
 // per-model autocompletion; we trade that for build-isolation from the
 // `amplify/` workspace.
@@ -104,6 +117,73 @@ interface GetResult<T> {
   errors?: { message: string }[];
 }
 
+type DeleteArgs = { id: string };
+type DeleteOpts = { authMode?: AuthMode };
+
+type CreateOpts = { authMode?: AuthMode };
+type UpdateOpts = { authMode?: AuthMode };
+
+interface PageTemplateCreateInput {
+  id: string;
+  name: string;
+  description?: string | null;
+  category?: string | null;
+  visibility: Visibility;
+  bodyToml: string;
+  assets?: unknown;
+  forkedFrom?: string | null;
+  updatedAtSort: string;
+}
+
+interface PageTemplateUpdateInput {
+  id: string;
+  name?: string;
+  description?: string | null;
+  category?: string | null;
+  visibility?: Visibility;
+  bodyToml?: string;
+  assets?: unknown;
+  updatedAtSort: string;
+}
+
+interface NotebookTemplateCreateInput {
+  id: string;
+  name: string;
+  description?: string | null;
+  visibility: Visibility;
+  bodyToml: string;
+  forkedFrom?: string | null;
+  updatedAtSort: string;
+}
+
+interface NotebookTemplateUpdateInput {
+  id: string;
+  name?: string;
+  description?: string | null;
+  visibility?: Visibility;
+  bodyToml?: string;
+  updatedAtSort: string;
+}
+
+interface BrushCreateInput {
+  id: string;
+  name: string;
+  description?: string | null;
+  visibility: Visibility;
+  bodyToml: string;
+  forkedFrom?: string | null;
+  updatedAtSort: string;
+}
+
+interface BrushUpdateInput {
+  id: string;
+  name?: string;
+  description?: string | null;
+  visibility?: Visibility;
+  bodyToml?: string;
+  updatedAtSort: string;
+}
+
 interface PageTemplateOps {
   list(opts?: ListOpts<PageTemplateRow>): Promise<ListResult<PageTemplateRow>>;
   listPageTemplatesByOwner(
@@ -111,6 +191,18 @@ interface PageTemplateOps {
     opts?: ByOwnerOpts,
   ): Promise<ListResult<PageTemplateRow>>;
   get(args: GetArgs, opts?: GetOpts): Promise<GetResult<PageTemplateRow>>;
+  create(
+    input: PageTemplateCreateInput,
+    opts?: CreateOpts,
+  ): Promise<GetResult<PageTemplateRow>>;
+  update(
+    input: PageTemplateUpdateInput,
+    opts?: UpdateOpts,
+  ): Promise<GetResult<PageTemplateRow>>;
+  delete(
+    args: DeleteArgs,
+    opts?: DeleteOpts,
+  ): Promise<GetResult<PageTemplateRow>>;
 }
 
 interface NotebookTemplateOps {
@@ -125,6 +217,18 @@ interface NotebookTemplateOps {
     args: GetArgs,
     opts?: GetOpts,
   ): Promise<GetResult<NotebookTemplateRow>>;
+  create(
+    input: NotebookTemplateCreateInput,
+    opts?: CreateOpts,
+  ): Promise<GetResult<NotebookTemplateRow>>;
+  update(
+    input: NotebookTemplateUpdateInput,
+    opts?: UpdateOpts,
+  ): Promise<GetResult<NotebookTemplateRow>>;
+  delete(
+    args: DeleteArgs,
+    opts?: DeleteOpts,
+  ): Promise<GetResult<NotebookTemplateRow>>;
 }
 
 interface BrushOps {
@@ -134,6 +238,40 @@ interface BrushOps {
     opts?: ByOwnerOpts,
   ): Promise<ListResult<BrushRow>>;
   get(args: GetArgs, opts?: GetOpts): Promise<GetResult<BrushRow>>;
+  create(
+    input: BrushCreateInput,
+    opts?: CreateOpts,
+  ): Promise<GetResult<BrushRow>>;
+  update(
+    input: BrushUpdateInput,
+    opts?: UpdateOpts,
+  ): Promise<GetResult<BrushRow>>;
+  delete(args: DeleteArgs, opts?: DeleteOpts): Promise<GetResult<BrushRow>>;
+}
+
+interface SavedCreateInput {
+  kind: SavedKind;
+  sourceId: string;
+  sourceName?: string | null;
+  savedAt: string;
+}
+
+interface SavedTemplateOps {
+  list(
+    opts?: ListOpts<SavedTemplateRow>,
+  ): Promise<ListResult<SavedTemplateRow>>;
+  listSavedTemplatesByOwner(
+    args: ByOwnerArgs,
+    opts?: ByOwnerOpts,
+  ): Promise<ListResult<SavedTemplateRow>>;
+  create(
+    input: SavedCreateInput,
+    opts?: GetOpts,
+  ): Promise<GetResult<SavedTemplateRow>>;
+  delete(
+    args: DeleteArgs,
+    opts?: DeleteOpts,
+  ): Promise<GetResult<SavedTemplateRow>>;
 }
 
 interface MutationResult<T> {
@@ -168,6 +306,7 @@ interface AmplifyDataClient {
     PageTemplate: PageTemplateOps;
     NotebookTemplate: NotebookTemplateOps;
     Brush: BrushOps;
+    SavedTemplate: SavedTemplateOps;
   };
   mutations: MutationOps;
 }

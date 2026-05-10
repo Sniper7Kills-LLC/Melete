@@ -19,6 +19,29 @@ export default defineConfig({
     alias: {
       "@": path.resolve(__dirname, "src"),
     },
+    // The repo is two npm projects in one tree: the root `journal-amplify`
+    // package (backend tooling — `@aws-amplify/backend`, `ampx`) and the
+    // `journal-web` package here. Both end up with their own copy of
+    // `aws-amplify` + `@aws-amplify/core` under their respective
+    // `node_modules`. Without explicit dedupe, Vite can resolve different
+    // singletons in different import chains (e.g. `aws-amplify` from web,
+    // `@aws-amplify/core` pulled transitively from the root), which leaves
+    // `Amplify.configure` writing to one singleton while `Authenticator`
+    // reads from the other — producing the classic
+    // `AuthUserPoolException: Auth UserPool not configured` error even
+    // though configuration was correct.
+    // Only dedupe modules that actually exist at the top level of
+    // web/node_modules. `@aws-amplify/auth` only ships under
+    // `aws-amplify/node_modules/` (nested), and listing it here makes
+    // Rollup hide that nested copy → "Cannot resolve
+    // @aws-amplify/auth/cognito" at build time.
+    dedupe: [
+      "aws-amplify",
+      "@aws-amplify/core",
+      "@aws-amplify/ui-react",
+      "react",
+      "react-dom",
+    ],
   },
   server: {
     port: 5173,

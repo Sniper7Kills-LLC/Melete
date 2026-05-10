@@ -2,6 +2,7 @@ import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { assetPresign } from '../functions/asset-presign/resource';
 
 const Visibility = a.enum(['PRIVATE', 'UNLISTED', 'PUBLIC']);
+const SavedKind = a.enum(['PageTemplate', 'NotebookTemplate', 'Brush']);
 
 const schema = a.schema({
   // `updatedAtSort` is an RFC3339 string mirror of `updatedAt`, used as the GSI
@@ -30,7 +31,10 @@ const schema = a.schema({
       index('category').sortKeys(['updatedAtSort']).queryField('listPageTemplatesByCategory'),
     ])
     .authorization((allow) => [
-      allow.owner(),
+      // identityClaim('sub') stores owner as the bare Cognito sub. The
+      // default `<sub>::<username>` compound is what listByOwner({owner: sub})
+      // can't match, so this keeps queries straightforward.
+      allow.owner().identityClaim('sub'),
       allow.publicApiKey().to(['read']),
       allow.authenticated().to(['read']),
     ]),
@@ -53,7 +57,10 @@ const schema = a.schema({
       index('owner').sortKeys(['updatedAtSort']).queryField('listNotebookTemplatesByOwner'),
     ])
     .authorization((allow) => [
-      allow.owner(),
+      // identityClaim('sub') stores owner as the bare Cognito sub. The
+      // default `<sub>::<username>` compound is what listByOwner({owner: sub})
+      // can't match, so this keeps queries straightforward.
+      allow.owner().identityClaim('sub'),
       allow.publicApiKey().to(['read']),
       allow.authenticated().to(['read']),
     ]),
@@ -76,54 +83,138 @@ const schema = a.schema({
       index('owner').sortKeys(['updatedAtSort']).queryField('listBrushesByOwner'),
     ])
     .authorization((allow) => [
-      allow.owner(),
+      // identityClaim('sub') stores owner as the bare Cognito sub. The
+      // default `<sub>::<username>` compound is what listByOwner({owner: sub})
+      // can't match, so this keeps queries straightforward.
+      allow.owner().identityClaim('sub'),
       allow.publicApiKey().to(['read']),
       allow.authenticated().to(['read']),
     ]),
 
-  Visibility,
+  // Owner-scoped reference to a source PageTemplate / NotebookTemplate /
+  // Brush row. Holds no body — the desktop / web client fetches the
+  // current bodyToml from the source on demand, so updates propagate
+  // automatically. "Fork" still copies; "Save" subscribes.
+  SavedTemplate: a
+    .model({
+      id: a.id().required(),
+      owner: a.string(),
+      kind: a.ref('SavedKind').required(),
+      sourceId: a.id().required(),
+      // Cached display fields written at save time so /my can render
+      // the list without N extra fetches. Refreshed when the client
+      // re-saves; staleness is acceptable for the list view.
+      sourceName: a.string(),
+      savedAt: a.string().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('owner').sortKeys(['savedAt']).queryField('listSavedTemplatesByOwner'),
+    ])
+    .authorization((allow) => [allow.owner().identityClaim('sub')]),
 
+  Visibility,
+  SavedKind,
+
+  // Two-step pipeline: load source row + authorize → put new owner-scoped
+  // copy. Single-resolver shapes can't read-then-write in one DynamoDB
+  // operation, so the previous single-file resolvers (kept for git
+  // history) returned a synthesized newRow without persisting it.
   forkPageTemplate: a
     .mutation()
     .arguments({ id: a.id().required() })
     .returns(a.ref('PageTemplate'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './fork-page-template.js', dataSource: a.ref('PageTemplate') })),
+    .handler([
+      a.handler.custom({
+        entry: './fork-page-template-load.js',
+        dataSource: a.ref('PageTemplate'),
+      }),
+      a.handler.custom({
+        entry: './fork-page-template-write.js',
+        dataSource: a.ref('PageTemplate'),
+      }),
+    ]),
 
   forkNotebookTemplate: a
     .mutation()
     .arguments({ id: a.id().required() })
     .returns(a.ref('NotebookTemplate'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './fork-notebook-template.js', dataSource: a.ref('NotebookTemplate') })),
+    .handler([
+      a.handler.custom({
+        entry: './fork-notebook-template-load.js',
+        dataSource: a.ref('NotebookTemplate'),
+      }),
+      a.handler.custom({
+        entry: './fork-notebook-template-write.js',
+        dataSource: a.ref('NotebookTemplate'),
+      }),
+    ]),
 
   forkBrush: a
     .mutation()
     .arguments({ id: a.id().required() })
     .returns(a.ref('Brush'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './fork-brush.js', dataSource: a.ref('Brush') })),
+    .handler([
+      a.handler.custom({
+        entry: './fork-brush-load.js',
+        dataSource: a.ref('Brush'),
+      }),
+      a.handler.custom({
+        entry: './fork-brush-write.js',
+        dataSource: a.ref('Brush'),
+      }),
+    ]),
 
+  // Two-step pipeline (same shape + reason as forkPageTemplate above).
   publishPageTemplate: a
     .mutation()
     .arguments({ id: a.id().required(), visibility: a.ref('Visibility').required() })
     .returns(a.ref('PageTemplate'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './publish-page-template.js', dataSource: a.ref('PageTemplate') })),
+    .handler([
+      a.handler.custom({
+        entry: './publish-page-template-load.js',
+        dataSource: a.ref('PageTemplate'),
+      }),
+      a.handler.custom({
+        entry: './publish-page-template-write.js',
+        dataSource: a.ref('PageTemplate'),
+      }),
+    ]),
 
   publishNotebookTemplate: a
     .mutation()
     .arguments({ id: a.id().required(), visibility: a.ref('Visibility').required() })
     .returns(a.ref('NotebookTemplate'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './publish-notebook-template.js', dataSource: a.ref('NotebookTemplate') })),
+    .handler([
+      a.handler.custom({
+        entry: './publish-notebook-template-load.js',
+        dataSource: a.ref('NotebookTemplate'),
+      }),
+      a.handler.custom({
+        entry: './publish-notebook-template-write.js',
+        dataSource: a.ref('NotebookTemplate'),
+      }),
+    ]),
 
   publishBrush: a
     .mutation()
     .arguments({ id: a.id().required(), visibility: a.ref('Visibility').required() })
     .returns(a.ref('Brush'))
     .authorization((allow) => [allow.authenticated()])
-    .handler(a.handler.custom({ entry: './publish-brush.js', dataSource: a.ref('Brush') })),
+    .handler([
+      a.handler.custom({
+        entry: './publish-brush-load.js',
+        dataSource: a.ref('Brush'),
+      }),
+      a.handler.custom({
+        entry: './publish-brush-write.js',
+        dataSource: a.ref('Brush'),
+      }),
+    ]),
 
   getAssetUploadUrl: a
     .mutation()

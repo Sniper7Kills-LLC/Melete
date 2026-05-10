@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useAuthenticator } from "@aws-amplify/ui-react";
 
 import { client } from "@/amplify-client";
 import { isStubBackend } from "@/amplify-config";
@@ -92,6 +93,15 @@ export function Tooler() {
   const [loadStatus, setLoadStatus] = useState<
     null | { kind: "loading" } | { kind: "err"; message: string }
   >(null);
+  const [currentRowId, setCurrentRowId] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<
+    | null
+    | { kind: "saving" }
+    | { kind: "ok"; at: number }
+    | { kind: "err"; message: string }
+  >(null);
+  const { authStatus } = useAuthenticator((c) => [c.authStatus]);
+  const signedIn = authStatus === "authenticated";
 
   // Load a public Brush by id when ?edit=<id> is on the URL. apiKey
   // auth keeps the lookup anonymous; the WASM shim parses the TOML.
@@ -103,7 +113,9 @@ export function Tooler() {
     }
     let cancelled = false;
     setLoadStatus({ kind: "loading" });
-    client.models.Brush.get({ id: editId }, { authMode: "apiKey" })
+    // userPool auth — Edit is reachable only from /my (signed-in
+    // path), so the lookup must respect owner-scoped reads.
+    client.models.Brush.get({ id: editId }, { authMode: "userPool" })
       .then((r) => {
         if (cancelled) return;
         if (r.errors?.length) {
@@ -120,6 +132,7 @@ export function Tooler() {
         try {
           const parsed = shim.parseBrushToml(r.data.bodyToml);
           setBrush(parsed);
+          setCurrentRowId(r.data.id);
           setSelectedLayerIdx(parsed.layers.length > 0 ? 0 : null);
           setLoadStatus(null);
           setSearchParams({}, { replace: true });
@@ -223,6 +236,49 @@ export function Tooler() {
 
   const jsonPreview = useMemo(() => JSON.stringify(brush, null, 2), [brush]);
 
+  async function onSaveToAccount() {
+    if (!signedIn || isStubBackend) return;
+    setSaveStatus({ kind: "saving" });
+    try {
+      const toml = shim.serializeBrushToml(brush);
+      const now = new Date().toISOString();
+      const id = currentRowId ?? brush.id;
+      if (currentRowId) {
+        const r = await client.models.Brush.update(
+          {
+            id,
+            name: brush.name,
+            bodyToml: toml,
+            updatedAtSort: now,
+          },
+          { authMode: "userPool" },
+        );
+        if (r.errors?.length)
+          throw new Error(r.errors.map((e) => e.message).join("; "));
+      } else {
+        const r = await client.models.Brush.create(
+          {
+            id,
+            name: brush.name,
+            visibility: "PRIVATE",
+            bodyToml: toml,
+            updatedAtSort: now,
+          },
+          { authMode: "userPool" },
+        );
+        if (r.errors?.length)
+          throw new Error(r.errors.map((e) => e.message).join("; "));
+        setCurrentRowId(id);
+      }
+      setSaveStatus({ kind: "ok", at: Date.now() });
+    } catch (e) {
+      setSaveStatus({
+        kind: "err",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+
   // ---- render ---------------------------------------------------------
 
   return (
@@ -237,6 +293,42 @@ export function Tooler() {
           Could not load brush: {loadStatus.message}
         </div>
       )}
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 text-sm">
+        <span className="text-xs text-slate-500">Brush:</span>
+        <span className="font-medium text-slate-800">
+          {brush.name || "(unnamed)"}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {saveStatus?.kind === "saving" && (
+            <span className="text-xs text-slate-500">Saving…</span>
+          )}
+          {saveStatus?.kind === "ok" && (
+            <span className="text-xs text-emerald-700">Saved ✓</span>
+          )}
+          {saveStatus?.kind === "err" && (
+            <span
+              title={saveStatus.message}
+              className="max-w-[200px] truncate text-xs text-rose-700"
+            >
+              Save failed
+            </span>
+          )}
+          <button
+            onClick={onSaveToAccount}
+            disabled={!signedIn || isStubBackend}
+            title={
+              signedIn
+                ? currentRowId
+                  ? "Save changes to this brush"
+                  : "Create a new PRIVATE brush in your library"
+                : "Sign in to save to your library"
+            }
+            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {currentRowId ? "Save" : "Save to library"}
+          </button>
+        </div>
+      </div>
       <div className="flex flex-1 overflow-hidden">
       {/* Left — palette + layers */}
       <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">

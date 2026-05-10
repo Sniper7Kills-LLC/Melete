@@ -26,6 +26,7 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use journal_core::brush::Brush;
+use journal_core::template::NotebookTemplate;
 use journal_core::PageTemplate;
 use journal_templates::format::{
     parse_template_toml as parse_toml, serialize_template_toml as serialize_toml,
@@ -146,6 +147,63 @@ pub fn serialize_brush_toml(value: JsValue) -> Result<String, JsValue> {
     let file = BrushFile {
         meta: BrushFileMeta::default(),
         brush,
+    };
+    toml::to_string_pretty(&file).map_err(js_err)
+}
+
+// ---------------------------------------------------------------------
+// NotebookTemplate round-trip — backs the SPA's `/templeter` route.
+// ---------------------------------------------------------------------
+
+/// TOML wire format for a `NotebookTemplate`. Mirrors the
+/// page-template + brush wrappers: small `[meta]` header carrying a
+/// schema version, then the notebook template under a top-level
+/// `[notebook_template]` table. Desktop reads the same shape via the
+/// `app::template_io` path which currently does a bare
+/// `toml::from_str::<NotebookTemplate>` — we accept either form here
+/// so legacy bare files keep working.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct NotebookTemplateFile {
+    #[serde(default)]
+    meta: NotebookTemplateFileMeta,
+    notebook_template: NotebookTemplate,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct NotebookTemplateFileMeta {
+    schema_version: u32,
+}
+
+impl Default for NotebookTemplateFileMeta {
+    fn default() -> Self {
+        Self { schema_version: 1 }
+    }
+}
+
+/// Parse a TOML notebook-template document into a JS object.
+///
+/// Accepts either the wrapped `[notebook_template]` form produced by
+/// `serialize_notebook_template_toml` or a bare `NotebookTemplate`
+/// table at the root.
+#[wasm_bindgen]
+pub fn parse_notebook_template_toml(toml: &str) -> Result<JsValue, JsValue> {
+    install_panic_hook();
+    let nt: NotebookTemplate = match toml::from_str::<NotebookTemplateFile>(toml) {
+        Ok(file) => file.notebook_template,
+        Err(_) => toml::from_str::<NotebookTemplate>(toml).map_err(js_err)?,
+    };
+    let serializer = Serializer::new().serialize_maps_as_objects(true);
+    nt.serialize(&serializer).map_err(js_err)
+}
+
+/// Serialize a JS-side `NotebookTemplate` object to TOML.
+#[wasm_bindgen]
+pub fn serialize_notebook_template_toml(value: JsValue) -> Result<String, JsValue> {
+    install_panic_hook();
+    let nt: NotebookTemplate = serde_wasm_bindgen::from_value(value).map_err(js_err)?;
+    let file = NotebookTemplateFile {
+        meta: NotebookTemplateFileMeta::default(),
+        notebook_template: nt,
     };
     toml::to_string_pretty(&file).map_err(js_err)
 }

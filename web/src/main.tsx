@@ -20,13 +20,16 @@ import { Templeter } from "./pages/Templeter";
 import { Tooler } from "./pages/Tooler";
 import { Gallery } from "./pages/Gallery";
 import { My } from "./pages/My";
+import { Share } from "./pages/Share";
 import { useUnits } from "./store/unitsStore";
 
-// Configure Amplify before any GraphQL or auth call. The stub falls in
-// when there's no real `amplify_outputs.json` at the repo root; in that
-// case Gallery / My render a "Backend not configured" banner and skip
-// live network calls.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Amplify accepts the wide outputs shape
+// Configure Amplify before any GraphQL or auth call. `amplify_outputs.json`
+// (Gen 2 shape with top-level `auth` / `data` / `storage` blocks) is
+// passed directly per the official quickstart — Amplify v6 detects the
+// outputs format from the `version` field. The stub falls in when no
+// real outputs file is present; in that mode Gallery / My render a
+// "Backend not configured" banner and skip live network calls.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- outputs is a wide JSON shape
 Amplify.configure(amplifyOutputs as any);
 
 function NavBar() {
@@ -138,6 +141,7 @@ function App() {
                 element={<Navigate to="/gallery" replace />}
               />
               <Route path="/my" element={<My />} />
+              <Route path="/t/:kind/:id" element={<Share />} />
               <Route
                 path="*"
                 element={

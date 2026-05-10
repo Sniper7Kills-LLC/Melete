@@ -1,7 +1,7 @@
-// Custom AppSync JS resolver for `publishBrush`. Same shape as
-// publish-page-template.js but for the Brush model (no asset re-copy).
+// Step 1 of the `publishNotebookTemplate` pipeline. See
+// publish-page-template-load.js for the contract.
 import { util } from '@aws-appsync/utils';
-import { get, update } from '@aws-appsync/utils/dynamodb';
+import { get } from '@aws-appsync/utils/dynamodb';
 
 export function request(ctx) {
   const sub = ctx.identity && ctx.identity.sub;
@@ -24,12 +24,5 @@ export function response(ctx) {
   if (row.owner !== sub) {
     util.unauthorized();
   }
-
-  const target = ctx.stash.requestedVisibility;
-  const now = util.time.nowISO8601();
-  ctx.stash.update_visibility = update({
-    key: { id: row.id },
-    update: { visibility: target, updatedAtSort: now },
-  });
-  return Object.assign({}, row, { visibility: target, updatedAtSort: now });
+  return row;
 }

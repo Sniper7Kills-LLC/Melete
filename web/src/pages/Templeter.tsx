@@ -1,6 +1,17 @@
-import { useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type { DragEvent as ReactDragEvent } from "react";
+import { useSearchParams } from "react-router-dom";
+import { useAuthenticator } from "@aws-amplify/ui-react";
 
+import { client, type PageTemplateRow } from "@/amplify-client";
+import { isStubBackend } from "@/amplify-config";
+import { shim } from "@/wasm";
 import {
   DEFAULT_NOTEBOOK_TEMPLATE,
   type DailySlot,
@@ -8,14 +19,137 @@ import {
   type Weekday,
   WEEKDAYS,
 } from "@/types/notebook-template";
-import {
-  EXAMPLE_TEMPLATES,
-  findExampleTemplate,
-  type ExampleTemplate,
-} from "@/types/example-templates";
+import { EXAMPLE_TEMPLATES } from "@/types/example-templates";
 import type { Uuid } from "@/types";
 
 const DRAG_MIME = "application/x-page-template-id";
+
+// ---------------------------------------------------------------------
+// Page-template library context
+// ---------------------------------------------------------------------
+//
+// Templeter needs to look up page templates by id in three places:
+// the drag source (ExampleLibrary), the assigned-row chip
+// (AssignedTemplateRow), and the page-view preview (MiniPagePreview).
+// In stub mode it falls back to the hardcoded EXAMPLE_TEMPLATES; with
+// the live backend it pulls all PUBLIC PageTemplates via apiKey so
+// referenced ids resolve to real names.
+
+interface LibraryEntry {
+  id: string;
+  name: string;
+  description: string;
+  category: string | null;
+  /** Tailwind gradient swatch for the chip — derived deterministically. */
+  swatch: string;
+}
+
+interface LibraryValue {
+  entries: LibraryEntry[];
+  lookup(id: string): LibraryEntry | null;
+  loading: boolean;
+}
+
+const LIB_SWATCHES = [
+  "from-indigo-100 to-indigo-200",
+  "from-rose-100 to-rose-200",
+  "from-amber-100 to-amber-200",
+  "from-emerald-100 to-emerald-200",
+  "from-sky-100 to-sky-200",
+  "from-violet-100 to-violet-200",
+  "from-teal-100 to-teal-200",
+  "from-fuchsia-100 to-fuchsia-200",
+];
+
+function pickSwatch(palette: string[], key: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return palette[h % palette.length]!;
+}
+
+function fallbackEntries(): LibraryEntry[] {
+  return EXAMPLE_TEMPLATES.map((e, i) => {
+    const id = typeof e.template.id === "string" ? e.template.id : e.template.id["0"];
+    return {
+      id,
+      name: e.template.name,
+      description: e.template.description,
+      category: e.template.category ?? null,
+      swatch: e.swatch ?? LIB_SWATCHES[i % LIB_SWATCHES.length]!,
+    };
+  });
+}
+
+const LibraryContext = createContext<LibraryValue>({
+  entries: [],
+  lookup: () => null,
+  loading: false,
+});
+
+function useLibrary(): LibraryValue {
+  return useContext(LibraryContext);
+}
+
+function LibraryProvider({ children }: { children: React.ReactNode }) {
+  const fallback = useMemo(fallbackEntries, []);
+  const [entries, setEntries] = useState<LibraryEntry[]>(
+    isStubBackend ? fallback : [],
+  );
+  const [loading, setLoading] = useState(!isStubBackend);
+
+  useEffect(() => {
+    if (isStubBackend) return;
+    let cancelled = false;
+    setLoading(true);
+    client.models.PageTemplate.list({
+      filter: { visibility: { eq: "PUBLIC" } },
+      authMode: "apiKey",
+      limit: 500,
+    })
+      .then((r) => {
+        if (cancelled) return;
+        const rows = r.data ?? [];
+        const live: LibraryEntry[] = rows.map((row: PageTemplateRow) => ({
+          id: row.id,
+          name: row.name,
+          description: row.description ?? "",
+          category: row.category ?? null,
+          swatch: pickSwatch(LIB_SWATCHES, row.id),
+        }));
+        // Merge fallback entries that aren't present in the live set so
+        // stub-mode samples remain draggable for offline experimentation.
+        const seen = new Set(live.map((e) => e.id));
+        for (const e of fallback) if (!seen.has(e.id)) live.push(e);
+        setEntries(live);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEntries(fallback);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fallback]);
+
+  const value = useMemo<LibraryValue>(() => {
+    const map = new Map(entries.map((e) => [e.id, e] as const));
+    return {
+      entries,
+      loading,
+      lookup: (id) => map.get(id) ?? null,
+    };
+  }, [entries, loading]);
+
+  return (
+    <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>
+  );
+}
 
 type SlotKey =
   | "year_start"
@@ -57,6 +191,14 @@ const SLOTS: SlotMeta[] = [
  * sidebar (Year → Month/Week wrapper → daily pages).
  */
 export function Templeter() {
+  return (
+    <LibraryProvider>
+      <TempleterImpl />
+    </LibraryProvider>
+  );
+}
+
+function TempleterImpl() {
   const [tpl, setTpl] = useState<NotebookTemplate>(() => ({
     ...DEFAULT_NOTEBOOK_TEMPLATE,
     id: crypto.randomUUID(),
@@ -64,6 +206,120 @@ export function Templeter() {
     // something out of the box — drag a page template onto it to fill.
     daily_slots: [{ days: [...WEEKDAYS], templates: [] }],
   }));
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  const [loadStatus, setLoadStatus] = useState<
+    null | { kind: "loading" } | { kind: "err"; message: string }
+  >(null);
+  const [currentRowId, setCurrentRowId] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<
+    | null
+    | { kind: "saving" }
+    | { kind: "ok"; at: number }
+    | { kind: "err"; message: string }
+  >(null);
+  const { authStatus } = useAuthenticator((c) => [c.authStatus]);
+  const signedIn = authStatus === "authenticated";
+
+  useEffect(() => {
+    if (!editId) return;
+    if (isStubBackend) {
+      setLoadStatus({ kind: "err", message: "Backend not configured." });
+      return;
+    }
+    let cancelled = false;
+    setLoadStatus({ kind: "loading" });
+    client.models.NotebookTemplate.get(
+      { id: editId },
+      { authMode: "userPool" },
+    )
+      .then((r) => {
+        if (cancelled) return;
+        if (r.errors?.length) {
+          setLoadStatus({
+            kind: "err",
+            message: r.errors.map((e) => e.message).join("; "),
+          });
+          return;
+        }
+        if (!r.data) {
+          setLoadStatus({
+            kind: "err",
+            message: "Notebook template not found.",
+          });
+          return;
+        }
+        try {
+          const parsed = shim.parseNotebookTemplateToml(
+            r.data.bodyToml,
+          ) as NotebookTemplate;
+          setTpl(parsed);
+          setCurrentRowId(r.data.id);
+          setLoadStatus(null);
+          setSearchParams({}, { replace: true });
+        } catch (e) {
+          setLoadStatus({
+            kind: "err",
+            message: `Parse failed: ${e instanceof Error ? e.message : String(e)}`,
+          });
+        }
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setLoadStatus({
+          kind: "err",
+          message: e instanceof Error ? e.message : String(e),
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, setSearchParams]);
+
+  async function onSaveToAccount() {
+    if (!signedIn || isStubBackend) return;
+    setSaveStatus({ kind: "saving" });
+    try {
+      const toml = shim.serializeNotebookTemplateToml(tpl);
+      const now = new Date().toISOString();
+      const id = currentRowId ?? tpl.id;
+      if (currentRowId) {
+        const r = await client.models.NotebookTemplate.update(
+          {
+            id,
+            name: tpl.name,
+            description: tpl.description ?? null,
+            bodyToml: toml,
+            updatedAtSort: now,
+          },
+          { authMode: "userPool" },
+        );
+        if (r.errors?.length)
+          throw new Error(r.errors.map((e) => e.message).join("; "));
+      } else {
+        const r = await client.models.NotebookTemplate.create(
+          {
+            id,
+            name: tpl.name,
+            description: tpl.description ?? null,
+            visibility: "PRIVATE",
+            bodyToml: toml,
+            updatedAtSort: now,
+          },
+          { authMode: "userPool" },
+        );
+        if (r.errors?.length)
+          throw new Error(r.errors.map((e) => e.message).join("; "));
+        setCurrentRowId(id);
+      }
+      setSaveStatus({ kind: "ok", at: Date.now() });
+    } catch (e) {
+      setSaveStatus({
+        kind: "err",
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
 
   function update(patch: Partial<NotebookTemplate>) {
     setTpl((t) => ({ ...t, ...patch }));
@@ -107,7 +363,54 @@ export function Templeter() {
   }
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col">
+      {loadStatus?.kind === "loading" && (
+        <div className="border-b border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
+          Loading notebook template…
+        </div>
+      )}
+      {loadStatus?.kind === "err" && (
+        <div className="border-b border-rose-200 bg-rose-50 px-3 py-1 text-xs text-rose-700">
+          Could not load notebook template: {loadStatus.message}
+        </div>
+      )}
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 text-sm">
+        <span className="text-xs text-slate-500">Notebook template:</span>
+        <span className="font-medium text-slate-800">
+          {tpl.name || "(unnamed)"}
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {saveStatus?.kind === "saving" && (
+            <span className="text-xs text-slate-500">Saving…</span>
+          )}
+          {saveStatus?.kind === "ok" && (
+            <span className="text-xs text-emerald-700">Saved ✓</span>
+          )}
+          {saveStatus?.kind === "err" && (
+            <span
+              title={saveStatus.message}
+              className="max-w-[200px] truncate text-xs text-rose-700"
+            >
+              Save failed
+            </span>
+          )}
+          <button
+            onClick={onSaveToAccount}
+            disabled={!signedIn || isStubBackend}
+            title={
+              signedIn
+                ? currentRowId
+                  ? "Save changes to this notebook template"
+                  : "Create a new PRIVATE notebook template in your library"
+                : "Sign in to save to your library"
+            }
+            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {currentRowId ? "Save" : "Save to library"}
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-1 overflow-hidden">
       <ExampleLibrary />
 
       <main className="flex flex-1 min-h-0 flex-col overflow-y-auto p-6">
@@ -119,10 +422,10 @@ export function Templeter() {
             className="rounded border border-slate-300 bg-white px-3 py-1.5 text-base font-semibold text-slate-900 shadow-sm focus:border-indigo-500 focus:outline-none"
           />
           <select
-            value={tpl.grouping}
+            value={tpl.grouping.kind}
             onChange={(e) =>
               update({
-                grouping: e.target.value as NotebookTemplate["grouping"],
+                grouping: { kind: e.target.value as "Month" | "Week" },
               })
             }
             className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
@@ -232,6 +535,7 @@ export function Templeter() {
           </Accordion>
         </Section>
       </main>
+      </div>
     </div>
   );
 }
@@ -241,55 +545,51 @@ export function Templeter() {
 // ---------------------------------------------------------------------
 
 function ExampleLibrary() {
+  const { entries, loading } = useLibrary();
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Example page templates
+        Page templates
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2">
-        {EXAMPLE_TEMPLATES.map((e) => (
-          <ExampleCard key={tplId(e)} ex={e} />
-        ))}
+        {loading && entries.length === 0 ? (
+          <div className="text-xs text-slate-400">Loading library…</div>
+        ) : (
+          entries.map((e) => <LibraryCard key={e.id} entry={e} />)
+        )}
       </div>
       <p className="border-t border-slate-200 px-3 py-2 text-[11px] leading-snug text-slate-500">
-        Drag onto a slot to assign. The desktop's full library will sync once
-        the Amplify backend is wired.
+        Drag onto a slot to assign. List comes from the public AppSync
+        catalog (apiKey).
       </p>
     </aside>
   );
 }
 
-function ExampleCard({ ex }: { ex: ExampleTemplate }) {
+function LibraryCard({ entry }: { entry: LibraryEntry }) {
   return (
     <div
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData(DRAG_MIME, tplId(ex));
+        e.dataTransfer.setData(DRAG_MIME, entry.id);
         e.dataTransfer.effectAllowed = "copy";
       }}
       className="cursor-grab rounded border border-slate-200 bg-white shadow-sm hover:border-indigo-400 active:cursor-grabbing"
-      title={ex.template.description}
+      title={entry.description}
     >
       <div
-        className={`flex h-16 items-center justify-center rounded-t bg-gradient-to-br ${ex.swatch} text-[10px] uppercase tracking-wide text-slate-700/70`}
+        className={`flex h-16 items-center justify-center rounded-t bg-gradient-to-br ${entry.swatch} text-[10px] uppercase tracking-wide text-slate-700/70`}
       >
-        {ex.template.category || "—"}
+        {entry.category || "—"}
       </div>
       <div className="px-2 py-1.5">
-        <div className="text-sm font-medium text-slate-800">
-          {ex.template.name}
-        </div>
+        <div className="text-sm font-medium text-slate-800">{entry.name}</div>
         <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-slate-500">
-          {ex.template.description}
+          {entry.description}
         </div>
       </div>
     </div>
   );
-}
-
-function tplId(e: ExampleTemplate): string {
-  const id = e.template.id;
-  return typeof id === "string" ? id : id["0"];
 }
 
 // ---------------------------------------------------------------------
@@ -371,9 +671,9 @@ function AssignedTemplateRow({
   index: number;
   onRemove: () => void;
 }) {
-  const ex = findExampleTemplate(id);
-  const name = ex?.template.name ?? id.slice(0, 8);
-  const swatch = ex?.swatch ?? "from-slate-100 to-slate-200";
+  const entry = useLibrary().lookup(id);
+  const name = entry?.name ?? id.slice(0, 8);
+  const swatch = entry?.swatch ?? "from-slate-100 to-slate-200";
   return (
     <li className="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1 text-sm">
       <span
@@ -538,7 +838,7 @@ function DesktopSidebarMock({ tpl }: { tpl: NotebookTemplate }) {
     tpl.before_week.length +
     tpl.daily_slots.reduce((acc, s) => acc + s.templates.length, 0);
   const dailyCount = tpl.daily_slots.length;
-  const grouping = tpl.grouping;
+  const grouping = tpl.grouping.kind;
   const summaryName = tpl.name.trim() || "(untitled)";
 
   return (
@@ -622,12 +922,12 @@ function StripDivider() {
  * with tooltip carrying the name).
  */
 function MiniPagePreview({ templateId }: { templateId: Uuid }) {
-  const ex = findExampleTemplate(templateId);
-  const name = ex?.template.name ?? templateId.slice(0, 8);
-  const swatch = ex?.swatch ?? "from-slate-200 to-slate-300";
+  const entry = useLibrary().lookup(templateId);
+  const name = entry?.name ?? templateId.slice(0, 8);
+  const swatch = entry?.swatch ?? "from-slate-200 to-slate-300";
   return (
     <div
-      title={ex?.template.description || name}
+      title={entry?.description || name}
       className="flex h-[80px] w-[60px] shrink-0 flex-col overflow-hidden rounded border border-slate-300 bg-white shadow-sm"
     >
       <div className={`h-3 bg-gradient-to-br ${swatch}`} />

@@ -23,7 +23,13 @@ export const WEEKDAYS: Weekday[] = [
   "Sun",
 ];
 
-export type PlannerGrouping = "Month" | "Week";
+/**
+ * Wire shape mirrors the Rust enum's `#[serde(tag = "kind")]` —
+ * always `{ kind: "Month" | "Week" }`, never the bare string. Storing
+ * it here as the bare string would crash React when rendered, since
+ * `parseNotebookTemplateToml` returns the object form.
+ */
+export type PlannerGrouping = { kind: "Month" } | { kind: "Week" };
 
 export interface DailySlot {
   days: Weekday[];
@@ -67,7 +73,7 @@ export const DEFAULT_NOTEBOOK_TEMPLATE: NotebookTemplate = {
   before_month: [],
   before_week: [],
   daily_slots: [],
-  grouping: "Month",
+  grouping: { kind: "Month" },
   page_title_format: "{date}",
   section_title_formats: {
     year: "{year}",

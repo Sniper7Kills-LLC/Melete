@@ -7,6 +7,7 @@ import {
   type BrushRow,
   type NotebookTemplateRow,
   type PageTemplateRow,
+  type SavedKind,
 } from "@/amplify-client";
 import { isStubBackend } from "@/amplify-config";
 import {
@@ -518,7 +519,7 @@ function useBrushesData(): LoadState<BrushEntry> {
 // Auth-gated actions: Edit + Fork
 // ---------------------------------------------------------------------
 
-type ForkKind = "PageTemplate" | "NotebookTemplate" | "Brush";
+type ForkKind = SavedKind;
 
 async function callFork(kind: ForkKind, id: string) {
   switch (kind) {
@@ -532,10 +533,9 @@ async function callFork(kind: ForkKind, id: string) {
 }
 
 interface ActionRowProps {
-  /** Where Edit should route — null disables the button. */
-  editHref?: string | null;
   forkKind: ForkKind;
   rowId: string;
+  rowName: string;
   /** Number badge text (widget count, layer count, etc.). Optional. */
   meta?: string;
   /** Download handler — clipboard copy is the canonical action. */
@@ -544,9 +544,9 @@ interface ActionRowProps {
 }
 
 function ActionRow({
-  editHref,
   forkKind,
   rowId,
+  rowName,
   meta,
   onDownload,
   downloadLabel,
@@ -558,24 +558,54 @@ function ActionRow({
   const signedIn = authStatus === "authenticated";
 
   const [forking, setForking] = useState(false);
-  const [forkErr, setForkErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [actionErr, setActionErr] = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
 
   async function fork() {
     if (!signedIn || forking) return;
     setForking(true);
-    setForkErr(null);
+    setActionErr(null);
+    setActionMsg(null);
     try {
       const r = await callFork(forkKind, rowId);
       if (r.errors?.length) {
-        setForkErr(r.errors.map((e) => e.message).join("; "));
+        setActionErr(r.errors.map((e) => e.message).join("; "));
         return;
       }
-      // Land the user on /my so they can see the new private copy.
       navigate("/my");
     } catch (e) {
-      setForkErr(e instanceof Error ? e.message : String(e));
+      setActionErr(e instanceof Error ? e.message : String(e));
     } finally {
       setForking(false);
+    }
+  }
+
+  async function save() {
+    if (!signedIn || saving) return;
+    setSaving(true);
+    setActionErr(null);
+    setActionMsg(null);
+    try {
+      const r = await client.models.SavedTemplate.create(
+        {
+          kind: forkKind,
+          sourceId: rowId,
+          sourceName: rowName,
+          savedAt: new Date().toISOString(),
+        },
+        { authMode: "userPool" },
+      );
+      if (r.errors?.length) {
+        setActionErr(r.errors.map((e) => e.message).join("; "));
+        return;
+      }
+      setActionMsg("Saved to library");
+      setTimeout(() => setActionMsg(null), 1600);
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -588,20 +618,28 @@ function ActionRow({
           <span />
         )}
         <div className="flex items-center gap-1">
-          {editHref && (
-            <button
-              type="button"
-              onClick={() => navigate(editHref)}
-              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-            >
-              Edit
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={save}
+            disabled={!signedIn || saving}
+            title={
+              signedIn
+                ? "Subscribe — keep a reference, receive author updates"
+                : "Sign in to save"
+            }
+            className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
           <button
             type="button"
             onClick={fork}
             disabled={!signedIn || forking}
-            title={signedIn ? "Fork into your library" : "Sign in to fork"}
+            title={
+              signedIn
+                ? "Fork — clone an editable private copy"
+                : "Sign in to fork"
+            }
             className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {forking ? "Forking…" : "Fork"}
@@ -615,8 +653,11 @@ function ActionRow({
           </button>
         </div>
       </div>
-      {forkErr && (
-        <div className="mt-1 text-[10px] text-rose-600">{forkErr}</div>
+      {actionMsg && (
+        <div className="mt-1 text-[10px] text-emerald-700">{actionMsg}</div>
+      )}
+      {actionErr && (
+        <div className="mt-1 text-[10px] text-rose-600">{actionErr}</div>
       )}
     </>
   );
@@ -792,9 +833,9 @@ function PageTemplateCard({ entry }: { entry: PageEntry }) {
           {entry.description}
         </div>
         <ActionRow
-          editHref={entry.parsed ? `/designer?edit=${entry.id}` : null}
           forkKind="PageTemplate"
           rowId={entry.id}
+          rowName={entry.name}
           meta={
             widgetCount === null
               ? "—"
@@ -950,6 +991,7 @@ function NotebookCard({ entry }: { entry: NotebookEntry }) {
         <ActionRow
           forkKind="NotebookTemplate"
           rowId={entry.id}
+          rowName={entry.name}
           onDownload={download}
           downloadLabel={copied ? "Copied!" : "Download"}
         />
@@ -1031,9 +1073,9 @@ function BrushCard({ entry }: { entry: BrushEntry }) {
           {entry.description}
         </div>
         <ActionRow
-          editHref={brush ? `/tooler?edit=${entry.id}` : null}
           forkKind="Brush"
           rowId={entry.id}
+          rowName={entry.name}
           meta={
             layerCount === null
               ? "—"
