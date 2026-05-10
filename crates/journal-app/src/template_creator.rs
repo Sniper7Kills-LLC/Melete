@@ -15,7 +15,6 @@ use journal_canvas::{
 use journal_core::{
     Color, PageTemplate, Rect, TemplateWidget, WidgetKind, WidgetRect, WidgetStyle,
 };
-use journal_templates::{serialize_template_toml, template_file_from_page_template};
 use uuid::Uuid;
 
 use crate::state::SharedState;
@@ -2629,20 +2628,7 @@ fn draw_selection_overlay(ctx: &cairo::Context, r: &WidgetRect, scale: f64, draw
     }
 }
 
-fn templates_dir() -> Option<std::path::PathBuf> {
-    let base = dirs::data_dir().or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))?;
-    Some(base.join("journal").join("templates"))
-}
-
 fn save_template(template: &PageTemplate, state: &SharedState) -> anyhow::Result<()> {
-    let tdir = templates_dir().ok_or_else(|| anyhow::anyhow!("could not resolve data dir"))?;
-    std::fs::create_dir_all(&tdir)?;
-    let toml_path = tdir.join(format!("{}.toml", template.id.0));
-    let file = template_file_from_page_template(template);
-    let toml_text =
-        serialize_template_toml(&file).map_err(|e| anyhow::anyhow!("serialize: {}", e))?;
-    std::fs::write(&toml_path, toml_text)?;
     let s = state.borrow();
-    s.templates.borrow_mut().insert(template.clone());
-    Ok(())
+    crate::template_io::put_page_template(&s.backend, &s.templates, template, &[])
 }

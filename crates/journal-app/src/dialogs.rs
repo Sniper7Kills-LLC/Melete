@@ -16,26 +16,11 @@ use uuid::Uuid;
 
 use crate::state::SharedState;
 
-pub(crate) fn persist_notebook_template(t: &journal_core::NotebookTemplate) {
-    let dir = match dirs::data_dir() {
-        Some(d) => d.join("journal").join("notebook_templates"),
-        None => return,
-    };
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        tracing::warn!("create notebook_templates dir failed: {}", e);
-        return;
-    }
-    let path = dir.join(format!("{}.toml", t.id.0));
-    let text = match toml::to_string(t) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!("serialize notebook template failed: {}", e);
-            return;
-        }
-    };
-    if let Err(e) = std::fs::write(&path, text) {
-        tracing::warn!("write notebook template failed: {}", e);
-    }
+/// Persist a notebook template via the backend and refresh the
+/// in-memory registry. Replaces the prior fs-write path.
+pub(crate) fn persist_notebook_template(state: &SharedState, t: &journal_core::NotebookTemplate) {
+    let s = state.borrow();
+    crate::template_io::put_notebook_template(&s.backend, &s.notebook_templates, t);
 }
 
 fn modal(parent: &ApplicationWindow, title: &str) -> Window {
@@ -632,8 +617,7 @@ pub fn prompt_new_planner(
             clone.grouping = grouping;
             clone.page_title_format = page_title_format;
             let new_id = clone.id;
-            persist_notebook_template(&clone);
-            state.borrow().notebook_templates.borrow_mut().insert(clone);
+            persist_notebook_template(&state, &clone);
 
             (on_ok)(PlannerChoice {
                 name,
@@ -1048,8 +1032,7 @@ pub fn prompt_notebook_template_editor(
                     .map(|e| e.entry_options.clone())
                     .unwrap_or_default(),
             };
-            persist_notebook_template(&nt);
-            state.borrow().notebook_templates.borrow_mut().insert(nt);
+            persist_notebook_template(&state, &nt);
             (on_save)(id);
             win.close();
         });
