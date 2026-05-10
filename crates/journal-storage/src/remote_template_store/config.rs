@@ -165,3 +165,24 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod live_tests {
+    use super::*;
+    #[test]
+    fn embedded_outputs_are_non_empty_when_sandbox_deployed() {
+        // Sanity check: when amplify_outputs.json is present at the
+        // repo root (post `npx ampx sandbox`), `load` returns real
+        // endpoints. Skipped silently when build.rs fell back to the
+        // empty stub — that's the legitimate offline state.
+        match load() {
+            Ok(o) => {
+                assert!(!o.user_pool_id.is_empty());
+                assert!(!o.data_url.is_empty());
+                eprintln!("embedded outputs OK: user_pool={}, data_url={}", o.user_pool_id, o.data_url);
+            }
+            Err(ConfigError::NotConfigured) => eprintln!("(stub) skipped — no live sandbox"),
+            Err(e) => panic!("unexpected: {e}"),
+        }
+    }
+}
