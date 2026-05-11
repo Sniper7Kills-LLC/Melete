@@ -1,0 +1,49 @@
+# Amplify Hosting build spec.
+#
+# Single-app config: builds the Vite SPA at web/ as the published
+# artifact. The SPA's `prebuild` script compiles two Rust crates
+# (journal-web-shim, journal-web-viewer) to wasm32 and wasm-bindgens
+# the output into web/src/wasm/generated/{shim,viewer}/ before Vite
+# bundles, so the Amplify build container needs a Rust toolchain in
+# addition to Node.
+#
+# Build cache covers web/node_modules + the Rust home + target/, so
+# only the first build pays the ~5 min cargo-install wasm-bindgen-cli
+# cost. Cache invalidates on Cargo.lock or web/package-lock.json
+# changes (Amplify Hosting tracks cache keys per pipeline).
+#
+# Secrets / env this expects on the Amplify app:
+#   * VITE_RELEASES_MANIFEST_URL   public URL of the releases
+#                                  manifest (latest.json) the landing
+#                                  page fetches. Optional — Landing
+#                                  falls back to the GitHub releases
+#                                  link if unset.
+
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
+        - export PATH="$HOME/.cargo/bin:$PATH"
+        - rustup target add wasm32-unknown-unknown
+        - cargo install wasm-bindgen-cli --version 0.2.120 --locked
+        - cd web
+        - npm ci
+    build:
+      commands:
+        - export PATH="$HOME/.cargo/bin:$PATH"
+        # `npm run build` in web/ triggers prebuild → build-wasm.sh →
+        # cargo build the wasm crates → wasm-bindgen → vite build.
+        # Single command keeps the build graph in one place.
+        - npm run build
+  artifacts:
+    baseDirectory: web/dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - web/node_modules/**/*
+      - $HOME/.cargo/**/*
+      - $HOME/.rustup/**/*
+      - target/**/*

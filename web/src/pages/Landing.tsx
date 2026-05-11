@@ -6,10 +6,57 @@
 // Newsreader (body), JetBrains Mono (eyebrows + CTAs). Hand-drawn
 // inline SVG ornaments instead of icon-pack flourishes.
 //
-// Copy is factually identical to the previous version (same
-// features, same caveats). Only the framing changes.
+// The hero download CTA reads `latest.json` from the releases
+// bucket (URL configurable via VITE_RELEASES_MANIFEST_URL at build
+// time) to render the current version and link straight at the
+// signed S3 / CloudFront tarball. Falls back to a GitHub-releases
+// link if the manifest can't load, so the page never ships a
+// broken download.
 
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+
+const RELEASES_MANIFEST_URL =
+  (import.meta.env.VITE_RELEASES_MANIFEST_URL as string | undefined) ??
+  "https://releases.journal.app/latest.json";
+
+const GITHUB_RELEASES_FALLBACK =
+  "https://github.com/Sniper7Kills-LLC/Journal/releases";
+
+interface ReleaseManifest {
+  version: string;
+  publishedAt: string;
+  platforms: Record<string, { url: string; sha256?: string; sizeBytes?: number }>;
+}
+
+function useLatestRelease(): {
+  manifest: ReleaseManifest | null;
+  loading: boolean;
+} {
+  const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      try {
+        const r = await fetch(RELEASES_MANIFEST_URL, { cache: "no-cache" });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const json = (await r.json()) as ReleaseManifest;
+        if (alive) setManifest(json);
+      } catch {
+        // Soft-fail — landing falls back to the GitHub releases link.
+        if (alive) setManifest(null);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return { manifest, loading };
+}
 
 export function Landing() {
   return (
@@ -62,6 +109,10 @@ export function Landing() {
 // ── HERO ────────────────────────────────────────────────────────────
 
 function Hero() {
+  const { manifest } = useLatestRelease();
+  const linuxRelease = manifest?.platforms?.["linux-x86_64"];
+  const downloadHref = linuxRelease?.url ?? GITHUB_RELEASES_FALLBACK;
+  const versionLabel = manifest?.version ?? "Linux-native";
   return (
     <section className="paper-grain relative overflow-hidden">
       {/* Slow-rotating concentric-circles glyph — reference to the
@@ -88,7 +139,7 @@ function Hero() {
 
       <div className="relative mx-auto max-w-6xl px-6 pb-28 pt-20 sm:px-10 sm:pt-28">
         <p className="font-mono rise text-[11px] uppercase tracking-[0.3em] text-[#1a1612]/55">
-          ⁂ Vol. I · Linux-native · Stylus + touch
+          ⁂ {versionLabel} · Stylus + touch
         </p>
 
         <h1 className="font-display rise d-1 mt-6 text-[clamp(56px,10vw,140px)] leading-[0.92] tracking-[-0.02em]">
@@ -128,7 +179,7 @@ function Hero() {
 
           <div className="rise d-3 flex flex-col items-start gap-4 md:items-end">
             <a
-              href="https://github.com/Sniper7Kills-LLC/Journal/releases"
+              href={downloadHref}
               className="group inline-flex items-center gap-3 bg-[#1a1612] px-6 py-3.5 font-mono text-[12px] uppercase tracking-[0.18em] text-[#f6f1e7] transition-colors hover:bg-[#c1442e]"
             >
               Download for Linux
@@ -139,6 +190,11 @@ function Hero() {
                 →
               </span>
             </a>
+            {manifest && (
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#1a1612]/45">
+                {manifest.version} · x86_64
+              </p>
+            )}
             <Link
               to="/gallery"
               className="group inline-flex items-baseline gap-2 border-b border-[#1a1612]/40 pb-0.5 font-mono text-[12px] uppercase tracking-[0.18em] text-[#1a1612] transition-colors hover:border-[#c1442e] hover:text-[#c1442e]"

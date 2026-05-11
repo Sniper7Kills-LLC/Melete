@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
+# install-from-source.sh — build the release binary and install
+# system-wide via the Makefile. Requires a local Rust toolchain
+# (`cargo`) and is meant for contributors. End users should run
+# `scripts/install.sh`, which downloads a pre-built tarball instead.
+
 set -euo pipefail
 
-cd "$(dirname "$(readlink -f "$0")")"
+# Repo root (parent of scripts/) so `make build` finds the Makefile
+# regardless of caller cwd.
+SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f "$0")")" >/dev/null 2>&1 && pwd)"
+cd "${SCRIPT_DIR}/.."
 
 if [[ $EUID -eq 0 ]]; then
     echo "error: do not run install.sh as root — sudo is invoked only for the install step" >&2
