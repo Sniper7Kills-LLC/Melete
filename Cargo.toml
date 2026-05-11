@@ -1,13 +1,13 @@
 [workspace]
 members = [
-    "crates/journal-core",
-    "crates/journal-canvas",
-    "crates/journal-storage",
-    "crates/journal-templates",
-    "crates/journal-widgets",
-    "crates/journal-app",
-    "crates/journal-web-shim",
-    "crates/journal-web-viewer",
+    "crates/melete-core",
+    "crates/melete-canvas",
+    "crates/melete-storage",
+    "crates/melete-templates",
+    "crates/melete-widgets",
+    "crates/melete-app",
+    "crates/melete-web-shim",
+    "crates/melete-web-viewer",
 ]
 # `default-members` keeps the desktop build (`cargo build` with no
 # package selector) from compiling the WASM crates. Each web crate
@@ -16,12 +16,12 @@ members = [
 # avoids the wgpu / browser-specific code paths from showing up in
 # the desktop binary's link closure by default.
 default-members = [
-    "crates/journal-core",
-    "crates/journal-canvas",
-    "crates/journal-storage",
-    "crates/journal-templates",
-    "crates/journal-widgets",
-    "crates/journal-app",
+    "crates/melete-core",
+    "crates/melete-canvas",
+    "crates/melete-storage",
+    "crates/melete-templates",
+    "crates/melete-widgets",
+    "crates/melete-app",
 ]
 resolver = "2"
 

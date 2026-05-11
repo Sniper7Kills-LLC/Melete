@@ -22,7 +22,7 @@ the bar to aim for in the rougher surfaces.
 
 | Surface | File | Why it works |
 |---|---|---|
-| Floating pen toolbar | `crates/journal-app/src/toolbar.rs` | Drag handle with persisted position, OSD translucency, inline color picker auto-dismisses on stroke start, collapse chevron. Touch-first, single-thumb reachable. |
+| Floating pen toolbar | `crates/melete-app/src/toolbar.rs` | Drag handle with persisted position, OSD translucency, inline color picker auto-dismisses on stroke start, collapse chevron. Touch-first, single-thumb reachable. |
 | Zoom corner badge | `window.rs:670–778` | OSD pill, live %, fit button, grid-reset toggle. Tight, unobtrusive. |
 | Home view notebook cards | `views/home.rs` | FlowBox, drag/drop reordering, smooth transitions. Reads as a finished product. |
 | Page-row sidebar styling | `main.rs` embedded CSS | `.page-row.current` uses amber inset shadow + alpha — distinctive, branded. |
@@ -35,7 +35,7 @@ unfinished.
 
 ## 2. Tool Options popup — feels jittery on tool switch
 
-**Files:** `crates/journal-app/src/tool_options_popup.rs:273–296` and
+**Files:** `crates/melete-app/src/tool_options_popup.rs:273–296` and
 the per-brush `append_*_internals` functions further down.
 
 **Problem:** Switching active tool clears the body GtkBox and rebuilds
@@ -60,7 +60,7 @@ adds up.
 
 ## 3. Notebook template editor — power-user dense, no narrative
 
-**File:** `crates/journal-app/src/notebook_template_creator.rs` (1,714
+**File:** `crates/melete-app/src/notebook_template_creator.rs` (1,714
 lines).
 
 **Problem:** Layout is a wall of spinners and dropdowns with terse or
@@ -82,7 +82,7 @@ read at typical zoom on a Framework 12.
 
 ## 4. Page template editor — functional, no live result preview
 
-**File:** `crates/journal-app/src/template_creator.rs` (1,949 lines).
+**File:** `crates/melete-app/src/template_creator.rs` (1,949 lines).
 
 **Problem:** While editing a widget, the user sees the widget's
 property panel but the canvas behind it shows the template at the
@@ -92,7 +92,7 @@ it" feels heavy.
 
 **Improvements:**
 - Right panel: add an "On a real page" mini preview that uses the
-  exact `journal_canvas::vello_renderer::VelloRenderer` pipeline at
+  exact `melete_canvas::vello_renderer::VelloRenderer` pipeline at
   thumbnail size. Renders the template + a few dummy strokes so the
   user can see how widgets sit relative to ink.
 - Toggle between current edit-mode preview and live-render preview
@@ -104,9 +104,9 @@ it" feels heavy.
 
 ## 5. Empty-state placeholder — bare
 
-**File:** `crates/journal-app/src/canvas_widget.rs:202–252` (Cairo
+**File:** `crates/melete-app/src/canvas_widget.rs:202–252` (Cairo
 fallback) and the equivalent Vello path in
-`crates/journal-canvas/src/vello_renderer.rs` (search for the no-page
+`crates/melete-canvas/src/vello_renderer.rs` (search for the no-page
 branch).
 
 **Problem:** Centered text on a flat fill. No call-to-action, no
@@ -130,7 +130,7 @@ launch lands here if the user has no notebooks.
 
 ## 6. Settings dialogs — generic GTK modal feel
 
-**File:** `crates/journal-app/src/settings_dialogs.rs` (1,396 lines).
+**File:** `crates/melete-app/src/settings_dialogs.rs` (1,396 lines).
 
 **Problem:** Standard `gtk4::Dialog` wrappers. The recent
 `developer_mode` toggle was added as a raw `CheckButton` + Label row —
@@ -153,7 +153,7 @@ setting we add piles on the same grid.
 
 ## 7. Toolbar — colour slot UX gap
 
-**File:** `crates/journal-app/src/toolbar.rs:408–599`.
+**File:** `crates/melete-app/src/toolbar.rs:408–599`.
 
 **Problem:** Inline RGB picker is fast for power users but there's no
 discoverability for the *palette* feature (which lives in Tool
@@ -173,7 +173,7 @@ re-use it from the toolbar.
 
 ## 8. Typography — using GTK defaults everywhere
 
-**File:** `crates/journal-app/src/main.rs` embedded CSS.
+**File:** `crates/melete-app/src/main.rs` embedded CSS.
 
 **Problem:** Only `.wordmark` deviates from system font. Sidebar
 labels, headers, page-row text, and template editor headings all
@@ -185,9 +185,9 @@ indigo + amber) but the type does not carry it.
   IBM Plex Serif or Recoleta for marks of identity (notebook titles,
   section headers, empty-state hero). Body copy stays system.
 - Ship the font with the app (license-permitting) under
-  `crates/journal-app/assets/fonts/` and load via `pango::FontMap` at
+  `crates/melete-app/assets/fonts/` and load via `pango::FontMap` at
   startup. Don't depend on system install.
-- Use the `parley` font stack already in `journal-widgets` for canvas
+- Use the `parley` font stack already in `melete-widgets` for canvas
   text so on-canvas headings and chrome headings match.
 - Define type tokens in CSS: `--display-font`, `--body-font`,
   `--mono-font`. Apply via `.title-1`/`.title-2`/etc. utility classes.
@@ -263,7 +263,7 @@ Examples gathered from the source:
 
 The codebase mixes "brush" and "tool" almost interchangeably:
 
-- `BrushStyle` enum in `journal_core` — also represents non-drawing
+- `BrushStyle` enum in `melete_core` — also represents non-drawing
   modes? Look up.
 - `BrushParams` struct in `vello_renderer.rs` — per-brush, per-style.
 - "Tool Options" popup, "Tool settings", "Brush tuner" — three names,
@@ -367,7 +367,7 @@ Skipped variants documented per commit body:
 - §7 the audit's "drag a colour to the toolbar from outside" path —
   current scope is reorder-within-toolbar plus an explicit "Save to
   palette" / "Clear slot" affordance.
-- §10 `journal-canvas` and `journal-widgets` still take
+- §10 `melete-canvas` and `melete-widgets` still take
   `dark_mode: bool` parameters at their leaf entry points — they
   can't link libadwaita without breaking the future WASM viewer
-  plan; the abstraction lives in `journal_app::is_dark_mode()`.
+  plan; the abstraction lives in `melete_app::is_dark_mode()`.

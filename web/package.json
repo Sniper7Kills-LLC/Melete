@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "description": "Journal web POC — view-only viewer + page-template designer + Amplify-backed public/my template lists. Vite + React + TS.",
+  "description": "Melete web POC — view-only viewer + page-template designer + Amplify-backed public/my template lists. Vite + React + TS.",
   "scripts": {
     "dev": "vite",
     "wasm": "bash build-wasm.sh",

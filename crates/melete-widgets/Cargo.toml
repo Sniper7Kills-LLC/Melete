@@ -1,0 +1,11 @@
+[package]
+name = "melete-widgets"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+melete-core = { path = "../melete-core" }
+vello = "0.8"
+parley = "0.9"
+chrono = { workspace = true }
+uuid = { workspace = true }

@@ -71,7 +71,7 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Install GTK4 system deps (for journal-storage tests)
+      - name: Install GTK4 system deps (for melete-storage tests)
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-4-dev libadwaita-1-dev
@@ -128,14 +128,14 @@ jobs:
         run: node tools/seed-data/publish.mjs
 
       - name: Cargo build
-        run: cargo build -p journal-storage --features remote
+        run: cargo build -p melete-storage --features remote
 
       - name: Smoke test (sign-in + list_public_*)
         env:
-          JOURNAL_TEST_USERNAME: ${{ steps.testuser.outputs.username }}
-          JOURNAL_TEST_PASSWORD: ${{ steps.testuser.outputs.password }}
+          MELETE_TEST_USERNAME: ${{ steps.testuser.outputs.username }}
+          MELETE_TEST_PASSWORD: ${{ steps.testuser.outputs.password }}
         run: |
-          cargo test -p journal-storage --features remote \
+          cargo test -p melete-storage --features remote \
             --test smoke_signin -- --ignored --nocapture
 
       - name: Tear down sandbox

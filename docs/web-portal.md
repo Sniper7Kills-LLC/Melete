@@ -3,13 +3,13 @@
 **Status:** Draft
 **Owner:** S7K
 **Date:** 2026-05-03
-**Scope:** Web portal hosted on AWS Amplify Hosting that (a) lets the community publish/browse/fork page and notebook templates, (b) hosts a drag-and-drop designer that emits the same TOML the desktop consumes, and (c) renders shared notebooks read-only via a WASM build of `journal-canvas`.
+**Scope:** Web portal hosted on AWS Amplify Hosting that (a) lets the community publish/browse/fork page and notebook templates, (b) hosts a drag-and-drop designer that emits the same TOML the desktop consumes, and (c) renders shared notebooks read-only via a WASM build of `melete-canvas`.
 **Companion docs:** [`docs/renderer-vello-migration.md`](renderer-vello-migration.md) — Vello migration is **Done** as of 2026-05-03; the canvas, background, widget, and overlay code paths are already Vello-only on desktop. The web viewer can compile against the same crates without first re-doing renderer work.
 
 **Building blocks (post-migration):**
-- `journal-canvas` — Vello scene builder + wgpu offscreen renderer. Pulls in `gtk4::cairo` only when its `pdf` feature is enabled (used by `pdf_export`); the web viewer builds it with `--no-default-features --features vello` to stay GTK-free.
-- `journal-widgets` — Vello+`parley` widget rendering. No GTK / SQLite / poppler in its closure; web-importable as-is.
-- `journal-core`, `journal-templates` — pure data types + TOML serde, already WASM-friendly.
+- `melete-canvas` — Vello scene builder + wgpu offscreen renderer. Pulls in `gtk4::cairo` only when its `pdf` feature is enabled (used by `pdf_export`); the web viewer builds it with `--no-default-features --features vello` to stay GTK-free.
+- `melete-widgets` — Vello+`parley` widget rendering. No GTK / SQLite / poppler in its closure; web-importable as-is.
+- `melete-core`, `melete-templates` — pure data types + TOML serde, already WASM-friendly.
 
 These three crates plus `vello` + `wgpu` are everything the WASM viewer needs to render byte-identical strokes/widgets/backgrounds on the web.
 
@@ -17,10 +17,10 @@ These three crates plus `vello` + `wgpu` are everything the WASM viewer needs to
 
 ## 1. Goals
 
-1. Stand up `journal-app.example` (or similar — domain TBD) on AWS Amplify Hosting.
+1. Stand up `melete-app.example` (or similar — domain TBD) on AWS Amplify Hosting.
 2. **Template marketplace:** browse/search/preview public page templates and notebook templates, fork to a personal library, fork to your own logged-in account.
 3. **Designer:** drag-and-drop editor for both page templates and notebook templates. The output is byte-for-byte the same TOML the desktop loads — no new schema, no parallel format.
-4. **View-only viewer:** open a shared notebook by short URL or QR code; render strokes pixel-identical to the desktop using the same `journal-canvas` Rust code compiled to WASM.
+4. **View-only viewer:** open a shared notebook by short URL or QR code; render strokes pixel-identical to the desktop using the same `melete-canvas` Rust code compiled to WASM.
 5. **Auth:** Cognito-backed sign-up/sign-in (email + Google federated). Anonymous browsing of public content allowed; account required to publish, fork, or share.
 6. **Cost discipline:** all-static frontend, AppSync GraphQL pay-per-request, DynamoDB on-demand, S3 standard. Target ≤$15/month at low traffic (<10k requests/day).
 
@@ -38,9 +38,9 @@ These three crates plus `vello` + `wgpu` are everything the WASM viewer needs to
 | Concern | Today |
 |---|---|
 | Web presence | None. |
-| Sharing | None. Templates live in `~/.local/share/journal/templates/*.toml` per user. |
+| Sharing | None. Templates live in `~/.local/share/melete/templates/*.toml` per user. |
 | Auth | None. Single-user local app. |
-| Public templates | None. Built-in templates (`journal-templates::builtin`) ship with the binary. |
+| Public templates | None. Built-in templates (`melete-templates::builtin`) ship with the binary. |
 | Notebook export to web | None. PDF export exists (`pdf_export.rs`) but is desktop-side. |
 | Renderer | Cairo on `gtk4::DrawingArea`. Not portable. Vello migration ([renderer-vello-migration.md](renderer-vello-migration.md)) is the prerequisite for a web viewer. |
 
@@ -54,8 +54,8 @@ These three crates plus `vello` + `wgpu` are everything the WASM viewer needs to
 | API | AWS AppSync (GraphQL). One unified API for templates, notebooks-shared, user profiles. |
 | Database | DynamoDB on-demand. One table per logical entity, single-region (us-east-1) for MVP. |
 | Object storage | S3 buckets for: public template TOML bodies, public notebook export bodies, user-uploaded image assets used inside templates. |
-| Designer output | The exact TOML schema in `crates/journal-templates/src/format.rs` (page templates) and the `NotebookTemplate` shape in `crates/journal-core/src/template.rs` extended with the same TOML wrapper. **No second schema.** |
-| Viewer | `journal-canvas` compiled to `wasm32-unknown-unknown` + ~50 LOC TS wrapper. WebGPU primary, WebGL2 fallback via wgpu. |
+| Designer output | The exact TOML schema in `crates/melete-templates/src/format.rs` (page templates) and the `NotebookTemplate` shape in `crates/melete-core/src/template.rs` extended with the same TOML wrapper. **No second schema.** |
+| Viewer | `melete-canvas` compiled to `wasm32-unknown-unknown` + ~50 LOC TS wrapper. WebGPU primary, WebGL2 fallback via wgpu. |
 
 ## 5. Architecture
 
@@ -86,22 +86,22 @@ These three crates plus `vello` + `wgpu` are everything the WASM viewer needs to
 
 | Resource | Purpose |
 |---|---|
-| Amplify Hosting | Static SPA + CDN. CI deploy from `main` of a separate `journal-web` repo (or `web/` subdir). |
+| Amplify Hosting | Static SPA + CDN. CI deploy from `main` of a separate `melete-web` repo (or `web/` subdir). |
 | Cognito User Pool | Email + Google sign-in. JWTs consumed by AppSync via `AMAZON_COGNITO_USER_POOLS` auth mode. |
 | AppSync | GraphQL endpoint. Resolvers map directly to DynamoDB (VTL) and S3 (signed URLs via Lambda resolver). |
 | DynamoDB `templates_public` | Catalog of published page+notebook templates. Metadata in DDB; TOML body in S3. |
 | DynamoDB `templates_user` | Per-user *forks* and *drafts*. Body in S3 under user prefix. |
 | DynamoDB `notebooks_shared` | Per-share-code notebook export pointer (notebook UUID, owner sub, S3 key, expiry, view count). |
 | DynamoDB `users` | User profile (display name, avatar URL, fork count). PK = Cognito `sub`. |
-| S3 `journal-public-templates` | Public template TOML bodies, addressed by template UUID. Public-read, write via signed PUT only. |
-| S3 `journal-shared-notebooks` | Notebook export bundles for the viewer. Public-read with object-key obscurity (UUID v4); revocable via DynamoDB row + signed-URL expiry on the resource manifest. |
-| S3 `journal-template-assets` | Image/PDF assets referenced by templates (`BackgroundType::Image { path }`). Path inside TOML rewritten to S3 key on upload. |
+| S3 `melete-public-templates` | Public template TOML bodies, addressed by template UUID. Public-read, write via signed PUT only. |
+| S3 `melete-shared-notebooks` | Notebook export bundles for the viewer. Public-read with object-key obscurity (UUID v4); revocable via DynamoDB row + signed-URL expiry on the resource manifest. |
+| S3 `melete-template-assets` | Image/PDF assets referenced by templates (`BackgroundType::Image { path }`). Path inside TOML rewritten to S3 key on upload. |
 
 All buckets versioned. Public buckets have CloudFront in front (cache + custom domain).
 
 ### 5.2 Frontend stack
 
-- **React 18 + Vite + TypeScript.** Two reasons over a heavier framework: (1) the portal is two pages — Marketplace and Designer — plus a viewer route. (2) The bundle hosts a WASM blob (~3 MB compressed for `journal-canvas`); minimizing JS overhead matters.
+- **React 18 + Vite + TypeScript.** Two reasons over a heavier framework: (1) the portal is two pages — Marketplace and Designer — plus a viewer route. (2) The bundle hosts a WASM blob (~3 MB compressed for `melete-canvas`); minimizing JS overhead matters.
 - **State:** TanStack Query for AppSync calls, Zustand for designer working-state. No Redux.
 - **Routing:** React Router. Routes:
   - `/` — marketplace landing (search, browse, preview)
@@ -138,9 +138,9 @@ The designer renders the same `PageTemplate` / `NotebookTemplate` types the desk
               S3 PUT  +  AppSync createTemplate mutation
 ```
 
-**Critical constraint:** the designer constructs in-memory values matching the Rust `PageTemplate` struct exactly. Serialization happens via a tiny Rust shim (also compiled to WASM) — `template_serialize(template_json: JsValue) -> String` — so we never re-implement the TOML serializer in TypeScript. One source of truth: `journal_templates::format`.
+**Critical constraint:** the designer constructs in-memory values matching the Rust `PageTemplate` struct exactly. Serialization happens via a tiny Rust shim (also compiled to WASM) — `template_serialize(template_json: JsValue) -> String` — so we never re-implement the TOML serializer in TypeScript. One source of truth: `melete_templates::format`.
 
-This means a new `journal-web-shim` crate (no GTK, no SQLite, no Cairo) wrapping the public types from `journal-core` + `journal-templates::format` for `wasm-bindgen` consumption. It links against the same `journal-canvas` (vello-only build) + `journal-widgets` that the viewer uses, so the designer's live preview is bit-for-bit identical to what the viewer renders.
+This means a new `melete-web-shim` crate (no GTK, no SQLite, no Cairo) wrapping the public types from `melete-core` + `melete-templates::format` for `wasm-bindgen` consumption. It links against the same `melete-canvas` (vello-only build) + `melete-widgets` that the viewer uses, so the designer's live preview is bit-for-bit identical to what the viewer renders.
 
 #### Designer interactions
 
@@ -162,7 +162,7 @@ React route fetches:
    • notebook export body from S3 (gzipped JSON: notebook + sections + pages
      + strokes + referenced page templates inline)
    ▼
-Hand off to journal-canvas (WASM):
+Hand off to melete-canvas (WASM):
    wasm.init_renderer(canvas: HTMLCanvasElement)
    wasm.load_notebook(json_body: Uint8Array)
    wasm.render_page(page_index: u32)
@@ -170,7 +170,7 @@ Hand off to journal-canvas (WASM):
 wgpu (WebGPU) draws the same scene the desktop app draws.
 ```
 
-**WASM glue crate (`journal-web-viewer`):** wraps `journal-canvas::vello_renderer::VelloRenderer` + `journal-widgets::WidgetRenderer` for `wasm-bindgen` consumption. Public API mirrors what the GLArea on desktop calls today:
+**WASM glue crate (`melete-web-viewer`):** wraps `melete-canvas::vello_renderer::VelloRenderer` + `melete-widgets::WidgetRenderer` for `wasm-bindgen` consumption. Public API mirrors what the GLArea on desktop calls today:
 
 ```rust
 #[wasm_bindgen]
@@ -196,7 +196,7 @@ else await wasmViewer.init(canvas);
 
 **Asset routing:** any `BackgroundType::Image { path }` referenced inside an inlined `PageTemplate` has its path rewritten by the export step to a public-bucket S3 URL. The WASM viewer fetches each unique URL once via `fetch()` + `arrayBuffer()`, hands the bytes to a small `ImageCache` keyed by URL on the Rust side, and re-uses the resulting `peniko::ImageBrush` across pages — same shape as `VelloRenderer::ensure_image_for_bg` on desktop, just sourced from HTTP instead of the filesystem.
 
-**PDF backgrounds in the viewer:** the export bundle pre-rasterizes any `BackgroundType::Pdf` page on the desktop side at 200 dpi (the same path `journal-canvas` uses for desktop PDF backgrounds), embeds the resulting PNG in the bundle, and rewrites the `Pdf` variant to an `Image` variant pointing at it. The WASM viewer never carries `poppler` — that stays a desktop-only dependency.
+**PDF backgrounds in the viewer:** the export bundle pre-rasterizes any `BackgroundType::Pdf` page on the desktop side at 200 dpi (the same path `melete-canvas` uses for desktop PDF backgrounds), embeds the resulting PNG in the bundle, and rewrites the `Pdf` variant to an `Image` variant pointing at it. The WASM viewer never carries `poppler` — that stays a desktop-only dependency.
 
 **Read-only enforcement (in the WASM bindings, not just convention):** the Viewer struct exposes pan/zoom but no stroke begin/extend/end methods. There is no path from JS → renderer that mutates strokes.
 
@@ -216,9 +216,9 @@ else await wasmViewer.init(canvas);
 }
 ```
 
-A new `journal-export` crate produces this envelope from the desktop app via "Share notebook" action. Bincode is **not** used here — JSON keeps the body inspectable and the WASM viewer's deserializer trivial. Stroke `points` arrays are the bulk; expect ~150 KB per page of dense notes uncompressed, ~25 KB gzipped. Acceptable.
+A new `melete-export` crate produces this envelope from the desktop app via "Share notebook" action. Bincode is **not** used here — JSON keeps the body inspectable and the WASM viewer's deserializer trivial. Stroke `points` arrays are the bulk; expect ~150 KB per page of dense notes uncompressed, ~25 KB gzipped. Acceptable.
 
-See [renderer-vello-migration.md §7.4](renderer-vello-migration.md#74-web-target-forward-looking-not-part-of-this-migration) for the original wgpu-on-WebGPU sketch. With that migration **done** (renderer is Vello on the desktop, `journal-widgets` is GTK-free, and `journal-canvas` builds WASM-clean without its `pdf` feature) the viewer is unblocked from a renderer-architecture standpoint — remaining work is the `wasm-bindgen` glue, asset fetch wiring, and the WebGPU/WebGL2 detection above.
+See [renderer-vello-migration.md §7.4](renderer-vello-migration.md#74-web-target-forward-looking-not-part-of-this-migration) for the original wgpu-on-WebGPU sketch. With that migration **done** (renderer is Vello on the desktop, `melete-widgets` is GTK-free, and `melete-canvas` builds WASM-clean without its `pdf` feature) the viewer is unblocked from a renderer-architecture standpoint — remaining work is the `wasm-bindgen` glue, asset fetch wiring, and the WebGPU/WebGL2 detection above.
 
 ### 5.5 QR share flow
 
@@ -259,8 +259,8 @@ CDK (TypeScript). One stack: `JournalPortalStack`. Lives in `infra/` at the repo
 
 ```
 infra/
-  bin/journal-portal.ts          # CDK app entry
-  lib/journal-portal-stack.ts    # Cognito + AppSync + DDB + S3 + Amplify
+  bin/melete-portal.ts          # CDK app entry
+  lib/melete-portal-stack.ts    # Cognito + AppSync + DDB + S3 + Amplify
   lib/schema.graphql             # AppSync schema
   lib/resolvers/                 # VTL resolvers (one .vtl per resolver)
 ```
@@ -280,7 +280,7 @@ We don't use the Amplify CLI's auto-scaffolding — too much hidden state. CDK i
 | `name` | S | Display name. |
 | `description` | S | |
 | `category` | S | Free-form tag, GSI. |
-| `body_s3_key` | S | Pointer into `journal-public-templates` bucket. |
+| `body_s3_key` | S | Pointer into `melete-public-templates` bucket. |
 | `created_at` | N | Unix epoch. |
 | `updated_at` | N | |
 | `fork_count` | N | Atomic counter. |
@@ -312,14 +312,14 @@ PK = `sub`. Stores display name, avatar S3 key, public fork count.
 ### 6.2 S3 layout
 
 ```
-journal-public-templates/
+melete-public-templates/
    pages/<template-uuid>.toml
    notebooks/<template-uuid>.toml
 
-journal-template-assets/
+melete-template-assets/
    <owner-sub>/<asset-uuid>.<ext>      # images / PDFs referenced by templates
 
-journal-shared-notebooks/
+melete-shared-notebooks/
    <share-uuid>.json.gz                 # export bundle
 ```
 
@@ -389,11 +389,11 @@ enum TemplateKind { PAGE NOTEBOOK }
 **Exit:** SPA deployed to Amplify, can call AppSync `Query.publicTemplate` against a hand-seeded DDB row, render its name on the page.
 
 ### Phase 1 — Marketplace MVP (8–10 days)
-- DDB `templates_public` + S3 `journal-public-templates` bucket via CDK.
+- DDB `templates_public` + S3 `melete-public-templates` bucket via CDK.
 - AppSync schema + VTL resolvers for `publicTemplate`, `searchPublicTemplates`.
 - Marketplace page: list, search, category filter, template detail page with raw TOML preview.
 - **No** rendered preview yet (depends on WASM build, deferred to Phase 4).
-- "Copy TOML" button so the desktop user can paste it into `~/.local/share/journal/templates/`. Bridges marketplace → desktop without waiting on the rendered viewer.
+- "Copy TOML" button so the desktop user can paste it into `~/.local/share/melete/templates/`. Bridges marketplace → desktop without waiting on the rendered viewer.
 
 **Exit:** ten hand-seeded templates browsable; one is downloadable as TOML and works in the desktop app.
 
@@ -406,15 +406,15 @@ enum TemplateKind { PAGE NOTEBOOK }
 **Exit:** a logged-in user can publish a template from the desktop and another user can fork it from the web.
 
 ### Phase 3 — Page-template designer (12–15 days)
-- `journal-web-shim` crate: re-exports `PageTemplate` types + provides `wasm-bindgen` serialize/deserialize for TOML.
+- `melete-web-shim` crate: re-exports `PageTemplate` types + provides `wasm-bindgen` serialize/deserialize for TOML.
 - Designer page: widget palette, drag/drop, property panel, undo/redo, snap-to-grid.
 - All `WidgetKind` variants supported (parity with desktop editor).
-- Live preview rendered via the same WASM renderer the viewer will use. The renderer migration to Vello has landed on the desktop, so the designer's preview is no longer blocked on a TS-only fallback — it can ship with real Vello rendering by linking `journal-canvas` (no `pdf` feature) + `journal-widgets` against `wasm32-unknown-unknown`.
+- Live preview rendered via the same WASM renderer the viewer will use. The renderer migration to Vello has landed on the desktop, so the designer's preview is no longer blocked on a TS-only fallback — it can ship with real Vello rendering by linking `melete-canvas` (no `pdf` feature) + `melete-widgets` against `wasm32-unknown-unknown`.
 
 **Exit:** create a page template in the designer, save it, fork to library, copy TOML to desktop, render identically.
 
 ### Phase 4 — Viewer + WASM renderer integration (5–7 days)
-- Compile `journal-canvas` (with `--no-default-features --features vello`) and `journal-widgets` to `wasm32-unknown-unknown`. Both crates are GTK/Cairo-free in that configuration after the Vello migration; expect mostly compile-fix friction on `wgpu`'s WebGPU backend rather than dependency surgery.
+- Compile `melete-canvas` (with `--no-default-features --features vello`) and `melete-widgets` to `wasm32-unknown-unknown`. Both crates are GTK/Cairo-free in that configuration after the Vello migration; expect mostly compile-fix friction on `wgpu`'s WebGPU backend rather than dependency surgery.
 - TS wrapper (`web/src/viewer.ts`, ~50 LOC): create canvas, init wgpu surface via WebGPU, load notebook bundle, paint.
 - Wire viewer route `/n/:id` to fetch notebook share manifest + bundle.
 - Pan/zoom only, no editing. Disable text selection/long-press menus on the canvas element.
@@ -431,7 +431,7 @@ enum TemplateKind { PAGE NOTEBOOK }
 **Exit:** parity with the desktop notebook-template editor; saved templates work as planner generators on the desktop.
 
 ### Phase 6 — QR share flow (3–4 days)
-- `journal-export` crate: produces the gzipped JSON envelope from desktop state.
+- `melete-export` crate: produces the gzipped JSON envelope from desktop state.
 - Desktop "Share notebook" UI: notebook menu item, expiry picker, progress + QR display.
 - AppSync mutations + Lambda QR generator.
 - Web viewer route already handles `/n/:share_id` from Phase 4; just wire the manifest path.
@@ -454,7 +454,7 @@ enum TemplateKind { PAGE NOTEBOOK }
 | Renderer migration slips → viewer blocked | Medium | High | Phase 1–3 of portal don't depend on the renderer migration (no rendered preview). Marketplace + designer + auth ship independently. Viewer is gated. |
 | Cognito Hosted UI styling locks us in | Low | Low | Acceptable — saves weeks vs. custom auth UI. Style-overrides cover the visual gap. |
 | AppSync VTL resolver complexity grows | Medium | Medium | Push complexity to Lambda resolvers when VTL exceeds ~30 lines. Keep simple ones in VTL. |
-| Schema drift between desktop TOML and portal TOML | High | Critical | Single source: `crates/journal-templates/src/format.rs`. Web shim re-exports it. Round-trip test in CI: parse desktop TOML in WASM, serialize, parse on desktop — must match. |
+| Schema drift between desktop TOML and portal TOML | High | Critical | Single source: `crates/melete-templates/src/format.rs`. Web shim re-exports it. Round-trip test in CI: parse desktop TOML in WASM, serialize, parse on desktop — must match. |
 | WASM bundle size (~3 MB compressed) hurts mobile load | Medium | Medium | Lazy-load: viewer route fetches WASM on demand; marketplace pages don't load it. CDN with brotli. |
 | Cost runs away if a template goes viral | Low | Medium | DynamoDB on-demand has no provisioned throughput surprise. CloudFront caches public TOMLs. Set CloudWatch billing alarm at $50/month. |
 | GDPR / data deletion for accounts | Medium | High | Cognito-driven user delete cascades: DDB items by `owner_sub`, S3 objects by prefix. Wire a cleanup Lambda triggered by Cognito post-delete trigger. |
@@ -483,13 +483,13 @@ The egress line dominates; CloudFront cache hit ratio matters. WASM blob version
 
 1. **TOML round-trip CI test** (most important): cross-language parity.
    - For every built-in template TOML and a corpus of fixture TOMLs:
-     - Parse on the desktop (`journal-templates::parse_template_toml`), serialize back out → must match input byte-for-byte (`serialize_template_toml` golden).
-     - Parse in WASM via `journal-web-shim` → serialize back out → must match input byte-for-byte.
+     - Parse on the desktop (`melete-templates::parse_template_toml`), serialize back out → must match input byte-for-byte (`serialize_template_toml` golden).
+     - Parse in WASM via `melete-web-shim` → serialize back out → must match input byte-for-byte.
    - Failure here = schema drift, bug.
 2. **Viewer visual regression**: a fixture corpus of `(notebook bundle, page index, viewport)` triples is rendered via two paths and pixel-diffed:
-   - **Desktop golden** — a small `cargo test -p journal-canvas --features vello -- --ignored render_golden` test boots `VelloRenderer` headlessly (`wgpu::Backends::VULKAN`), calls `render_rgba`, writes PNG to `tests/golden/`. Goldens are checked in.
+   - **Desktop golden** — a small `cargo test -p melete-canvas --features vello -- --ignored render_golden` test boots `VelloRenderer` headlessly (`wgpu::Backends::VULKAN`), calls `render_rgba`, writes PNG to `tests/golden/`. Goldens are checked in.
    - **Web replay** — Playwright loads the WASM viewer, calls `render_page` with the same bundle + viewport, snapshots the canvas via `canvas.toBlob('image/png')`, diffs against the golden with `pixelmatch` (tolerance: <2% pixels for stroke/bg, <8% for text-heavy widgets — same thresholds as the renderer migration).
-   - Failure here surfaces backend drift (WebGPU vs Vulkan) or any divergence between `journal-canvas` desktop builds and the WASM build of the same crate.
+   - Failure here surfaces backend drift (WebGPU vs Vulkan) or any divergence between `melete-canvas` desktop builds and the WASM build of the same crate.
 3. **AppSync resolver tests**: unit-test VTL via `appsync-mock` or end-to-end against a CDK-spun ephemeral stack in CI (slow, run nightly).
 4. **Auth happy paths** (Playwright):
    - Anonymous → can browse, can't fork → sees sign-in prompt.
@@ -508,15 +508,15 @@ The egress line dominates; CloudFront cache hit ratio matters. WASM blob version
 6. **Mobile designer:** the drag-and-drop designer assumes a pointer + mid-size canvas. Phone usability is poor. Block via UA detection in Phase 3 with a "designer requires desktop" message? Or attempt a touch-mode? Lean toward blocking.
 7. **WebAssembly threading:** Vello/wgpu can use SharedArrayBuffer for parallelism, which requires COOP/COEP headers. Amplify Hosting supports custom headers. Worth enabling? Likely yes for the viewer but it's a future-perf concern, not MVP.
 8. **Public-vs-private toggle on a template:** a user might want to fork-and-iterate before publishing. The schema already separates `templates_public` and `templates_user`; UI flow is "Save (private)" vs. "Publish (public)". Confirm in Phase 2 mockups.
-9. **WebGL2 fallback strategy:** Vello requires WebGPU for compute. Browsers without it (older Safari, locked-down enterprise Chrome) can't render. Options: (a) ship `vello_hybrid` once it stabilizes — CPU tile prepass + WebGL2 raster, (b) ship a thumbnail-only fallback (server-rendered PNGs from a Lambda layer using `journal-canvas` headlessly), (c) hard-block with a "WebGPU required" banner. Lean (c) at launch, (a) once Linebender ships hybrid.
-10. **Bundle pre-rasterization on desktop:** §5.4 calls for the `journal-export` step to pre-render PDF backgrounds at 200 dpi so the WASM viewer doesn't need poppler. Open question: do we also pre-rasterize image backgrounds (avoids the WASM `image` decode pass) or leave that JIT in the viewer? Lean leave-JIT — `image` is small in WASM, raster cost is one-shot per page open.
+9. **WebGL2 fallback strategy:** Vello requires WebGPU for compute. Browsers without it (older Safari, locked-down enterprise Chrome) can't render. Options: (a) ship `vello_hybrid` once it stabilizes — CPU tile prepass + WebGL2 raster, (b) ship a thumbnail-only fallback (server-rendered PNGs from a Lambda layer using `melete-canvas` headlessly), (c) hard-block with a "WebGPU required" banner. Lean (c) at launch, (a) once Linebender ships hybrid.
+10. **Bundle pre-rasterization on desktop:** §5.4 calls for the `melete-export` step to pre-render PDF backgrounds at 200 dpi so the WASM viewer doesn't need poppler. Open question: do we also pre-rasterize image backgrounds (avoids the WASM `image` decode pass) or leave that JIT in the viewer? Lean leave-JIT — `image` is small in WASM, raster cost is one-shot per page open.
 
 ## 12. Out of scope (listed so they're not forgotten)
 
 - Real-time multi-user collab on templates or notebooks.
 - Mobile-native apps.
 - Importing third-party formats.
-- Server-side notebook rendering for headless thumbnails (would reuse `journal-canvas` as a Lambda layer; revisit post-launch if SEO/preview demand exists).
+- Server-side notebook rendering for headless thumbnails (would reuse `melete-canvas` as a Lambda layer; revisit post-launch if SEO/preview demand exists).
 - Payment / paid templates / monetization.
 - Self-hosted deployments. Amplify is the only target.
 - A drawing/annotation web app. Out of scope by §2.
@@ -527,8 +527,8 @@ The egress line dominates; CloudFront cache hit ratio matters. WASM blob version
 ## Sign-off checklist (before Phase 7 soft launch)
 
 - [ ] CDK stack reproducibly deploys from a fresh AWS account in <30 min
-- [ ] `cargo test -p journal-templates` green + WASM round-trip CI green
-- [ ] `journal-canvas --no-default-features --features vello` + `journal-widgets` build clean for `wasm32-unknown-unknown`
+- [ ] `cargo test -p melete-templates` green + WASM round-trip CI green
+- [ ] `melete-canvas --no-default-features --features vello` + `melete-widgets` build clean for `wasm32-unknown-unknown`
 - [ ] WASM viewer bundle ≤ 4 MB compressed (brotli) — Vello + parley + skrifa fonts is the bulk
 - [ ] Marketplace search returns within 500ms p95 (CloudFront-cached)
 - [ ] Cognito federation + email signup both verified end-to-end

@@ -1,4 +1,4 @@
-// WASM API surface for the Journal web POC.
+// WASM API surface for the Melete web POC.
 //
 // This module exposes:
 //

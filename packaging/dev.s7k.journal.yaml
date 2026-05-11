@@ -2,7 +2,7 @@ app-id: dev.s7k.journal
 runtime: org.gnome.Platform
 runtime-version: '47'
 sdk: org.gnome.Sdk
-command: journal-app
+command: melete-app
 
 finish-args:
   - --share=ipc
@@ -13,11 +13,11 @@ finish-args:
   - --filesystem=xdg-config/journal:create
 
 modules:
-  - name: journal-app
+  - name: melete-app
     buildsystem: simple
     build-commands:
-      - cargo build --release -p journal-app
-      - install -Dm755 target/release/journal-app /app/bin/journal-app
+      - cargo build --release -p melete-app
+      - install -Dm755 target/release/melete-app /app/bin/melete-app
       - install -Dm644 resources/dev.s7k.journal.desktop /app/share/applications/dev.s7k.journal.desktop
       - install -Dm644 resources/icons/dev.s7k.journal.svg /app/share/icons/hicolor/scalable/apps/dev.s7k.journal.svg
     sources:

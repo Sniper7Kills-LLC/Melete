@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# install.sh — fetch the latest released journal-app tarball and
+# install.sh — fetch the latest released melete-app tarball and
 # install it into ~/.local/. Safe to run as `curl -fsSL <url> | bash`.
 # No build toolchain required.
 #
 # Override the manifest source:
-#   JOURNAL_MANIFEST_URL=https://releases.journal.app/latest.json bash install.sh
+#   MELETE_MANIFEST_URL=https://releases.melete.app/latest.json bash install.sh
 #
 # Override the install prefix (default: $HOME/.local):
 #   PREFIX=/usr/local sudo -E bash install.sh
@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-MANIFEST_URL="${JOURNAL_MANIFEST_URL:-https://releases.journal.app/latest.json}"
+MANIFEST_URL="${MELETE_MANIFEST_URL:-https://releases.melete.app/latest.json}"
 PREFIX="${PREFIX:-$HOME/.local}"
 
 err() { echo "error: $*" >&2; exit 1; }
@@ -59,23 +59,23 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "${TMP}"' EXIT
 
 echo "==> Downloading ${URL}"
-curl -fsSL "${URL}" -o "${TMP}/journal-app.tar.gz"
+curl -fsSL "${URL}" -o "${TMP}/melete-app.tar.gz"
 
 if [ -n "${EXPECTED_SHA}" ]; then
-    ACTUAL_SHA="$(sha256sum "${TMP}/journal-app.tar.gz" | awk '{print $1}')"
+    ACTUAL_SHA="$(sha256sum "${TMP}/melete-app.tar.gz" | awk '{print $1}')"
     [ "${ACTUAL_SHA}" = "${EXPECTED_SHA}" ] \
         || err "sha256 mismatch — expected ${EXPECTED_SHA}, got ${ACTUAL_SHA}"
     echo "==> Verified sha256"
 fi
 
 echo "==> Extracting"
-tar -xzf "${TMP}/journal-app.tar.gz" -C "${TMP}"
+tar -xzf "${TMP}/melete-app.tar.gz" -C "${TMP}"
 
 # Stop any running instance so the new binary doesn't get blocked by
 # a held file descriptor.
-if pgrep -x journal-app >/dev/null 2>&1; then
+if pgrep -x melete-app >/dev/null 2>&1; then
     echo "==> Stopping running instance(s)"
-    pkill -x journal-app || true
+    pkill -x melete-app || true
     sleep 1
 fi
 
@@ -85,11 +85,11 @@ ICON_DIR="${PREFIX}/share/icons/hicolor/scalable/apps"
 mkdir -p "${BIN_DIR}" "${APP_DIR}" "${ICON_DIR}"
 
 echo "==> Installing to ${PREFIX}"
-install -Dm755 "${TMP}/journal-app" "${BIN_DIR}/journal-app"
-sed "s|^Exec=journal-app|Exec=${BIN_DIR}/journal-app|" \
-    "${TMP}/dev.s7k.journal.desktop" > "${APP_DIR}/dev.s7k.journal.desktop"
-chmod 644 "${APP_DIR}/dev.s7k.journal.desktop"
-install -Dm644 "${TMP}/dev.s7k.journal.svg" "${ICON_DIR}/dev.s7k.journal.svg"
+install -Dm755 "${TMP}/melete-app" "${BIN_DIR}/melete-app"
+sed "s|^Exec=melete-app|Exec=${BIN_DIR}/melete-app|" \
+    "${TMP}/dev.s7k.melete.desktop" > "${APP_DIR}/dev.s7k.melete.desktop"
+chmod 644 "${APP_DIR}/dev.s7k.melete.desktop"
+install -Dm644 "${TMP}/dev.s7k.melete.svg" "${ICON_DIR}/dev.s7k.melete.svg"
 
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${APP_DIR}" || true
@@ -99,5 +99,5 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then
 fi
 
 echo
-echo "Done. Launch from the application menu or run 'journal-app'."
+echo "Done. Launch from the application menu or run 'melete-app'."
 echo "Ensure ${BIN_DIR} is on your PATH."

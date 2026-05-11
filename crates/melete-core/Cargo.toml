@@ -1,0 +1,27 @@
+[package]
+name = "melete-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+uuid = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# uuid 1.18+ split its randomness backends. `js` is the legacy alias
+# (kept for back-compat), `rng-getrandom` is the new explicit selector
+# the compile-error in `uuid::rng` accepts on wasm32. Version-pinned
+# (rather than workspace-inherited) so the extra feature list folds in
+# without fighting cargo's target-cfg merge rules.
+uuid = { version = "1", default-features = false, features = ["v4", "serde", "std", "js", "rng-getrandom"] }
+# uuid 1.23 transitively pulls getrandom 0.4 (via `rng-getrandom`); 0.4
+# renamed the wasm browser backend feature `js` → `wasm_js`. Pin both
+# 0.2 and 0.4 with the right feature so neither path errors out on
+# `wasm32-unknown-unknown`. Cargo can't list two `getrandom` deps under
+# the same name, so the 0.4 entry uses `package = "getrandom"`.
+getrandom = { version = "0.2", features = ["js"] }
+getrandom_v04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+
+[dev-dependencies]
+toml = { workspace = true }

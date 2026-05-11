@@ -5,6 +5,17 @@ versions follow [SemVer](https://semver.org/) once the project hits `1.0.0`.
 
 ## [Unreleased]
 
+### Changed (BREAKING)
+- **Renamed the project to Melete** (Greek Muse of meditation and
+  practice). All crates renamed `journal-*` → `melete-*`; trait
+  `JournalBackend` → `NotebookBackend`; AppId `dev.s7k.journal` →
+  `dev.s7k.melete`; env vars `JOURNAL_*` → `MELETE_*`; GitHub repo
+  renamed to `Sniper7Kills-LLC/Melete`. Domain
+  [melete.app](https://melete.app) is the new home. Storage paths
+  `~/.local/share/journal/` and `~/.config/journal/` migrate
+  automatically to `~/.local/share/melete/` and `~/.config/melete/`
+  on first launch. Closes #39.
+
 ### Added
 - Marketing landing page at `/` with editorial-stationery aesthetic
   (Instrument Serif + Newsreader + JetBrains Mono, manuscript-red
@@ -16,7 +27,7 @@ versions follow [SemVer](https://semver.org/) once the project hits `1.0.0`.
   desktop, soft-cap daily-write enforcement with `kind=snapshot`
   bypass for manual saves.
 - `amplify.yml` build spec so Amplify Hosting compiles the WASM
-  crates (`journal-web-shim`, `journal-web-viewer`) before Vite
+  crates (`melete-web-shim`, `melete-web-viewer`) before Vite
   bundles the SPA.
 - `.github/workflows/release.yml` — tag-triggered Linux x86_64
   binary build, S3 upload (private bucket via OIDC), `latest.json`

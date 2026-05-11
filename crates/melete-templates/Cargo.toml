@@ -1,0 +1,24 @@
+[package]
+name = "melete-templates"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+melete-core = { path = "../melete-core" }
+# Pull in just the data types from melete-canvas (`BackgroundConfig`,
+# `GridSettings`) — no GTK/Cairo. Desktop / wasm builds both compile.
+melete-canvas = { path = "../melete-canvas", default-features = false }
+serde = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[features]
+# `wasm` is a marker so the `--features wasm` invocation in the WASM
+# build pipeline succeeds. There is no wasm-specific code in this crate
+# today; the data types it touches are already platform-neutral.
+wasm = []
+
+[dev-dependencies]
+tempfile = "3"

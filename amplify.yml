@@ -2,7 +2,7 @@
 #
 # Single-app config: builds the Vite SPA at web/ as the published
 # artifact. The SPA's `prebuild` script compiles two Rust crates
-# (journal-web-shim, journal-web-viewer) to wasm32 and wasm-bindgens
+# (melete-web-shim, melete-web-viewer) to wasm32 and wasm-bindgens
 # the output into web/src/wasm/generated/{shim,viewer}/ before Vite
 # bundles, so the Amplify build container needs a Rust toolchain in
 # addition to Node.

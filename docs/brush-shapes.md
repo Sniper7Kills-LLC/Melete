@@ -45,7 +45,7 @@ custom tool.
 ## 4. Implementation sketch
 
 ```rust
-// In journal-canvas::vello_renderer
+// In melete-canvas::vello_renderer
 #[derive(Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum CalligraphyShape {
     FlatCut,           // current

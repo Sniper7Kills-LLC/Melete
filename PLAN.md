@@ -1,8 +1,8 @@
-# Project Plan — Journal App
+# Project Plan — Melete
 
 > **Issue tracking has moved to GitHub.** Open work for Phase 6 and the
 > "Future (Not Now)" backlog lives at
-> <https://github.com/Sniper7Kills-LLC/Journal/issues>. This document
+> <https://github.com/Sniper7Kills-LLC/Melete/issues>. This document
 > remains the architectural reference and historical record of completed
 > phases. Unchecked items below are annotated with their GH issue number.
 
@@ -133,14 +133,14 @@ Home screen (no notebook open) shows notebook grid/list.
 **Goal:** Single infinite canvas with stylus drawing, pan/zoom.
 
 - [x] Cargo workspace setup (5 crates)
-- [x] `journal-core`: Stroke, StrokePoint, Viewport, PenSettings types
-- [x] `journal-canvas`: GTK4 DrawingArea + Cairo (Skia/GLArea attempted, dropped — see CLAUDE.md)
-- [x] `journal-canvas`: Stroke rendering (per-segment pressure-variable width via line_width)
-- [x] `journal-canvas`: Infinite pan/zoom viewport (`ViewportTransform`)
-- [x] `journal-app`: Window with DrawingArea canvas
-- [x] `journal-app`: Stylus input (GestureStylus — pressure, tilt)
-- [x] `journal-app`: Touch pan + pinch zoom (mode-locked GestureZoom: 12px drift → pan, 8% scale → zoom)
-- [x] `journal-app`: Basic pen toolbar (ColorDialogButton, width Scale)
+- [x] `melete-core`: Stroke, StrokePoint, Viewport, PenSettings types
+- [x] `melete-canvas`: GTK4 DrawingArea + Cairo (Skia/GLArea attempted, dropped — see CLAUDE.md)
+- [x] `melete-canvas`: Stroke rendering (per-segment pressure-variable width via line_width)
+- [x] `melete-canvas`: Infinite pan/zoom viewport (`ViewportTransform`)
+- [x] `melete-app`: Window with DrawingArea canvas
+- [x] `melete-app`: Stylus input (GestureStylus — pressure, tilt)
+- [x] `melete-app`: Touch pan + pinch zoom (mode-locked GestureZoom: 12px drift → pan, 8% scale → zoom)
+- [x] `melete-app`: Basic pen toolbar (ColorDialogButton, width Scale)
 - [x] Mouse + middle-drag pan + ctrl-scroll zoom (desktop fallbacks)
 
 **Milestone:** Draw with stylus, pan/zoom, infinite canvas. No save yet. ✅
@@ -151,17 +151,17 @@ Home screen (no notebook open) shows notebook grid/list.
 
 **Goal:** Save/load, notebook → section → page hierarchy.
 
-- [x] `journal-storage`: SQLite schema (notebooks, sections, pages, strokes, page_templates) with `PRAGMA user_version` migration
-- [x] `journal-storage`: Binary stroke point packing (versioned bincode blob)
-- [x] `journal-storage`: R-tree spatial index for viewport culling (strokes_rtree virtual table)
-- [x] `journal-storage`: Page ordering within sections + cross-section move
-- [x] `journal-app`: Notebook list view (home screen)
-- [x] `journal-app`: Section sidebar within notebook
-- [x] `journal-app`: Page list within section
-- [x] `journal-app`: Create notebook / section / page dialogs
-- [x] `journal-app`: Drag-reorder pages and sections (dedicated drag-handle icons; cross-section page move appends to destination)
-- [x] `journal-app`: Page + section rename (long-press OR double-click on label)
-- [x] `journal-app`: Auto-save on stroke completion
+- [x] `melete-storage`: SQLite schema (notebooks, sections, pages, strokes, page_templates) with `PRAGMA user_version` migration
+- [x] `melete-storage`: Binary stroke point packing (versioned bincode blob)
+- [x] `melete-storage`: R-tree spatial index for viewport culling (strokes_rtree virtual table)
+- [x] `melete-storage`: Page ordering within sections + cross-section move
+- [x] `melete-app`: Notebook list view (home screen)
+- [x] `melete-app`: Section sidebar within notebook
+- [x] `melete-app`: Page list within section
+- [x] `melete-app`: Create notebook / section / page dialogs
+- [x] `melete-app`: Drag-reorder pages and sections (dedicated drag-handle icons; cross-section page move appends to destination)
+- [x] `melete-app`: Page + section rename (long-press OR double-click on label)
+- [x] `melete-app`: Auto-save on stroke completion
 
 **Milestone:** Create notebooks with sections and pages. Data persists. ✅
 
@@ -169,34 +169,34 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ## Phase 3: Page Templates ✅
 
-- [x] `journal-templates`: Template data model (background type, metadata)
-- [x] `journal-templates`: Built-in templates (blank, dotted, ruled, grid, daily-planner placeholder)
-- [x] `journal-templates`: TOML template definition format with schema_version + load_dir registry
-- [x] `journal-canvas`: Render template backgrounds behind strokes (Cairo-based)
-- [x] `journal-app`: Template picker when creating new page
-- [x] `journal-app`: Auto-fit viewport to page on template load (when `tiling = None`)
+- [x] `melete-templates`: Template data model (background type, metadata)
+- [x] `melete-templates`: Built-in templates (blank, dotted, ruled, grid, daily-planner placeholder)
+- [x] `melete-templates`: TOML template definition format with schema_version + load_dir registry
+- [x] `melete-canvas`: Render template backgrounds behind strokes (Cairo-based)
+- [x] `melete-app`: Template picker when creating new page
+- [x] `melete-app`: Auto-fit viewport to page on template load (when `tiling = None`)
 
 ## Phase 3.5: Template polish ✅
 
-- [x] `journal-app`: Notebook settings — assign available templates (gear button in header)
-- [x] `journal-app`: Section settings — limit templates (gear button per section, "inherit notebook" toggle)
-- [x] `journal-app`: Template management area (list + delete user templates; built-ins protected)
-- [x] `journal-app`: Import image as template background (via `gdk_pixbuf` → Cairo `ImageSurface` cache)
-- [ ] `journal-app`: Import PDF page as template background (deferred — needs poppler bindings) — **GH [#1](https://github.com/Sniper7Kills-LLC/Journal/issues/1)**
-- [x] ~~`journal-app`: Basic template creator (deferred)~~ — superseded by Phase 3.7 full-screen template editor
+- [x] `melete-app`: Notebook settings — assign available templates (gear button in header)
+- [x] `melete-app`: Section settings — limit templates (gear button per section, "inherit notebook" toggle)
+- [x] `melete-app`: Template management area (list + delete user templates; built-ins protected)
+- [x] `melete-app`: Import image as template background (via `gdk_pixbuf` → Cairo `ImageSurface` cache)
+- [ ] `melete-app`: Import PDF page as template background (deferred — needs poppler bindings) — **GH [#1](https://github.com/Sniper7Kills-LLC/Melete/issues/1)**
+- [x] ~~`melete-app`: Basic template creator (deferred)~~ — superseded by Phase 3.7 full-screen template editor
 
 ---
 
 ## Phase 3.6: Planner Widgets ✅
 
-- [x] `journal-core`: Added 4 new `WidgetKind` variants:
+- [x] `melete-core`: Added 4 new `WidgetKind` variants:
   - `BigThree` — three numbered priority boxes stacked vertically (Full Focus daily layout)
   - `PriorityList { count: u32 }` — A/B/C priority letter column + sequence number column + checkbox/write-line rows (Franklin Planner style)
   - `DailyAppointments { start_hour, end_hour }` — two-column hourly schedule with hour labels and half-hour tick marks (Franklin/Full Focus standard)
   - `WeeklyCompass` — 4×2 grid of labeled role/goal boxes for weekly planning (Franklin Covey concept)
-- [x] `journal-canvas`: Cairo renderers for all 4 new widget kinds (`draw_big_three`, `draw_priority_list`, `draw_daily_appointments`, `draw_weekly_compass`)
-- [x] `journal-app`: Template creator palette entries: "Big Three", "Priority List", "Day Schedule", "Weekly Compass"; defaults: PriorityList{count:12}, DailyAppointments{7–19}, BigThree, WeeklyCompass
-- [x] `journal-templates`: Two new built-in page templates (IDs `…000006` and `…000007`):
+- [x] `melete-canvas`: Cairo renderers for all 4 new widget kinds (`draw_big_three`, `draw_priority_list`, `draw_daily_appointments`, `draw_weekly_compass`)
+- [x] `melete-app`: Template creator palette entries: "Big Three", "Priority List", "Day Schedule", "Weekly Compass"; defaults: PriorityList{count:12}, DailyAppointments{7–19}, BigThree, WeeklyCompass
+- [x] `melete-templates`: Two new built-in page templates (IDs `…000006` and `…000007`):
   - **Full Focus Daily**: BigThree top 30%, DailyAppointments 7–19 bottom-left 60%, Checklist (after-action review) bottom-right
   - **Franklin Daily**: Date TextBlock header, PriorityList×14 left half, DailyAppointments 7–21 right half
 
@@ -204,18 +204,18 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ## Phase 4: Notebook Templates (Planner Auto-Generation) ✅
 
-- [x] `journal-core`: NotebookTemplate with `grouping` (Month|Week), `page_title_format`, `section_title_formats`
-- [x] `journal-core`: Section gains `parent_section_id` for hierarchy
-- [x] `journal-storage`: schema migrations v3 (parent col) + v4 (idempotent re-ALTER)
-- [x] `journal-storage`: `find_page_by_address`, `ensure_section`, `list_root_sections`, `list_child_sections`
-- [x] `journal-templates`: NotebookTemplateRegistry with builtins + `load_dir`; title-format engine (`{year}/{month}/{month_name}/{week}/{day}/{weekday}/{date}`)
-- [x] `journal-app`: Create planner notebook dialog (name + template + grouping dropdown + creation_date Calendar)
-- [x] `journal-app`: Cloned NotebookTemplate persisted to TOML at `XDG_DATA_HOME/journal/notebook_templates/`
-- [x] `journal-app`: Calendar navigation strip (Prev/Today/[date popover Calendar]/Next)
-- [x] `journal-app`: Auto-land on today's page when opening planner; sidebar refresh after every date nav
-- [x] `journal-app`: Hierarchical sidebar — Year section → Month-or-Week wrapper → daily pages, recursive expanders
-- [x] `journal-app`: No-page placeholder canvas (drawing disabled until a page is selected)
-- [x] ~~`journal-app`: Notebook template editor — full version (deferred; minimal stub exists)~~ — superseded by Phase 5.7 drag-drop editor
+- [x] `melete-core`: NotebookTemplate with `grouping` (Month|Week), `page_title_format`, `section_title_formats`
+- [x] `melete-core`: Section gains `parent_section_id` for hierarchy
+- [x] `melete-storage`: schema migrations v3 (parent col) + v4 (idempotent re-ALTER)
+- [x] `melete-storage`: `find_page_by_address`, `ensure_section`, `list_root_sections`, `list_child_sections`
+- [x] `melete-templates`: NotebookTemplateRegistry with builtins + `load_dir`; title-format engine (`{year}/{month}/{month_name}/{week}/{day}/{weekday}/{date}`)
+- [x] `melete-app`: Create planner notebook dialog (name + template + grouping dropdown + creation_date Calendar)
+- [x] `melete-app`: Cloned NotebookTemplate persisted to TOML at `XDG_DATA_HOME/melete/notebook_templates/`
+- [x] `melete-app`: Calendar navigation strip (Prev/Today/[date popover Calendar]/Next)
+- [x] `melete-app`: Auto-land on today's page when opening planner; sidebar refresh after every date nav
+- [x] `melete-app`: Hierarchical sidebar — Year section → Month-or-Week wrapper → daily pages, recursive expanders
+- [x] `melete-app`: No-page placeholder canvas (drawing disabled until a page is selected)
+- [x] ~~`melete-app`: Notebook template editor — full version (deferred; minimal stub exists)~~ — superseded by Phase 5.7 drag-drop editor
 
 **Milestone:** Yearly planner. Navigate any date. Pages auto-generate. ✅
 
@@ -253,9 +253,9 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ## Phase 4.5 finish ✅ (PDF import deferred)
 
-- [x] Configurable no-page placeholder image + text via `~/.config/journal/config.toml`; settings dialog on home
+- [x] Configurable no-page placeholder image + text via `~/.config/melete/config.toml`; settings dialog on home
 - [x] Full notebook template editor (name, description, grouping, page title format, year/month/week section formats, daily slots with day-of-week toggles + page template picker, add/remove slots; persisted to disk)
-- [ ] PDF template background import (deferred — poppler-rs crate compatibility with current gtk4-rs/glib generation needs verification; libpoppler-glib is available system-side) — **GH [#1](https://github.com/Sniper7Kills-LLC/Journal/issues/1)**
+- [ ] PDF template background import (deferred — poppler-rs crate compatibility with current gtk4-rs/glib generation needs verification; libpoppler-glib is available system-side) — **GH [#1](https://github.com/Sniper7Kills-LLC/Melete/issues/1)**
 
 ## Phase 5.5: Nav + Editing polish
 
@@ -271,8 +271,8 @@ Home screen (no notebook open) shows notebook grid/list.
   - Fill colour picker + on/off `Switch`
   - Stroke width spinner (mm)
   - Per-kind editors: text + font size + variable popover for `TextBlock`; thickness for `Line`; spacing for grid/lines/dots regions; start/end hour for `Timeline` and `DailyAppointments`; row count for `PriorityList`; pipe-separated items for `Checklist`
-- [x] `WidgetKind::TextBlock` text now runs through `journal_core::title_format::render` so `{date}/{weekday}/{month_name}/{year}/{week}/{day}/{month}` expand at draw time. The template editor preview binds today's date; the planner canvas binds the page's calendar date.
-- [x] `title_format` engine moved from `journal_templates` to `journal_core` (re-exported from `journal_templates` for back-compat) so `journal_canvas` can call it without a circular dep.
+- [x] `WidgetKind::TextBlock` text now runs through `melete_core::title_format::render` so `{date}/{weekday}/{month_name}/{year}/{week}/{day}/{month}` expand at draw time. The template editor preview binds today's date; the planner canvas binds the page's calendar date.
+- [x] `title_format` engine moved from `melete_templates` to `melete_core` (re-exported from `melete_templates` for back-compat) so `melete_canvas` can call it without a circular dep.
 - [x] Variable insertion popover in the editor: pick `{date}`, `{year}`, `{month}`, `{month_name}`, `{week}`, `{day}`, `{weekday}` and it inserts at the entry caret.
 - [x] Template editor undo/redo (Ctrl+Z / Ctrl+Shift+Z) — `EditorHistory` with Insert / Remove / Move / Resize / **Modify** ops. Modify captures `before` + `after` widget snapshots on every property edit; consecutive Modify ops on the same widget coalesce so a slider drag is one undo, not 50.
 - [x] Template editor snap-to-grid — `snap_grid_mm: Option<f64>` in `CreatorState`; `Switch` + `SpinButton` in the editor top row; all drag-place, drag-move, and drag-resize endpoints are grid-snapped when enabled.
@@ -286,15 +286,15 @@ Home screen (no notebook open) shows notebook grid/list.
 
 - [x] **Notebook → PDF export** (`pdf_export::export_notebook_to_pdf`) walks every section + child section depth-first, in `position` order, rendering each page (background + widgets + strokes) into a multi-page Cairo `PdfSurface`. Triggered from a new "Export notebook as PDF…" entry in the header menu, sensitive only when a notebook is open.
 - [x] **Stroke copy/paste** — `state::CanvasState::stroke_clipboard: Vec<Stroke>`. Ctrl+C snapshots the selected strokes; Ctrl+V mints fresh UUIDs, offsets each by ~10 canvas units, persists via `backend.insert_stroke`, pushes Add ops to the per-page history, and selects the new ids so the user can drag them.
-- [x] **Custom pen presets** — `config::PenPreset { name, color_rgba, width_mm }` persisted in `~/.config/journal/config.toml`. The floating toolbar renders a row of 28×28 colored chips between the tool buttons and the colour picker; clicking a chip switches the pen to that preset. App settings → "Pen presets" → "Manage presets…" opens a dialog with rename / re-color / re-width / reorder / delete / "Add current pen" actions.
+- [x] **Custom pen presets** — `config::PenPreset { name, color_rgba, width_mm }` persisted in `~/.config/melete/config.toml`. The floating toolbar renders a row of 28×28 colored chips between the tool buttons and the colour picker; clicking a chip switches the pen to that preset. App settings → "Pen presets" → "Manage presets…" opens a dialog with rename / re-color / re-width / reorder / delete / "Add current pen" actions.
 - [x] **More built-in templates** (Phase 5.6 builtins): `Franklin Weekly` (weekly-compass left + 7 day-blocks right), `Monthly Goals` (calendar + 12-row priority list + reflection lines), `Quarterly Review` (3 month-strips + 9-row wins/lessons/next list). Categories `Weekly Planner` / `Monthly Planner` / `Quarterly Planner`.
 
 ---
 
 ## Phase 5.7: Drag-drop notebook-template editor ✅
 
-- [x] **`EntryFlags` data model** — `journal_core::EntryFlags { bridge_previous: bool, bridge_next: bool }` added to `journal_core::template`. New `entry_options: HashMap<String, EntryFlags>` field on `NotebookTemplate` with `#[serde(default)]` so existing TOML files load unchanged. Keys are `"year_start:N"`, `"before_quarter:N"`, `"before_month:N"`, `"before_week:N"`, `"daily:S:N"`. Planner runtime does not yet act on these flags — they are persisted and surfaced in the editor; bridge-rendering is a future phase.
-- [x] **Full-screen stack-page editor** (`crates/journal-app/src/notebook_template_creator.rs`) — mirrors `template_creator::build_editor_view`. Outer `GtkBox` (vertical) with: top action row (Back + title + Saved ✓ indicator + Save), meta row (Name / Description / Grouping / Page title format / Year-Month-Week section formats), three-pane `Paned`.
+- [x] **`EntryFlags` data model** — `melete_core::EntryFlags { bridge_previous: bool, bridge_next: bool }` added to `melete_core::template`. New `entry_options: HashMap<String, EntryFlags>` field on `NotebookTemplate` with `#[serde(default)]` so existing TOML files load unchanged. Keys are `"year_start:N"`, `"before_quarter:N"`, `"before_month:N"`, `"before_week:N"`, `"daily:S:N"`. Planner runtime does not yet act on these flags — they are persisted and surfaced in the editor; bridge-rendering is a future phase.
+- [x] **Full-screen stack-page editor** (`crates/melete-app/src/notebook_template_creator.rs`) — mirrors `template_creator::build_editor_view`. Outer `GtkBox` (vertical) with: top action row (Back + title + Saved ✓ indicator + Save), meta row (Name / Description / Grouping / Page title format / Year-Month-Week section formats), three-pane `Paned`.
 - [x] **Palette pane** (left, ~200px) — `ScrolledWindow` listing every available `PageTemplate` as a chip with a coloured swatch and template name. Each chip is a `gtk4::DragSource` (COPY) whose payload is `"page-template:{uuid}"`.
 - [x] **Slots pane** (middle, flex) — `ScrolledWindow` with sections for Year start / Before each quarter / Before each month / Before each week (each a `FlowBox` drop target), then a "Daily slots" section with an "+ Add daily slot" button. Each daily slot has weekday `ToggleButton` chips (Mon–Sun), a `FlowBox` drop target for page-template chips, and a "Remove slot" button.
 - [x] **Options panel** (right, ~260px) — when a chip is clicked, shows slot label, "Bridge to previous period" `Switch`, "Bridge to next period" `Switch`, and a hint that bridge-rendering is deferred. Shows placeholder text when no chip is selected.
@@ -309,9 +309,9 @@ Home screen (no notebook open) shows notebook grid/list.
 
 ## Future (Not Now)
 
-- [ ] Calendar integration (Google Calendar, iCal) — display events on template areas — **GH [#15](https://github.com/Sniper7Kills-LLC/Journal/issues/15)**
-- [ ] Storage offloading — archive old notebooks to external storage — **GH [#16](https://github.com/Sniper7Kills-LLC/Journal/issues/16)**
-- [ ] Handwriting recognition / search — **GH [#17](https://github.com/Sniper7Kills-LLC/Journal/issues/17)**
+- [ ] Calendar integration (Google Calendar, iCal) — display events on template areas — **GH [#15](https://github.com/Sniper7Kills-LLC/Melete/issues/15)**
+- [ ] Storage offloading — archive old notebooks to external storage — **GH [#16](https://github.com/Sniper7Kills-LLC/Melete/issues/16)**
+- [ ] Handwriting recognition / search — **GH [#17](https://github.com/Sniper7Kills-LLC/Melete/issues/17)**
 
 ---
 
@@ -326,9 +326,9 @@ the optional template-sharing portal, not for the journal app.
 
 ### 6.1 Trait-based storage abstraction ✅
 
-- [x] `journal-storage::backend`: traits per store — `NotebookStore`, `SectionStore`, `PageStore`, `StrokeStore`, plus the aggregator `JournalBackend: NotebookStore + SectionStore + PageStore + StrokeStore`. `PlannerQueries` adds default-impl `pages_in_date_range` for future remote pushdown. No `Connection` in any signature.
-- [x] `journal-storage::sqlite_backend::SqliteBackend` wraps `Db` and delegates each method to the existing free functions in the `*_store` modules (back-compat retained).
-- [x] `journal-app` holds `Rc<RefCell<dyn JournalBackend>>` instead of `Rc<RefCell<Db>>` (`state::CanvasState.backend`); ~50 call sites migrated from `db.borrow().conn(); store::fn(conn, ...)` to `backend.borrow_mut().fn(...)`. Planner helpers (`ensure_planner_pages`, `min_day_date_in_section`, `reorder_sections_chronologically`, `chronological_target_position`) take `&mut dyn JournalBackend`.
+- [x] `melete-storage::backend`: traits per store — `NotebookStore`, `SectionStore`, `PageStore`, `StrokeStore`, plus the aggregator `NotebookBackend: NotebookStore + SectionStore + PageStore + StrokeStore`. `PlannerQueries` adds default-impl `pages_in_date_range` for future remote pushdown. No `Connection` in any signature.
+- [x] `melete-storage::sqlite_backend::SqliteBackend` wraps `Db` and delegates each method to the existing free functions in the `*_store` modules (back-compat retained).
+- [x] `melete-app` holds `Rc<RefCell<dyn NotebookBackend>>` instead of `Rc<RefCell<Db>>` (`state::CanvasState.backend`); ~50 call sites migrated from `db.borrow().conn(); store::fn(conn, ...)` to `backend.borrow_mut().fn(...)`. Planner helpers (`ensure_planner_pages`, `min_day_date_in_section`, `reorder_sections_chronologically`, `chronological_target_position`) take `&mut dyn NotebookBackend`.
 - [x] `StorageError` gains `Network` / `Auth` / `Conflict` variants reserved for the future remote backend.
 
 ### 6.2 Local backends ✅
@@ -343,9 +343,9 @@ Templates are the lowest-risk thing to host: small TOML blobs, no per-stroke
 write traffic, valuable to share. We do **not** roll our own server — the
 backend is **AWS Amplify** (Cognito + AppSync/REST + DynamoDB + S3).
 
-- [ ] AWS infra (Amplify project alongside the repo, e.g. `amplify/`) — **GH [#4](https://github.com/Sniper7Kills-LLC/Journal/issues/4) (CDK stack), [#5](https://github.com/Sniper7Kills-LLC/Journal/issues/5) (AppSync schema)**
-- [ ] `journal-storage`: add `RemoteTemplateStore` impl — **GH [#6](https://github.com/Sniper7Kills-LLC/Journal/issues/6)**
-- [ ] `journal-app`: settings pane to log in / log out / pick "sync templates" toggle. Template manager grows tabs for "Local", "My (synced)", "Public". — **GH [#7](https://github.com/Sniper7Kills-LLC/Journal/issues/7)**
+- [ ] AWS infra (Amplify project alongside the repo, e.g. `amplify/`) — **GH [#4](https://github.com/Sniper7Kills-LLC/Melete/issues/4) (CDK stack), [#5](https://github.com/Sniper7Kills-LLC/Melete/issues/5) (AppSync schema)**
+- [ ] `melete-storage`: add `RemoteTemplateStore` impl — **GH [#6](https://github.com/Sniper7Kills-LLC/Melete/issues/6)**
+- [ ] `melete-app`: settings pane to log in / log out / pick "sync templates" toggle. Template manager grows tabs for "Local", "My (synced)", "Public". — **GH [#7](https://github.com/Sniper7Kills-LLC/Melete/issues/7)**
 
 ### 6.4 Web template portal — Amplify Hosting
 
@@ -359,7 +359,7 @@ for the journal" rule still holds — **drawing on a page** stays native;
 
 - [ ] **Browse/share** — list public templates with Lambda-rendered PNG
   previews, fork to "my templates". Authenticated users can rename /
-  set visibility / delete their own. — **GH [#8](https://github.com/Sniper7Kills-LLC/Journal/issues/8), [#9](https://github.com/Sniper7Kills-LLC/Journal/issues/9)**
+  set visibility / delete their own. — **GH [#8](https://github.com/Sniper7Kills-LLC/Melete/issues/8), [#9](https://github.com/Sniper7Kills-LLC/Melete/issues/9)**
 - [ ] **Page template designer** — drag-and-drop editor mirroring the
   native template editor: a widget palette (TextBlock, Rectangle, Ellipse,
   Line, Grid/Lines/Dots Region, CalendarMonth, Timeline, Checklist,
@@ -368,7 +368,7 @@ for the journal" rule still holds — **drawing on a page** stays native;
   (stroke/fill colour, width, per-kind controls, text-variable insertion).
   Output is the **same TOML schema** consumed by the native client
   (`schema_version = 1`, `widgets = [...]`) so a template designed on the
-  web loads unchanged on the desktop. — **GH [#10](https://github.com/Sniper7Kills-LLC/Journal/issues/10)**
+  web loads unchanged on the desktop. — **GH [#10](https://github.com/Sniper7Kills-LLC/Melete/issues/10)**
 - [ ] **Notebook template designer** — drag-and-drop editor for planner
   structure: define `year_start`, `before_quarter`, `before_month`,
   `before_week` slots (each takes an ordered list of page templates,
@@ -377,26 +377,26 @@ for the journal" rule still holds — **drawing on a page** stays native;
   `grouping = Month | Week`; edit `page_title_format` +
   `section_title_formats` with a live preview that uses tomorrow's date.
   Output matches the native notebook-template TOML at
-  `~/.local/share/journal/notebook_templates/`. — **GH [#11](https://github.com/Sniper7Kills-LLC/Journal/issues/11)**
+  `~/.local/share/melete/notebook_templates/`. — **GH [#11](https://github.com/Sniper7Kills-LLC/Melete/issues/11)**
 - [ ] **Schema parity guarantee** — page-template + notebook-template
-  schemas live in `journal-core` (already true for page templates via
-  `journal_core::template`). The web SPA fetches a versioned JSON schema
+  schemas live in `melete-core` (already true for page templates via
+  `melete_core::template`). The web SPA fetches a versioned JSON schema
   from a Lambda endpoint to render its forms, so adding a new
   `WidgetKind` variant on the desktop automatically becomes available
-  in the web designer's palette without a separate web release. — **GH [#13](https://github.com/Sniper7Kills-LLC/Journal/issues/13)**
+  in the web designer's palette without a separate web release. — **GH [#13](https://github.com/Sniper7Kills-LLC/Melete/issues/13)**
 - [ ] **Render preview** — the web designer renders previews client-side
   via a small TypeScript port of `widget_renderer` against an HTML5
   `<canvas>`. Same coord system, same default sizes, same `title_format`
-  expansion (port of `journal_core::title_format`). Lambda-rendered PNG
+  expansion (port of `melete_core::title_format`). Lambda-rendered PNG
   remains the source of truth for thumbnails (server side, headless
-  Cairo) so browse-list previews match the native client byte-for-byte. — **GH [#3](https://github.com/Sniper7Kills-LLC/Journal/issues/3) (WASM build), [#12](https://github.com/Sniper7Kills-LLC/Journal/issues/12) (viewer + QR share)**
+  Cairo) so browse-list previews match the native client byte-for-byte. — **GH [#3](https://github.com/Sniper7Kills-LLC/Melete/issues/3) (WASM build), [#12](https://github.com/Sniper7Kills-LLC/Melete/issues/12) (viewer + QR share)**
 - [ ] **Out of scope:** drawing on a page (strokes, stylus input, ink) —
   that stays on the native client, full stop.
 
 ### 6.5 Remote notebook/stroke backend (later, gated on 6.3)
 
 Same Amplify stack scaled to notebooks/strokes — tracked as a single
-umbrella issue **GH [#14](https://github.com/Sniper7Kills-LLC/Journal/issues/14)**:
+umbrella issue **GH [#14](https://github.com/Sniper7Kills-LLC/Melete/issues/14)**:
 
 - [ ] DynamoDB tables: `Notebook`, `Section`, `Page`, `Stroke`
 - [ ] Sync engine with conflict resolution (last-writer-wins on append-only strokes; CRDT for page reorder)
@@ -415,20 +415,20 @@ issue so the work splits cleanly across sessions.
 
 ### 7.1 Final product name
 
-- [ ] Decide on a single brand. Today the project lives under
-  "Journal" + the `dev.s7k.journal` reverse-DNS id; that's a working
-  title. Inputs: domain availability, conflict with existing apps
-  (rnote / Joplin / Logseq / Obsidian / Notability / OneNote),
-  trademark search, social-handle availability, .desktop AppId
-  rename cost, GitHub repo rename cost. Once chosen: rename the repo,
-  update Cargo metadata, freedesktop AppId, README, marketing doc.
-  Tracked as **GH [#39](https://github.com/Sniper7Kills-LLC/Journal/issues/39)**.
+- [x] Renamed the project to **Melete** (Greek Muse of meditation and
+  practice). AppId is `dev.s7k.melete`, domain is
+  [melete.app](https://melete.app), repo is
+  `Sniper7Kills-LLC/Melete`. All crates renamed `journal-*` →
+  `melete-*`; storage paths migrate `~/.local/share/journal/` and
+  `~/.config/journal/` onto `~/.local/share/melete/` and
+  `~/.config/melete/` on first launch. Closes
+  **GH [#39](https://github.com/Sniper7Kills-LLC/Melete/issues/39)**.
 
 ### 7.2 Web ↔ Desktop integration
 
-The web POC at `web/` and the desktop binary share `journal-core` /
-`journal-templates` / `journal-canvas` / `journal-widgets` /
-`journal-web-shim` / `journal-web-viewer` — but the round-trip
+The web POC at `web/` and the desktop binary share `melete-core` /
+`melete-templates` / `melete-canvas` / `melete-widgets` /
+`melete-web-shim` / `melete-web-viewer` — but the round-trip
 (designer ↔ desktop) has only been validated on a handful of
 templates. This phase exhaustively integrates and tests them:
 
@@ -437,13 +437,13 @@ templates. This phase exhaustively integrates and tests them:
 - [ ] Visual regression harness for the web viewer against the
   desktop's rendered PNG (golden corpus).
 - [ ] End-to-end: create template in Templeter → download TOML →
-  drop in `~/.local/share/journal/templates/` → desktop loads,
+  drop in `~/.local/share/melete/templates/` → desktop loads,
   renders, edits, saves → re-export → diff against original.
 - [ ] Same for brushes (Tooler → `brushes.toml`).
 - [ ] Same for notebook templates (needs `serialize_notebook_template_toml`
-  in `journal-web-shim` first — currently the Gallery emits JSON).
+  in `melete-web-shim` first — currently the Gallery emits JSON).
 
-Tracked as **GH [#40](https://github.com/Sniper7Kills-LLC/Journal/issues/40)**.
+Tracked as **GH [#40](https://github.com/Sniper7Kills-LLC/Melete/issues/40)**.
 
 ### 7.3 Polish + publish
 
@@ -457,7 +457,7 @@ Tracked as **GH [#40](https://github.com/Sniper7Kills-LLC/Journal/issues/40)**.
   backend, see #4).
 - [ ] First public deploy of the SPA at the chosen domain (post-7.1).
 
-Tracked as **GH [#41](https://github.com/Sniper7Kills-LLC/Journal/issues/41)**.
+Tracked as **GH [#41](https://github.com/Sniper7Kills-LLC/Melete/issues/41)**.
 
 ### 7.4 Feedback collection
 
@@ -471,7 +471,7 @@ Tracked as **GH [#41](https://github.com/Sniper7Kills-LLC/Journal/issues/41)**.
   brush + template downloads. Strictly opt-in, off by default,
   documented in privacy doc.
 
-Tracked as **GH [#42](https://github.com/Sniper7Kills-LLC/Journal/issues/42)**.
+Tracked as **GH [#42](https://github.com/Sniper7Kills-LLC/Melete/issues/42)**.
 
 ### 7.5 Multi-OS packaging
 
@@ -489,7 +489,7 @@ Originally out of scope (Linux-first); now in scope.
 - [ ] Auto-update: `cargo-dist` covers macOS + Windows; Linux
   packages handle their own updaters via the distro repo.
 
-Tracked as **GH [#43](https://github.com/Sniper7Kills-LLC/Journal/issues/43)**.
+Tracked as **GH [#43](https://github.com/Sniper7Kills-LLC/Melete/issues/43)**.
 
 ### 7.6 Paid plans
 
@@ -524,7 +524,7 @@ Open questions to design before any code:
 - [ ] EU/UK/US regulatory surface (VAT, sales tax, GDPR data
   retention).
 
-Tracked as **GH [#44](https://github.com/Sniper7Kills-LLC/Journal/issues/44)**.
+Tracked as **GH [#44](https://github.com/Sniper7Kills-LLC/Melete/issues/44)**.
 
 ### 7.7 Informational / marketing site
 
@@ -539,21 +539,21 @@ Tracked as **GH [#44](https://github.com/Sniper7Kills-LLC/Journal/issues/44)**.
   7.6 payments).
 - [ ] Press kit (logo PNG/SVG, screenshots, contact link).
 
-Tracked as **GH [#45](https://github.com/Sniper7Kills-LLC/Journal/issues/45)**.
+Tracked as **GH [#45](https://github.com/Sniper7Kills-LLC/Melete/issues/45)**.
 
 ---
 
 ## Workspace Structure
 
 ```
-Journal/
+Melete/
 ├── Cargo.toml                    # Workspace root
 ├── crates/
-│   ├── journal-app/              # GTK4 app shell, views, input
-│   ├── journal-canvas/           # Cairo rendering, viewport
-│   ├── journal-core/             # Domain models, business logic
-│   ├── journal-storage/          # Storage traits + SQLite impl (Phase 6: + RemoteAmplifyStore impl)
-│   └── journal-templates/        # Template definitions, import
+│   ├── melete-app/              # GTK4 app shell, views, input
+│   ├── melete-canvas/           # Cairo rendering, viewport
+│   ├── melete-core/             # Domain models, business logic
+│   ├── melete-storage/          # Storage traits + SQLite impl (Phase 6: + RemoteAmplifyStore impl)
+│   └── melete-templates/        # Template definitions, import
 ├── amplify/                      # (Phase 6.3+) AWS Amplify project — Cognito auth, AppSync API, DynamoDB, S3
 ├── resources/                    # GTK resources, icons, UI
 └── templates/                    # Built-in template files
@@ -623,14 +623,14 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
 ```
 
-(Vello / wgpu / parley pulled in by the `vello` feature on `journal-canvas` and `journal-app`. Cairo accessed via `gtk4::cairo` re-export — used now only by `pdf_export` for vector PDF output.)
+(Vello / wgpu / parley pulled in by the `vello` feature on `melete-canvas` and `melete-app`. Cairo accessed via `gtk4::cairo` re-export — used now only by `pdf_export` for vector PDF output.)
 
 ---
 
 ## Resolved Decisions
 
 - **System color-scheme detection:** Uses `adw::StyleManager` (libadwaita 0.7) instead of `gtk4::Settings::is_gtk_application_prefer_dark_theme`. The `StyleManager` queries the XDG desktop portal so it reflects the user's OS-level dark/light preference and fires `notify::dark` when it changes, regardless of DE (GNOME, KDE, Hyprland, etc.).
-- **Renderer:** Vello (GPU compute via wgpu Vulkan) drawn into a `gtk4::GLArea` — see `docs/renderer-vello-migration.md` for the migration record. Strokes / backgrounds / widgets / overlays / image / PDF / placeholder all render through `journal_canvas::vello_renderer::VelloRenderer`. `pdf_export` retains Cairo to keep PDF output vector. The original Phase 1 Cairo-on-DrawingArea path remains as a fallback when `JOURNAL_VELLO=0` is set.
+- **Renderer:** Vello (GPU compute via wgpu Vulkan) drawn into a `gtk4::GLArea` — see `docs/renderer-vello-migration.md` for the migration record. Strokes / backgrounds / widgets / overlays / image / PDF / placeholder all render through `melete_canvas::vello_renderer::VelloRenderer`. `pdf_export` retains Cairo to keep PDF output vector. The original Phase 1 Cairo-on-DrawingArea path remains as a fallback when `MELETE_VELLO=0` is set.
 - **Touch gesture mode-lock:** A two-finger gesture is locked to either pan or zoom on the first frame that crosses a threshold (12px centroid drift → pan; 8% scale change → zoom). Avoids GestureZoom's tendency to interpret minor finger-distance jitter as zoom during a pure pan.
 - **Template backgrounds:** Fixed size. Canvas extends as blank beyond. Grid templates tile infinitely.
 - **Template size:** Physical units (mm). Default: US Letter (215.9mm × 279.4mm). Viewport fits full page on screen by default.

@@ -51,7 +51,7 @@ function NavBar() {
   return (
     <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2">
       <Link to="/" className="text-lg font-semibold text-slate-900">
-        Journal
+        Melete
       </Link>
       <nav className="flex items-center gap-1">
         <span className="ml-1 text-[11px] uppercase tracking-wide text-slate-400">

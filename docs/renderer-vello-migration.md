@@ -7,16 +7,16 @@
 **Scope:** Native canvas renderer migration with eye on future cloud sync (DynamoDB + AppSync) and view-only web viewer.
 
 **Outcome summary:**
-- Vello is the default canvas renderer (`journal-app` feature `vello`, on by default). `JOURNAL_VELLO=0` opts back to the Cairo `DrawingArea` for diagnostics.
+- Vello is the default canvas renderer (`melete-app` feature `vello`, on by default). `MELETE_VELLO=0` opts back to the Cairo `DrawingArea` for diagnostics.
 - All canvas content — strokes (6 brush styles, blend modes), backgrounds (analytic + raster image + PDF), template widgets, selection handles, lasso, brush cursor, page-bounds outline, and the no-page placeholder — now renders into a `vello::Scene` and is presented via Path B (offscreen wgpu texture → readback → GL upload → fullscreen quad on a `gtk4::GLArea`).
-- New crate `journal-widgets` holds parley-driven widget rendering, kept GTK/SQLite-free so a future WASM viewer can link it directly.
-- Cairo paths still live in `journal-canvas` solely because `pdf_export` continues to emit vector PDF via `cairo::PdfSurface`. Migrating PDF export to Vello would mean rasterizing every page (~5 MB at 200 dpi vs. ~50 KB vector); kept as a deliberate trade-off.
+- New crate `melete-widgets` holds parley-driven widget rendering, kept GTK/SQLite-free so a future WASM viewer can link it directly.
+- Cairo paths still live in `melete-canvas` solely because `pdf_export` continues to emit vector PDF via `cairo::PdfSurface`. Migrating PDF export to Vello would mean rasterizing every page (~5 MB at 200 dpi vs. ~50 KB vector); kept as a deliberate trade-off.
 
 ---
 
 ## 1. Goals
 
-1. Replace `gtk4::cairo` rendering with Vello (`wgpu`-backed) in `journal-canvas`.
+1. Replace `gtk4::cairo` rendering with Vello (`wgpu`-backed) in `melete-canvas`.
 2. Preserve current visual fidelity for all six brush styles + backgrounds + widgets.
 3. Keep the renderer **storage-agnostic** — same pipeline drives SQLite-backed local rendering today and DynamoDB/AppSync-backed remote rendering tomorrow.
 4. Establish a cross-target render path (native + WASM/WebGPU) so the future web viewer reuses the renderer crate, not a JS reimplementation.
@@ -52,9 +52,9 @@
 | Renderer | `vello` building a `Scene`; rendered via `wgpu` to a GPU texture; presented inside GTK4 |
 | Backing surface | GTK4 `GLArea` with a `wgpu::Surface` over the GLArea's GL context, OR readback to `cairo::ImageSurface` and blit (fallback path) |
 | Coordinate space | Unchanged (canvas-space, viewport-applied as Vello affine transform) |
-| Stroke storage | **Unchanged at the byte level.** Structured representation already lives in `journal-core` types; SQLite codec untouched. |
-| Render path crate | `journal-canvas` becomes target-agnostic Rust (no `gtk4::cairo` deps). Native binary links it, future WASM viewer links the same crate. |
-| Web viewer | Compiles `journal-canvas` to `wasm32-unknown-unknown`, drives Vello via `wgpu`'s WebGPU backend, renders into an HTML5 `<canvas>`. |
+| Stroke storage | **Unchanged at the byte level.** Structured representation already lives in `melete-core` types; SQLite codec untouched. |
+| Render path crate | `melete-canvas` becomes target-agnostic Rust (no `gtk4::cairo` deps). Native binary links it, future WASM viewer links the same crate. |
+| Web viewer | Compiles `melete-canvas` to `wasm32-unknown-unknown`, drives Vello via `wgpu`'s WebGPU backend, renders into an HTML5 `<canvas>`. |
 
 ## 5. Storage Independence (Key Constraint)
 
@@ -64,9 +64,9 @@ The renderer must consume a **storage-shape-agnostic Stroke domain model**, beca
 2. **Future (cloud sync):** AppSync GraphQL response → JSON → `Vec<StrokePoint>` + `PenSettings`
 3. **Future (web viewer):** AppSync direct fetch → identical JSON → identical types
 
-**Implication: the `journal-core::Stroke` type is the contract.** All three paths converge on it before the renderer sees it. Renderer never knows which backend produced the strokes.
+**Implication: the `melete-core::Stroke` type is the contract.** All three paths converge on it before the renderer sees it. Renderer never knows which backend produced the strokes.
 
-This already holds today (`JournalBackend` trait yields `Stroke` regardless of impl). Migration **must not** introduce a Cairo-shaped intermediate that breaks this contract.
+This already holds today (`NotebookBackend` trait yields `Stroke` regardless of impl). Migration **must not** introduce a Cairo-shaped intermediate that breaks this contract.
 
 ### Rendering data flow (post-migration)
 
@@ -75,12 +75,12 @@ SQLite/DynamoDB row
         │
         │  decode points_blob  /  GraphQL deserialize
         ▼
-journal_core::Stroke { id, points: Vec<StrokePoint>, pen: PenSettings,
+melete_core::Stroke { id, points: Vec<StrokePoint>, pen: PenSettings,
                        zoom_at_creation, bounding_box }
         │
         │  &[Stroke]  (owned by SharedState)
         ▼
-journal_canvas::paint_scene(scene, transform, page_rect, background,
+melete_canvas::paint_scene(scene, transform, page_rect, background,
                             widgets, strokes, selection, …)
         │  builds vello::Scene
         ▼
@@ -94,7 +94,7 @@ vello::Renderer.render_to_texture(scene, render_target)
 
 ## 6. Domain Model — Confirmed Stable
 
-These types live in `journal-core` and are unchanged by this migration:
+These types live in `melete-core` and are unchanged by this migration:
 
 - `Stroke { id: Uuid, points: Vec<StrokePoint>, pen: PenSettings, zoom_at_creation: f64, bounding_box: Rect }`
 - `StrokePoint { x, y, pressure, tilt_x, tilt_y, timestamp_ms }`
@@ -120,15 +120,15 @@ DynamoDB schema (when defined) maps these 1:1:
 
 | Crate | Today | After |
 |---|---|---|
-| `journal-core` | Pure types, serde | **Unchanged** |
-| `journal-canvas` | Cairo-dependent renderer + backgrounds + widgets | Target-agnostic Rust + Vello renderer; **no `gtk4` dep** |
-| `journal-app` | GTK4 app, owns `DrawingArea`, calls into `journal-canvas` Cairo APIs | Owns `GLArea` (or hidden `GLArea` + readback), drives `journal-canvas` via Vello scene API |
-| `journal-storage` | Backend trait + SQLite impl | **Unchanged** |
-| `journal-templates` | Template loaders, TOML | **Unchanged** |
-| (new) `journal-canvas-gtk` | — | Thin GTK4 ↔ wgpu surface adapter. Splits GTK-specific code out of `journal-canvas` so the renderer is portable to wasm. |
-| (future) `journal-web` | — | WASM build of `journal-canvas` + JS wrapper |
+| `melete-core` | Pure types, serde | **Unchanged** |
+| `melete-canvas` | Cairo-dependent renderer + backgrounds + widgets | Target-agnostic Rust + Vello renderer; **no `gtk4` dep** |
+| `melete-app` | GTK4 app, owns `DrawingArea`, calls into `melete-canvas` Cairo APIs | Owns `GLArea` (or hidden `GLArea` + readback), drives `melete-canvas` via Vello scene API |
+| `melete-storage` | Backend trait + SQLite impl | **Unchanged** |
+| `melete-templates` | Template loaders, TOML | **Unchanged** |
+| (new) `melete-canvas-gtk` | — | Thin GTK4 ↔ wgpu surface adapter. Splits GTK-specific code out of `melete-canvas` so the renderer is portable to wasm. |
+| (future) `melete-web` | — | WASM build of `melete-canvas` + JS wrapper |
 
-### 7.2 New `journal-canvas` public API (post-migration)
+### 7.2 New `melete-canvas` public API (post-migration)
 
 ```rust
 pub struct CanvasRenderer { /* vello::Renderer + wgpu device */ }
@@ -191,7 +191,7 @@ Slower (CPU readback is not free) but unblocks shipping. Per-frame readback for 
 
 ### 7.4 Web target (forward-looking; not part of this migration)
 
-`journal-canvas` builds with `wasm32-unknown-unknown` once GTK code is out:
+`melete-canvas` builds with `wasm32-unknown-unknown` once GTK code is out:
 
 ```
 HTMLCanvasElement → wgpu::Surface (WebGPU backend, WebGL2 fallback)
@@ -213,7 +213,7 @@ JS layer = ~30 LOC: `init_renderer(canvas)`, `render_notebook(json)`. No JS port
 
 ### Phase 1 — Core stroke port (3–5 days)
 
-- New crate `journal-canvas-vello` (lives next to existing `journal-canvas`, both compile).
+- New crate `melete-canvas-vello` (lives next to existing `melete-canvas`, both compile).
 - Port `draw_stroke` dispatch for all six `BrushStyle` variants:
   - **Pen / Highlighter:** Vello `Stroke` with width-tapered `BezPath`. Pressure mapping → use Vello's `StrokeOpts` width profile.
   - **Pencil:** Vello stroke with constant-width `Path` + scattered `Path::circle` for grain. Use `peniko::BlendMode::Normal`.
@@ -236,7 +236,7 @@ JS layer = ~30 LOC: `init_renderer(canvas)`, `render_notebook(json)`. No JS port
 
 ### Phase 3 — Widgets (5–7 days)
 
-- Port every `WidgetKind` renderer in `journal-templates` to emit Vello scene calls instead of Cairo calls.
+- Port every `WidgetKind` renderer in `melete-templates` to emit Vello scene calls instead of Cairo calls.
 - TextBlock + `title_format` engine — fonts via `parley` (Linebender's text crate, pairs with Vello). This is the largest unknown — text rendering parity is the main fidelity risk.
 - Widget set: Calendar / Timeline / Checklist / Franklin priority list / Full Focus big-three / weekly compass / day-schedule.
 
@@ -246,7 +246,7 @@ JS layer = ~30 LOC: `init_renderer(canvas)`, `render_notebook(json)`. No JS port
 
 - Replace `DrawingArea` + `cairo::Context` rendering in `canvas_widget.rs` with `GLArea` + Vello renderer (Path A) or hidden `GLArea`+readback into `DrawingArea` (Path B).
 - Brush cursor overlay (`draw_brush_cursor`): keep on Cairo, drawn over the Vello surface — or port to Vello scene as last layer.
-- Remove `gtk4` dep from `journal-canvas`. All GTK-specific code now in `journal-app`.
+- Remove `gtk4` dep from `melete-canvas`. All GTK-specific code now in `melete-app`.
 
 **Exit criterion:** running app shows live drawing, brush cursor visible, no crashes on resize / zoom / page swap.
 
@@ -257,13 +257,13 @@ JS layer = ~30 LOC: `init_renderer(canvas)`, `render_notebook(json)`. No JS port
 - Update `CLAUDE.md` (renderer line, GPU note).
 - Remove the dual-renderer test harness; keep visual regression PNGs as golden snapshots against Vello.
 
-**Exit criterion:** `cargo build -p journal-app` produces a binary with Vello as the only renderer.
+**Exit criterion:** `cargo build -p melete-app` produces a binary with Vello as the only renderer.
 
 ### Phase 6 (later, separate doc) — Web viewer
 
-- Strip `gtk4-rs` from `journal-canvas` dependency tree (already done in Phase 4).
+- Strip `gtk4-rs` from `melete-canvas` dependency tree (already done in Phase 4).
 - Add `wasm32-unknown-unknown` build target.
-- Web viewer crate `journal-web` compiles `journal-canvas` + a small `wasm-bindgen` wrapper.
+- Web viewer crate `melete-web` compiles `melete-canvas` + a small `wasm-bindgen` wrapper.
 
 ## 9. Schema & Data Model Changes
 
@@ -273,7 +273,7 @@ When cloud sync arrives later:
 
 - DynamoDB `strokes` table: structured per the table in §6
 - Wire format: MessagePack (proposed) for `points` attribute; JSON for `pen` attribute
-- Sync layer in a new `journal-amplify` crate translates between local bincode and cloud MessagePack at sync boundary
+- Sync layer in a new `melete-amplify` crate translates between local bincode and cloud MessagePack at sync boundary
 - Renderer stays oblivious — both paths produce `Vec<Stroke>` for it
 
 This document explicitly does not pre-commit to MessagePack vs JSON for cloud `points`; that decision belongs in the cloud-sync change doc.
@@ -293,7 +293,7 @@ This document explicitly does not pre-commit to MessagePack vs JSON for cloud `p
 
 ## 11. Test Strategy
 
-1. **Visual regression harness** (`crates/journal-canvas/tests/visual.rs`):
+1. **Visual regression harness** (`crates/melete-canvas/tests/visual.rs`):
    - Fixed test corpus: 30 reference scenes (each brush, each background, each widget kind, dense page).
    - Renders each via Cairo (during transition) and Vello, saves PNG, diffs against checked-in goldens.
    - Threshold: <2% pixel diff strokes/backgrounds; <8% for text-heavy widgets.
@@ -315,7 +315,7 @@ parley = "0.2"          # text shaping/layout, Linebender
 Removed eventually:
 
 ```toml
-# from journal-canvas
+# from melete-canvas
 gtk4 = "*"   # only the cairo re-export was used
 ```
 
@@ -340,7 +340,7 @@ Binary size delta: ~+8–12 MB (Vello + wgpu + parley + Vulkan loader). Acceptab
 | 5 — Cleanup | 1 |
 | **Total** | **13–20 days** |
 
-Phase 6 (web viewer) is separate work, ~3–4 days to bring up against the now-portable `journal-canvas` crate.
+Phase 6 (web viewer) is separate work, ~3–4 days to bring up against the now-portable `melete-canvas` crate.
 
 ## 15. Open Questions
 
@@ -354,7 +354,7 @@ Phase 6 (web viewer) is separate work, ~3–4 days to bring up against the now-p
 
 - Cloud sync (DynamoDB + AppSync) — separate doc, builds on this migration.
 - View-only web viewer + QR share — separate doc, depends on Phase 6.
-- Server-side rendering for share links — separate doc; would reuse the same `journal-canvas` crate as a Lambda layer.
+- Server-side rendering for share links — separate doc; would reuse the same `melete-canvas` crate as a Lambda layer.
 - Renderer-driven PDF export — current `pdf_export.rs` uses Cairo directly; revisit after Phase 5 to decide if it stays Cairo or moves to Vello-via-readback.
 
 ---
@@ -363,8 +363,8 @@ Phase 6 (web viewer) is separate work, ~3–4 days to bring up against the now-p
 
 - [ ] Visual regression harness green for full test corpus *(deferred — manual user testing)*
 - [x] Manual checklist (§11.4) walked through on Framework 12 (touchscreen + stylus)
-- [ ] No `gtk4::cairo` references in `journal-canvas` crate *(retained for `pdf_export`; see Outcome summary)*
-- [ ] `journal-canvas` builds with `--target wasm32-unknown-unknown` (no GTK deps leaking) *(blocked by `pdf_export` Cairo dep; web viewer can use `journal-widgets` directly which is WASM-clean)*
+- [ ] No `gtk4::cairo` references in `melete-canvas` crate *(retained for `pdf_export`; see Outcome summary)*
+- [ ] `melete-canvas` builds with `--target wasm32-unknown-unknown` (no GTK deps leaking) *(blocked by `pdf_export` Cairo dep; web viewer can use `melete-widgets` directly which is WASM-clean)*
 - [x] CLAUDE.md updated (renderer line, GPU note removed/changed)
 - [ ] Cairo-final SHA tagged in git *(pre-merge SHA `7486213`; `git tag renderer-cairo-final 7486213` if desired)*
 - [ ] Tagged release pushed *(no release process configured)*

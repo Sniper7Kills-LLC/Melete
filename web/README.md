@@ -1,4 +1,4 @@
-# Journal — Web Portal
+# Melete — Web Portal
 
 Vite + React + TypeScript SPA that hosts:
 
@@ -108,7 +108,7 @@ src/
   amplify-outputs.stub.json   # fallback config when sandbox not running
   amplify-client.ts           # shared generateClient<Schema>() instance + row types
   index.css                   # tailwind imports
-  types/                      # TS mirrors of journal-core / journal-templates types
+  types/                      # TS mirrors of melete-core / melete-templates types
     index.ts
     brush.ts
     notebook-template.ts
@@ -158,14 +158,14 @@ interface Shim {
 }
 ```
 
-The TS types in `src/types` are byte-faithful to `crates/journal-core` —
+The TS types in `src/types` are byte-faithful to `crates/melete-core` —
 field names, casing, and discriminator tags all match what `serde`
 emits.
 
 ## What's intentionally still missing
 
 - Fork / Edit / Publish actions on Gallery + My rows (issues #54, #55).
-- Notebook-template TOML round-trip in `journal-web-shim` — the schema
+- Notebook-template TOML round-trip in `melete-web-shim` — the schema
   exists but the wasm bindings only cover page templates and brushes,
   so Gallery's notebook tab cannot render schematics from live
   `bodyToml` yet.

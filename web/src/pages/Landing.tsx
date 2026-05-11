@@ -1,4 +1,4 @@
-// Marketing landing for the Journal app.
+// Marketing landing for the Melete app.
 //
 // Aesthetic: editorial stationery / specimen sheet. Cream paper,
 // warm ink-black foreground, single accent (manuscript red).
@@ -21,7 +21,7 @@ const RELEASES_MANIFEST_URL =
   "https://releases.journal.app/latest.json";
 
 const GITHUB_RELEASES_FALLBACK =
-  "https://github.com/Sniper7Kills-LLC/Journal/releases";
+  "https://github.com/Sniper7Kills-LLC/Melete/releases";
 
 interface ReleaseManifest {
   version: string;
@@ -564,7 +564,7 @@ function FooterMark() {
       <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-6 px-6 py-12 sm:flex-row sm:items-end sm:px-10">
         <div>
           <p className="font-display text-[44px] italic leading-none tracking-tight">
-            Journal.
+            Melete.
           </p>
           <p className="font-mono mt-3 text-[10px] uppercase tracking-[0.22em] text-[#f6f1e7]/55">
             © {new Date().getFullYear()} Sniper7Kills LLC · Made with ink &amp; pixels
@@ -572,7 +572,7 @@ function FooterMark() {
         </div>
         <nav className="flex flex-wrap gap-6 font-mono text-[11px] uppercase tracking-[0.2em] text-[#f6f1e7]/75">
           <a
-            href="https://github.com/Sniper7Kills-LLC/Journal"
+            href="https://github.com/Sniper7Kills-LLC/Melete"
             className="border-b border-transparent transition-colors hover:border-[#c1442e] hover:text-[#c1442e]"
           >
             GitHub →

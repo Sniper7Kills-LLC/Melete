@@ -4,7 +4,7 @@ import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
 import path from "node:path";
 
-// Vite config for the Journal web POC.
+// Vite config for the Melete web POC.
 // - React + JSX automatic runtime
 // - `@/*` alias mirrors tsconfig paths so editor + bundler agree
 // - Dev port 5173 (Vite default); change with `pnpm dev -- --port=…`

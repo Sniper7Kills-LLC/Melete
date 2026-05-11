@@ -1,7 +1,7 @@
 # Repository layout
 
 ```
-Journal/
+Melete/
 ├── amplify/                 # AWS Amplify Gen 2 backend (TypeScript)
 │   ├── auth/                #   Cognito (User Pool + groups admin/superadmin)
 │   ├── data/                #   AppSync schema + JS resolver pipeline steps
@@ -21,21 +21,21 @@ Journal/
 │   └── README.md            #   Backend-specific notes
 │
 ├── crates/                  # Rust workspace
-│   ├── journal-core/        #   Pure domain types (no UI, no IO)
-│   ├── journal-storage/     #   SQLite-backed local store + remote backend façade
-│   ├── journal-canvas/      #   Vello-based canvas renderer
-│   ├── journal-widgets/     #   Vector widget rendering (web-importable, no GTK)
-│   ├── journal-templates/   #   Template TOML schema + parser
-│   ├── journal-app/         #   GTK4 + libadwaita desktop binary (Linux)
-│   ├── journal-web-shim/    #   wasm-bindgen shim — TOML codec for the web SPA
-│   └── journal-web-viewer/  #   wasm-bindgen viewer — renders notebooks in browser
+│   ├── melete-core/        #   Pure domain types (no UI, no IO)
+│   ├── melete-storage/     #   SQLite-backed local store + remote backend façade
+│   ├── melete-canvas/      #   Vello-based canvas renderer
+│   ├── melete-widgets/     #   Vector widget rendering (web-importable, no GTK)
+│   ├── melete-templates/   #   Template TOML schema + parser
+│   ├── melete-app/         #   GTK4 + libadwaita desktop binary (Linux)
+│   ├── melete-web-shim/    #   wasm-bindgen shim — TOML codec for the web SPA
+│   └── melete-web-viewer/  #   wasm-bindgen viewer — renders notebooks in browser
 │
 ├── web/                     # Vite + React + TS SPA (template gallery, billing, admin)
 │   ├── src/                 #   React app, pages, components, hooks
 │   ├── src/wasm/generated/  #   Output of build-wasm.sh (gitignored)
 │   ├── public/              #   Static assets
 │   ├── dist/                #   Build output (gitignored)
-│   ├── build-wasm.sh        #   Compiles journal-web-shim + journal-web-viewer
+│   ├── build-wasm.sh        #   Compiles melete-web-shim + melete-web-viewer
 │   └── package.json         #   SPA deps (separate from the backend deps at repo root)
 │
 ├── scripts/                 # Top-level operational scripts
@@ -77,9 +77,9 @@ does not invoke the root `package.json` scripts.
 
 | Goal | Command |
 |---|---|
-| Desktop app (Linux) | `cargo build --release -p journal-app` |
-| Desktop app w/ remote sync | `cargo build --release -p journal-app --features remote,vello` |
-| Install from latest release | `curl -fsSL https://releases.journal.app/install.sh \| bash` |
+| Desktop app (Linux) | `cargo build --release -p melete-app` |
+| Desktop app w/ remote sync | `cargo build --release -p melete-app --features remote,vello` |
+| Install from latest release | `curl -fsSL https://releases.melete.app/install.sh \| bash` |
 | Install from source | `bash scripts/install-from-source.sh` |
 | WASM crates | `bash web/build-wasm.sh` |
 | Web SPA (dev) | `cd web && npm run dev` |
@@ -100,8 +100,8 @@ Bucket layout:
 ├── latest.json                            (cache-control: max-age=300)
 └── binaries/
     └── v0.X.Y/
-        ├── journal-app-v0.X.Y-linux-x86_64.tar.gz          (immutable)
-        └── journal-app-v0.X.Y-linux-x86_64.tar.gz.sha256
+        ├── melete-app-v0.X.Y-linux-x86_64.tar.gz          (immutable)
+        └── melete-app-v0.X.Y-linux-x86_64.tar.gz.sha256
 ```
 
 `latest.json` shape:
@@ -112,7 +112,7 @@ Bucket layout:
   "publishedAt": "2026-05-11T00:00:00Z",
   "platforms": {
     "linux-x86_64": {
-      "url": "https://releases.journal.app/binaries/v0.1.0/journal-app-v0.1.0-linux-x86_64.tar.gz",
+      "url": "https://releases.melete.app/binaries/v0.1.0/melete-app-v0.1.0-linux-x86_64.tar.gz",
       "sha256": "abc…",
       "sizeBytes": 12345678
     }

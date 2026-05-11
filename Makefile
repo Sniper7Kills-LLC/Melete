@@ -4,24 +4,24 @@ APP_DIR       := $(DESTDIR)$(PREFIX)/share/applications
 ICON_DIR      := $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps
 HICOLOR_DIR   := $(DESTDIR)$(PREFIX)/share/icons/hicolor
 
-BINARY        := target/release/journal-app
-DESKTOP       := resources/dev.s7k.journal.desktop
-ICON          := resources/icons/dev.s7k.journal.svg
+BINARY        := target/release/melete-app
+DESKTOP       := resources/dev.s7k.melete.desktop
+ICON          := resources/icons/dev.s7k.melete.svg
 
 .PHONY: build install uninstall all
 
 all: build
 
 build:
-	cargo build --release -p journal-app
+	cargo build --release -p melete-app
 
 install:
 	@test -f $(BINARY) || { echo "Error: $(BINARY) missing. Run 'make build' as your user first."; exit 1; }
-	install -Dm755 $(BINARY) $(BIN_DIR)/journal-app
+	install -Dm755 $(BINARY) $(BIN_DIR)/melete-app
 	install -d $(APP_DIR)
-	sed 's|^Exec=journal-app|Exec=$(PREFIX)/bin/journal-app|' $(DESKTOP) > $(APP_DIR)/dev.s7k.journal.desktop
-	chmod 644 $(APP_DIR)/dev.s7k.journal.desktop
-	install -Dm644 $(ICON) $(ICON_DIR)/dev.s7k.journal.svg
+	sed 's|^Exec=melete-app|Exec=$(PREFIX)/bin/melete-app|' $(DESKTOP) > $(APP_DIR)/dev.s7k.melete.desktop
+	chmod 644 $(APP_DIR)/dev.s7k.melete.desktop
+	install -Dm644 $(ICON) $(ICON_DIR)/dev.s7k.melete.svg
 	@if command -v update-desktop-database >/dev/null 2>&1; then \
 		update-desktop-database $(APP_DIR); \
 	fi
@@ -30,9 +30,9 @@ install:
 	fi
 
 uninstall:
-	rm -f $(BIN_DIR)/journal-app
-	rm -f $(APP_DIR)/dev.s7k.journal.desktop
-	rm -f $(ICON_DIR)/dev.s7k.journal.svg
+	rm -f $(BIN_DIR)/melete-app
+	rm -f $(APP_DIR)/dev.s7k.melete.desktop
+	rm -f $(ICON_DIR)/dev.s7k.melete.svg
 	@if command -v update-desktop-database >/dev/null 2>&1; then \
 		update-desktop-database $(APP_DIR); \
 	fi

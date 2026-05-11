@@ -1,4 +1,4 @@
-# Journal — Amplify Gen 2 backend
+# Melete — Amplify Gen 2 backend
 
 Amplify Gen 2 (`@aws-amplify/backend`, `ampx`) backend for Phase 6.3 template sharing.
 Authors the Cognito user pool, AppSync GraphQL API, three DynamoDB tables

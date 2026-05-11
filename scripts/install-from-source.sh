@@ -24,9 +24,9 @@ fi
 echo "==> Building release binary"
 make build
 
-if pgrep -x journal-app >/dev/null 2>&1; then
+if pgrep -x melete-app >/dev/null 2>&1; then
     echo "==> Stopping running instance(s)"
-    pkill -x journal-app || true
+    pkill -x melete-app || true
     sleep 1
 fi
 
@@ -34,4 +34,4 @@ echo "==> Installing system-wide (will prompt for sudo password)"
 sudo make install
 
 echo
-echo "Done. Launch via the GNOME application menu or 'journal-app' from a terminal."
+echo "Done. Launch via the GNOME application menu or 'melete-app' from a terminal."

@@ -6,8 +6,8 @@
 # its "Download for Linux" CTA.
 #
 # Storage layout in the bucket:
-#   binaries/<tag>/journal-app-<tag>-linux-x86_64.tar.gz
-#   binaries/<tag>/journal-app-<tag>-linux-x86_64.tar.gz.sha256
+#   binaries/<tag>/melete-app-<tag>-linux-x86_64.tar.gz
+#   binaries/<tag>/melete-app-<tag>-linux-x86_64.tar.gz.sha256
 #   latest.json     ← always points at the most recent tag's URLs
 #
 # `latest.json` shape (consumed by web/src/pages/Landing.tsx):
@@ -26,7 +26,7 @@
 #   AWS_REGION             e.g. `us-east-1`.
 #   RELEASES_BUCKET        Bucket name (e.g. `journal-releases-prod`).
 #   RELEASES_PUBLIC_URL    Public URL prefix where binaries are served
-#                          (e.g. `https://releases.journal.app` if a
+#                          (e.g. `https://releases.melete.app` if a
 #                          CloudFront distro is in front of the bucket,
 #                          or the S3 website endpoint).
 
@@ -73,22 +73,22 @@ jobs:
             target
           key: cargo-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
-      - name: Build journal-app (release)
-        run: cargo build --release -p journal-app --features remote,vello
+      - name: Build melete-app (release)
+        run: cargo build --release -p melete-app --features remote,vello
 
       - name: Strip + tarball
         run: |
-          strip target/release/journal-app
+          strip target/release/melete-app
           mkdir -p dist
-          cp resources/dev.s7k.journal.desktop dist/
-          cp resources/icons/dev.s7k.journal.svg dist/
-          cp target/release/journal-app dist/
+          cp resources/dev.s7k.melete.desktop dist/
+          cp resources/icons/dev.s7k.melete.svg dist/
+          cp target/release/melete-app dist/
           cp Makefile dist/
           cd dist
-          tar czf "journal-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
-            journal-app dev.s7k.journal.desktop dev.s7k.journal.svg Makefile
-          sha256sum "journal-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
-            > "journal-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz.sha256"
+          tar czf "melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
+            melete-app dev.s7k.melete.desktop dev.s7k.melete.svg Makefile
+          sha256sum "melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
+            > "melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz.sha256"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -101,12 +101,12 @@ jobs:
           BUCKET: ${{ secrets.RELEASES_BUCKET }}
         run: |
           aws s3 cp \
-            "dist/journal-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
+            "dist/melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
             "s3://${BUCKET}/binaries/${GITHUB_REF_NAME}/" \
             --content-type application/gzip \
             --cache-control "max-age=31536000, immutable, public"
           aws s3 cp \
-            "dist/journal-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz.sha256" \
+            "dist/melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz.sha256" \
             "s3://${BUCKET}/binaries/${GITHUB_REF_NAME}/" \
             --content-type text/plain \
             --cache-control "max-age=31536000, immutable, public"
@@ -116,7 +116,7 @@ jobs:
           BUCKET: ${{ secrets.RELEASES_BUCKET }}
           PUBLIC_URL: ${{ secrets.RELEASES_PUBLIC_URL }}
         run: |
-          ARTIFACT="journal-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz"
+          ARTIFACT="melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz"
           SHA=$(awk '{print $1}' "dist/${ARTIFACT}.sha256")
           PUBLISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           cat > latest.json <<EOF
@@ -143,6 +143,6 @@ jobs:
         run: |
           echo "## Released ${GITHUB_REF_NAME}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Binary:** [${PUBLIC_URL}/binaries/${GITHUB_REF_NAME}/journal-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz](${PUBLIC_URL}/binaries/${GITHUB_REF_NAME}/journal-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz)" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Binary:** [${PUBLIC_URL}/binaries/${GITHUB_REF_NAME}/melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz](${PUBLIC_URL}/binaries/${GITHUB_REF_NAME}/melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Manifest:** ${PUBLIC_URL}/latest.json" >> "$GITHUB_STEP_SUMMARY"

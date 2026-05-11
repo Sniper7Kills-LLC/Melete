@@ -1,8 +1,8 @@
 {
-  "name": "journal-amplify",
+  "name": "melete-amplify",
   "private": true,
   "version": "0.0.1",
-  "description": "Amplify Gen 2 backend for the Journal app (Cognito + AppSync + DynamoDB + S3). Sandbox-only until prod creds land.",
+  "description": "Amplify Gen 2 backend for Melete (Cognito + AppSync + DynamoDB + S3). Sandbox-only until prod creds land.",
   "type": "module",
   "scripts": {
     "sandbox": "ampx sandbox",

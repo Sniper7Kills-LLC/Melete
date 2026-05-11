@@ -48,7 +48,7 @@ inline popup for quick on-canvas tweaks.
 
 ## 3. Current State (what we have today)
 
-- `journal_core::BrushStyle` is a fixed 6-variant enum. Each variant
+- `melete_core::BrushStyle` is a fixed 6-variant enum. Each variant
   has its own render fn in `vello_renderer.rs`. Adding a brush style
   requires a code change.
 - "Shape" is a per-brush sub-enum (e.g. `CalligraphyShape::FlatCut |
@@ -63,7 +63,7 @@ inline popup for quick on-canvas tweaks.
 ### 4.1 Brush data model
 
 ```rust
-// journal-canvas / src / brush.rs
+// melete-canvas / src / brush.rs
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Brush {
@@ -240,7 +240,7 @@ of the editor.
 ## 5. Persistence
 
 ### 5.1 Stroke schema
-`journal_core::Stroke` gains:
+`melete_core::Stroke` gains:
 
 ```rust
 pub struct Stroke {
@@ -255,7 +255,7 @@ when `brush_recipe` is `None`. Newly-drawn strokes capture the
 composition inline; the file is self-contained.
 
 ### 5.2 Brush library
-Per-app user library lives in `~/.config/journal/brushes.toml`
+Per-app user library lives in `~/.config/melete/brushes.toml`
 (parallel to `config.toml`):
 
 ```toml
@@ -276,7 +276,7 @@ A future doc moves this to a DB with cloud-sync on top.
 ## 6. Migration Plan
 
 ### Phase 0 — Data model + renderer (1 day)
-- `journal-canvas/src/brush.rs` — types + `draw_brush_into_scene`.
+- `melete-canvas/src/brush.rs` — types + `draw_brush_into_scene`.
 - `built_in::brushes()` table reproducing the six current tools.
 - `legacy_brush_for(BrushStyle, BrushParams) -> Brush` adapter.
 - Renderer dispatch swap: `draw_stroke` → `draw_brush_into_scene`.
@@ -292,7 +292,7 @@ A future doc moves this to a DB with cloud-sync on top.
 - Sidebar: brush library (built-in + custom).
 - Layer list (drag-to-reorder, enable, add, remove).
 - Right panel: per-layer settings forms.
-- Live preview canvas (uses the same `journal-canvas` renderer
+- Live preview canvas (uses the same `melete-canvas` renderer
   that the main canvas uses).
 - Save / Save as… persists to `brushes.toml`.
 

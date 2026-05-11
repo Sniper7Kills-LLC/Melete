@@ -9,13 +9,13 @@ the basic builtins.
 ## Layout
 
 ```
-page_templates/      # serialized via journal_templates::serialize_template_toml
+page_templates/      # serialized via melete_templates::serialize_template_toml
 notebook_templates/  # serialized via toml::to_string_pretty(&NotebookTemplate)
 ```
 
 ## Preservation gate
 
-`crates/journal-templates/tests/seed_round_trip.rs` parses every file and
+`crates/melete-templates/tests/seed_round_trip.rs` parses every file and
 re-serializes it; the bytes must match exactly. Failure means a recent
 serializer change is lossy or non-deterministic and the seed bytes need to be
 re-extracted. Do not edit these files by hand — regenerate them from the
