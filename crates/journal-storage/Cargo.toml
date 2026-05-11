@@ -20,6 +20,7 @@ dirs = { workspace = true }
 hmac = { version = "0.12", optional = true }
 keyring = { version = "3", default-features = false, features = ["sync-secret-service", "crypto-rust"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
+base64 = { version = "0.22", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
@@ -32,4 +33,4 @@ hex = "0.4"
 # `remote_template_store::*` modules. Cognito + AppSync are spoken
 # directly over HTTPS to avoid pulling the full AWS SDK; SigV4 for
 # S3 is hand-rolled on top of `sha2` + `hmac`.
-remote = ["dep:reqwest", "dep:hmac", "dep:keyring"]
+remote = ["dep:reqwest", "dep:hmac", "dep:keyring", "dep:base64"]

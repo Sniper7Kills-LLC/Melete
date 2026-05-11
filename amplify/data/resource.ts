@@ -1,6 +1,10 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { assetPresign } from '../functions/asset-presign/resource';
 import { syncStrokesBatch } from '../functions/sync-strokes-batch/resource';
+import { stripeCheckout } from '../functions/stripe-checkout/resource';
+import { stripePortal } from '../functions/stripe-portal/resource';
+import { adminSearchUsers } from '../functions/admin-search-users/resource';
+import { adminMutate } from '../functions/admin-mutate/resource';
 
 const Visibility = a.enum(['PRIVATE', 'UNLISTED', 'PUBLIC']);
 const SavedKind = a.enum(['PageTemplate', 'NotebookTemplate', 'Brush', 'Notebook']);
@@ -116,12 +120,6 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner().identityClaim('sub'),
       allow.publicApiKey().to(['read']),
-      // Pre-paywall: any signed-in user can read/update/delete every
-      // notebook row. Eraser was hitting "Not Authorized" on
-      // deleteRemoteStroke because owner-only delete failed when the
-      // caller's JWT sub didn't match (token churn during testing).
-      // Tighten back to owner-only when paid plans land (#44).
-      allow.authenticated().to(['read', 'update', 'delete']),
     ]),
 
   // Mirror of the desktop's `sections` SQLite table. One row per
@@ -143,12 +141,6 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner().identityClaim('sub'),
       allow.publicApiKey().to(['read']),
-      // Pre-paywall: any signed-in user can read/update/delete every
-      // notebook row. Eraser was hitting "Not Authorized" on
-      // deleteRemoteStroke because owner-only delete failed when the
-      // caller's JWT sub didn't match (token churn during testing).
-      // Tighten back to owner-only when paid plans land (#44).
-      allow.authenticated().to(['read', 'update', 'delete']),
     ]),
 
   // Mirror of `pages`. JSON columns hold the serde-tagged structs
@@ -176,12 +168,6 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner().identityClaim('sub'),
       allow.publicApiKey().to(['read']),
-      // Pre-paywall: any signed-in user can read/update/delete every
-      // notebook row. Eraser was hitting "Not Authorized" on
-      // deleteRemoteStroke because owner-only delete failed when the
-      // caller's JWT sub didn't match (token churn during testing).
-      // Tighten back to owner-only when paid plans land (#44).
-      allow.authenticated().to(['read', 'update', 'delete']),
     ]),
 
   // One row per stroke. Body is the JSON-serialized
@@ -212,12 +198,6 @@ const schema = a.schema({
     .authorization((allow) => [
       allow.owner().identityClaim('sub'),
       allow.publicApiKey().to(['read']),
-      // Pre-paywall: any signed-in user can read/update/delete every
-      // notebook row. Eraser was hitting "Not Authorized" on
-      // deleteRemoteStroke because owner-only delete failed when the
-      // caller's JWT sub didn't match (token churn during testing).
-      // Tighten back to owner-only when paid plans land (#44).
-      allow.authenticated().to(['read', 'update', 'delete']),
     ]),
 
   // Owner-scoped reference to a source PageTemplate / NotebookTemplate /
@@ -240,6 +220,166 @@ const schema = a.schema({
       index('owner').sortKeys(['savedAt']).queryField('listSavedTemplatesByOwner'),
     ])
     .authorization((allow) => [allow.owner().identityClaim('sub')]),
+
+  // Per-user subscription + resolved feature caps. PK `id` == Cognito sub.
+  // Written by the Stripe webhook Lambda + admin mutations only; clients
+  // read their own row to render usage meters and gate features. The
+  // resolved caps are tier defaults (from TierConfig) merged with addon
+  // purchases and admin overrides — the desktop never has to know the
+  // formula, just the final numbers. `historyDays` is reserved for the
+  // future history feature; v1 always sets it to 0.
+  UserEntitlement: a
+    .model({
+      id: a.id().required(),
+      owner: a.string(),
+      tier: a.string().required(),
+      status: a.string().required(),
+      stripeCustomerId: a.string(),
+      stripeSubscriptionId: a.string(),
+      periodEnd: a.string(),
+      trialEndsAt: a.string(),
+      educationVerified: a.boolean().default(false),
+      notebookCap: a.integer().required(),
+      strokesPerPageCap: a.integer().required(),
+      strokesPerNotebookCap: a.integer().required(),
+      dailyWriteCap: a.integer().required(),
+      s3BytesCap: a.integer().required(),
+      templatePublishCap: a.integer().required(),
+      historyDays: a.integer().default(0),
+      liveSyncEnabled: a.boolean().default(false),
+      addonsJson: a.json(),
+      capOverridesJson: a.json(),
+      compedBy: a.string(),
+      updatedAtSort: a.string().required(),
+    })
+    .authorization((allow) => [
+      allow.owner().identityClaim('sub').to(['read']),
+      allow.groups(['admin', 'superadmin']).to(['read']),
+    ]),
+
+  // Per-tier default caps. Editable in DDB to retune without redeploying.
+  // Read-public so the desktop pricing page can render plan options
+  // without hardcoding numbers. v1 seed values written by a one-shot
+  // bootstrap Lambda; admin can update later.
+  TierConfig: a
+    .model({
+      id: a.id().required(),
+      notebookCap: a.integer().required(),
+      strokesPerPageCap: a.integer().required(),
+      strokesPerNotebookCap: a.integer().required(),
+      dailyWriteCap: a.integer().required(),
+      s3BytesCap: a.integer().required(),
+      templatePublishCap: a.integer().required(),
+      historyDays: a.integer().default(0),
+      liveSyncEnabled: a.boolean().default(false),
+      priceMonthlyCents: a.integer(),
+      priceYearlyCents: a.integer(),
+      stripePriceIdMonthly: a.string(),
+      stripePriceIdYearly: a.string(),
+    })
+    .authorization((allow) => [
+      allow.authenticated().to(['read']),
+      allow.publicApiKey().to(['read']),
+      allow.groups(['superadmin']).to(['read', 'create', 'update', 'delete']),
+    ]),
+
+  // Daily write counters used by the check-quota resolver pipeline step.
+  // `id` is `{userId}#{YYYY-MM-DD}` so the resolver can compute the row
+  // key from the caller's sub + today's date and increment atomically.
+  // `ttl` is a UNIX epoch column wired to DDB's TTL feature in the CDK
+  // override (14 days after creation) so stale rows auto-prune.
+  UserDailyUsage: a
+    .model({
+      id: a.id().required(),
+      owner: a.string(),
+      userId: a.string().required(),
+      date: a.string().required(),
+      strokeWrites: a.integer().default(0),
+      mutationCount: a.integer().default(0),
+      subMessages: a.integer().default(0),
+      ttl: a.integer(),
+    })
+    .secondaryIndexes((index) => [
+      index('userId').sortKeys(['date']).queryField('listUserDailyUsage'),
+    ])
+    .authorization((allow) => [
+      allow.owner().identityClaim('sub').to(['read']),
+      allow.groups(['admin', 'superadmin']).to(['read']),
+    ]),
+
+  // Admin-portal aggregate row. Singleton (PK = "global"), maintained
+  // by DDB-stream Lambdas on UserEntitlement + Notebook so the admin
+  // dashboard renders without scanning either table. Backed by atomic
+  // counters incremented/decremented as user lifecycle events fire.
+  AdminStats: a
+    .model({
+      id: a.id().required(),
+      totalUsers: a.integer().default(0),
+      freeUsers: a.integer().default(0),
+      proUsers: a.integer().default(0),
+      studioUsers: a.integer().default(0),
+      trialingUsers: a.integer().default(0),
+      pastDueUsers: a.integer().default(0),
+      canceledUsers: a.integer().default(0),
+      totalNotebooks: a.integer().default(0),
+      mrrCents: a.integer().default(0),
+      lastUpdatedIso: a.string(),
+    })
+    .authorization((allow) => [
+      allow.groups(['admin', 'superadmin']).to(['read']),
+    ]),
+
+  // Append-only audit trail for every superadmin write mutation.
+  // PK = yearMonth ("2026-05"), SK = timestamp#actionId so the
+  // admin panel paginates by month. Every entry carries the
+  // adminUserId / targetUserId pair and a required `reason` blob
+  // (enforced by the mutation resolver).
+  AdminAuditLog: a
+    .model({
+      id: a.id().required(),
+      yearMonth: a.string().required(),
+      timestampIso: a.string().required(),
+      adminUserId: a.string().required(),
+      adminEmail: a.string(),
+      action: a.string().required(),
+      targetUserId: a.string(),
+      targetEmail: a.string(),
+      beforeJson: a.string(),
+      afterJson: a.string(),
+      reason: a.string().required(),
+      ipAddress: a.string(),
+    })
+    .secondaryIndexes((index) => [
+      index('yearMonth')
+        .sortKeys(['timestampIso'])
+        .queryField('listAdminAuditLogByMonth'),
+    ])
+    .authorization((allow) => [
+      allow.groups(['admin', 'superadmin']).to(['read']),
+    ]),
+
+  // Top-N rankings for the admin dashboard's "biggest users" panel.
+  // Computed nightly by an aggregator Lambda — admin reads are pure
+  // table-scan-free Query-on-GSI. `metric` ∈ {strokes, notebooks,
+  // s3_bytes}.
+  AdminTopUsers: a
+    .model({
+      id: a.id().required(),
+      metric: a.string().required(),
+      rank: a.integer().required(),
+      userId: a.string().required(),
+      email: a.string(),
+      value: a.integer().required(),
+      refreshedAtIso: a.string().required(),
+    })
+    .secondaryIndexes((index) => [
+      index('metric')
+        .sortKeys(['rank'])
+        .queryField('listAdminTopUsersByMetric'),
+    ])
+    .authorization((allow) => [
+      allow.groups(['admin', 'superadmin']).to(['read']),
+    ]),
 
   Visibility,
   SavedKind,
@@ -372,6 +512,87 @@ const schema = a.schema({
     // dependency between the data + function nested stacks.
     .handler(a.handler.function(assetPresign)),
 
+  // Stripe Checkout Session URL. Authenticated user picks a tier +
+  // interval; Lambda mints a hosted Checkout URL pre-stamped with the
+  // caller's Cognito sub so the webhook (`stripe-webhook`) can project
+  // the resulting subscription onto a UserEntitlement row.
+  createCheckoutSession: a
+    .mutation()
+    .arguments({
+      tier: a.string().required(),
+      interval: a.string().required(),
+    })
+    .returns(
+      a.customType({
+        url: a.string().required(),
+      }),
+    )
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(stripeCheckout)),
+
+  // Admin search by email. UserEntitlement holds no email column —
+  // Cognito owns identity attributes — so the admin panel's search
+  // box runs through this Lambda. Auth checked twice: at the
+  // resolver via `@aws_auth` group rule (Amplify Gen 2 doesn't yet
+  // expose that directly on a custom mutation, so the schema
+  // restricts to authenticated() and the Lambda re-checks group
+  // membership from the JWT claims).
+  AdminUserSummary: a.customType({
+    userId: a.string().required(),
+    email: a.string().required(),
+    enabled: a.boolean().required(),
+    status: a.string().required(),
+    createdAtIso: a.string(),
+  }),
+  AdminSearchUsersResult: a.customType({
+    items: a.ref('AdminUserSummary').array().required(),
+  }),
+  adminSearchUsers: a
+    .mutation()
+    .arguments({ email: a.string().required() })
+    .returns(a.ref('AdminSearchUsersResult'))
+    .authorization((allow) => [
+      allow.groups(['admin', 'superadmin']),
+    ])
+    .handler(a.handler.function(adminSearchUsers)),
+
+  // Single dispatcher for every superadmin write. `action` ∈
+  // {grantTier, setStatus, markEducation, resetDailyUsage,
+  // setEntitlementCaps, disableUser, deleteUser, extendTrial}.
+  // Per-action payload travels as AWSJSON. Every call writes an
+  // AdminAuditLog row carrying before/after snapshots and the
+  // mandatory `reason` blob.
+  adminMutate: a
+    .mutation()
+    .arguments({
+      action: a.string().required(),
+      targetUserId: a.string().required(),
+      payload: a.json(),
+      reason: a.string().required(),
+    })
+    .returns(
+      a.customType({
+        after: a.string(),
+      }),
+    )
+    .authorization((allow) => [allow.groups(['superadmin'])])
+    .handler(a.handler.function(adminMutate)),
+
+  // Stripe Customer Portal URL for self-service plan management.
+  // Reads the caller's `stripeCustomerId` from UserEntitlement and
+  // returns the hosted portal URL. Throws NO_STRIPE_CUSTOMER if the
+  // caller has never subscribed; the client routes those to Checkout.
+  createPortalSession: a
+    .mutation()
+    .arguments({})
+    .returns(
+      a.customType({
+        url: a.string().required(),
+      }),
+    )
+    .authorization((allow) => [allow.authenticated()])
+    .handler(a.handler.function(stripePortal)),
+
   // Bulk CRUD for the desktop's stroke worker — replaces N
   // round-trip per-stroke create/delete mutations with a single
   // BatchWriteItem chunked at 25 ops. Lambda env is wired in
@@ -386,6 +607,10 @@ const schema = a.schema({
     .arguments({
       notebookId: a.id().required(),
       items: a.json().required(),
+      // "snapshot" = explicit manual save (bypasses daily-write cap
+      // but still counts toward usage). "live" or omitted = streaming
+      // live sync, both counted and capped.
+      kind: a.string(),
     })
     .returns(a.ref('StrokesBatchResult'))
     .authorization((allow) => [

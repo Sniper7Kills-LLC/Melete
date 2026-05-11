@@ -32,6 +32,24 @@ pub struct PullReport {
 
 use crate::state::SharedState;
 
+/// Walk a [`NotebookSyncError`] chain looking for a paywall error
+/// body. Only `GraphQl(Service(...))` variants carry one — every
+/// other variant indicates a real transport / config / auth failure
+/// that should not be treated as a quota block. Returns `None` if
+/// the error wasn't paywall-shaped.
+fn paywall_from_sync_error(
+    e: &journal_storage::remote_notebook_store::NotebookSyncError,
+) -> Option<journal_storage::entitlement::PaywallError> {
+    use journal_storage::remote_notebook_store::NotebookSyncError as N;
+    use journal_storage::remote_template_store::graphql::GraphQlError;
+    match e {
+        N::GraphQl(GraphQlError::Service(msg)) => {
+            journal_storage::entitlement::PaywallError::from_graphql_service_message(msg)
+        }
+        _ => None,
+    }
+}
+
 thread_local! {
     /// Set of notebook IDs the user has enabled live sync on for this
     /// process. Membership = "fire RemoteStroke.create on every local
@@ -938,7 +956,27 @@ fn worker_loop() {
             let mut failed_ids_total: std::collections::HashSet<uuid::Uuid> =
                 std::collections::HashSet::new();
             let mut http_error = false;
+            // Quota-block latch — set when AppSync returns a paywall
+            // error (DAILY_WRITE_LIMIT / SUBSCRIPTION_INACTIVE / ...).
+            // We persist the SyncBudget to disk and stop dispatching
+            // further upserts in this drain pass; the next pass will
+            // see the budget via `SyncBudget::load_from_default` and
+            // sleep until the reset window passes.
+            let mut quota_blocked = false;
             for (nb_id, (creates, deletes)) in &by_nb {
+                if quota_blocked {
+                    // Treat remaining notebooks' items as requeue
+                    // candidates so we don't lose them — but don't
+                    // even fire the HTTP call.
+                    for (id, _, _, _) in creates {
+                        failed_ids_total.insert(*id);
+                    }
+                    for (id, _) in deletes {
+                        failed_ids_total.insert(*id);
+                    }
+                    let _ = nb_id;
+                    continue;
+                }
                 let mut items: Vec<UpsertStrokeItem> =
                     Vec::with_capacity(creates.len() + deletes.len());
                 for (id, page_id, body, ts) in creates {
@@ -992,11 +1030,41 @@ fn worker_loop() {
                     }
                     Err(e) => {
                         tracing::warn!("notebook_sync STROKE_MOD upsert FAILED: {}", e);
-                        http_error = true;
-                        // Whole call failed — every id in this notebook
-                        // group needs requeue.
-                        for it in &items {
-                            failed_ids_total.insert(it.id);
+                        // Detect paywall (`DAILY_WRITE_LIMIT`,
+                        // `SUBSCRIPTION_INACTIVE`, ...) — record the
+                        // block + reset window to disk so the next
+                        // poll of `SyncBudget::load_from_default`
+                        // (banner / next worker tick) sees it. Don't
+                        // requeue; the user must wait until the
+                        // reset time or upgrade.
+                        if let Some(p) = paywall_from_sync_error(&e) {
+                            tracing::warn!(
+                                "STROKE_MOD quota block: code={} limit={:?} resets_at={:?}",
+                                p.code,
+                                p.limit,
+                                p.resets_at,
+                            );
+                            let mut budget = journal_storage::entitlement::SyncBudget::default();
+                            budget.disabled_until = p
+                                .resets_at
+                                .as_deref()
+                                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                                .map(|d| d.with_timezone(&chrono::Utc));
+                            budget.reason_code = Some(p.code.clone());
+                            budget.limit = p.limit;
+                            budget.current = p.current;
+                            budget.upgrade_url = p.upgrade_url.clone();
+                            budget.save_to_default();
+                            quota_blocked = true;
+                            // Drop the in-flight items entirely — no
+                            // retry until the block clears.
+                        } else {
+                            http_error = true;
+                            // Whole call failed — every id in this notebook
+                            // group needs requeue.
+                            for it in &items {
+                                failed_ids_total.insert(it.id);
+                            }
                         }
                     }
                 }

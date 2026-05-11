@@ -8,6 +8,8 @@
 
 #[cfg(feature = "remote")]
 mod account_settings;
+#[cfg(feature = "remote")]
+mod admin_panel;
 mod asset_resolver;
 mod brush_library;
 mod canvas_widget;
@@ -29,6 +31,8 @@ mod shortcuts;
 #[cfg(feature = "remote")]
 mod sign_in_modal;
 mod state;
+#[cfg(feature = "remote")]
+mod subscription_settings;
 mod template_creator;
 mod template_io;
 mod template_manager;

@@ -417,6 +417,13 @@ fn open_account_popover(
             .build();
         email_lbl.add_css_class("dim-label");
         vbox.append(&email_lbl);
+
+        // Live usage block. Single sync fetch on popover open — same
+        // pattern as remote_browser. Two HTTPS roundtrips, runs at
+        // user-initiated cadence so it doesn't matter that it blocks.
+        if let Some(usage_widget) = build_usage_block() {
+            vbox.append(&usage_widget);
+        }
     } else {
         let header_lbl = Label::builder().label("Not signed in").halign(Align::Start).build();
         header_lbl.add_css_class("dim-label");
@@ -477,6 +484,23 @@ fn open_account_popover(
     }
     vbox.append(&settings_btn);
 
+    // Admin entry is gated by JWT group membership — non-admins
+    // don't see the button at all. Server-side @aws_auth still
+    // enforces, so a client tamper is futile.
+    if signed_in && crate::admin_panel::current_user_is_admin() {
+        let admin_btn = Button::with_label("Admin…");
+        admin_btn.add_css_class("flat");
+        {
+            let popover_clone = popover.clone();
+            let parent = parent.clone();
+            admin_btn.connect_clicked(move |_| {
+                popover_clone.popdown();
+                crate::admin_panel::open(&parent);
+            });
+        }
+        vbox.append(&admin_btn);
+    }
+
     if signed_in {
         let signout_btn = Button::with_label("Sign out");
         signout_btn.add_css_class("flat");
@@ -506,6 +530,117 @@ fn open_account_popover(
 
 /// Disabled placeholder row for an account-gated feature. Renders as
 /// `[icon] Label` with a tooltip explaining why it's unavailable.
+/// Account-popover live usage row. Two GraphQL roundtrips: the
+/// caller's UserEntitlement row + today's UserDailyUsage. Notebook
+/// count comes from a third call to `listNotebooksByOwner` so the
+/// "Notebooks X / Y" line is accurate against the local cap, not just
+/// the local SQLite count.
+#[cfg(feature = "remote")]
+fn build_usage_block() -> Option<gtk4::Widget> {
+    use journal_storage::entitlement::Entitlement;
+    use journal_storage::remote_template_store::store::RemoteTemplateStore;
+    use serde_json::json;
+
+    let mut store = RemoteTemplateStore::connect().ok()?;
+    if !store.is_signed_in() {
+        return None;
+    }
+    let ent = store
+        .fetch_my_entitlement()
+        .unwrap_or_else(|_| Entitlement::free_default("".into()));
+    let sub = ent.id.clone();
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let usage_id = format!("{}#{}", sub, today);
+
+    // Daily usage. Free / unsynced users have no row → 0.
+    let strokes_today: u64 = store
+        .graphql(
+            "query GetUsage($id: ID!) { getUserDailyUsage(id: $id) { strokeWrites } }",
+            Some("GetUsage"),
+            json!({ "id": usage_id }),
+        )
+        .ok()
+        .and_then(|v| {
+            v.pointer("/getUserDailyUsage/strokeWrites")
+                .and_then(|x| x.as_u64())
+        })
+        .unwrap_or(0);
+
+    // Notebook count via byOwner GSI.
+    let notebooks_used: u64 = store
+        .graphql(
+            "query NbCount($owner: String!) { listNotebooksByOwner(owner: $owner) { items { id } } }",
+            Some("NbCount"),
+            json!({ "owner": sub }),
+        )
+        .ok()
+        .and_then(|v| {
+            v.pointer("/listNotebooksByOwner/items")
+                .and_then(|x| x.as_array())
+                .map(|arr| arr.iter().filter(|x| !x.is_null()).count() as u64)
+        })
+        .unwrap_or(0);
+
+    let outer = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_top(4)
+        .margin_bottom(4)
+        .build();
+
+    let head = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    let label = Label::builder().label("Usage").halign(Align::Start).hexpand(true).build();
+    label.add_css_class("caption-heading");
+    label.add_css_class("dim-label");
+    let tier_badge = Label::builder()
+        .label(ent.tier.to_uppercase())
+        .build();
+    tier_badge.add_css_class("caption");
+    head.append(&label);
+    head.append(&tier_badge);
+    outer.append(&head);
+
+    outer.append(&build_usage_meter("Notebooks", notebooks_used, ent.notebook_cap));
+    outer.append(&build_usage_meter("Strokes today", strokes_today, ent.daily_write_cap));
+
+    Some(outer.upcast())
+}
+
+#[cfg(feature = "remote")]
+fn build_usage_meter(label: &str, used: u64, cap: u64) -> gtk4::Widget {
+    let row = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(2)
+        .build();
+    let head = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    let name = Label::builder().label(label).halign(Align::Start).hexpand(true).build();
+    name.add_css_class("caption");
+    let val = Label::builder().label(format!("{} / {}", used, cap)).build();
+    val.add_css_class("caption");
+    val.add_css_class("dim-label");
+    head.append(&name);
+    head.append(&val);
+    row.append(&head);
+
+    let pct = if cap == 0 {
+        0.0
+    } else {
+        (used as f64 / cap as f64).clamp(0.0, 1.0)
+    };
+    let bar = gtk4::ProgressBar::new();
+    bar.set_fraction(pct);
+    bar.set_show_text(false);
+    row.append(&bar);
+
+    row.upcast()
+}
+
 fn build_gated_row(label: &str, icon_name: &str, tooltip: &str) -> Button {
     let row = GtkBox::builder()
         .orientation(Orientation::Horizontal)

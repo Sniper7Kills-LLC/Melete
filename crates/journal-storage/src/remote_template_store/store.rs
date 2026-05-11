@@ -427,6 +427,89 @@ impl RemoteTemplateStore {
         let v = super::graphql::post(&data_url, &id_token, query, operation, variables)?;
         Ok(v)
     }
+
+    /// Decode the JWT `sub` claim from the current id_token without
+    /// verifying the signature (Cognito already validated server-side
+    /// at token issue). Returns `RemoteError::NotSignedIn` if no
+    /// tokens are loaded; `RemoteError::Malformed` if the JWT payload
+    /// is unparseable.
+    pub fn user_sub(&mut self) -> Result<String, RemoteError> {
+        let id_token = self.ensure_tokens()?.id_token.clone();
+        super::jwt::decode_sub(&id_token)
+    }
+
+    /// Returns the `cognito:groups` membership for the signed-in
+    /// user. Used by the admin panel to decide whether to render
+    /// itself. Empty vec when no groups are assigned.
+    pub fn user_groups(&mut self) -> Result<Vec<String>, RemoteError> {
+        let id_token = self.ensure_tokens()?.id_token.clone();
+        super::jwt::decode_groups(&id_token)
+    }
+
+    /// Public façade over the internal `gql` helper. Lets the admin
+    /// panel + future ad-hoc query sites ship without re-exporting
+    /// the entire `graphql` module from the storage crate.
+    pub fn graphql(
+        &mut self,
+        query: &str,
+        operation: Option<&str>,
+        variables: serde_json::Value,
+    ) -> Result<serde_json::Value, RemoteError> {
+        self.gql(query, operation, variables)
+    }
+
+    /// Pull the caller's `UserEntitlement` row. Used by the desktop
+    /// settings UI + sync gate. Returns the free-tier default if no
+    /// row exists yet (new user pre-checkout).
+    pub fn fetch_my_entitlement(
+        &mut self,
+    ) -> Result<crate::entitlement::Entitlement, RemoteError> {
+        let sub = self.user_sub()?;
+        let v = self.gql(
+            super::ENTITLEMENT_QUERY,
+            Some("GetMyEntitlement"),
+            serde_json::json!({ "id": sub }),
+        )?;
+        let row = v.get("getUserEntitlement").cloned().unwrap_or(serde_json::Value::Null);
+        if row.is_null() {
+            return Ok(crate::entitlement::Entitlement::free_default(sub));
+        }
+        serde_json::from_value::<crate::entitlement::Entitlement>(row)
+            .map_err(|e| RemoteError::Malformed(format!("entitlement decode: {e}")))
+    }
+
+    /// Mint a Stripe Checkout Session URL. Returns the hosted URL
+    /// the desktop opens in the user's default browser.
+    pub fn create_checkout_session(
+        &mut self,
+        tier: &str,
+        interval: &str,
+    ) -> Result<String, RemoteError> {
+        let v = self.gql(
+            super::CREATE_CHECKOUT_SESSION_MUTATION,
+            Some("CreateCheckoutSession"),
+            serde_json::json!({ "tier": tier, "interval": interval }),
+        )?;
+        v.pointer("/createCheckoutSession/url")
+            .and_then(|x| x.as_str())
+            .map(String::from)
+            .ok_or_else(|| RemoteError::Malformed("missing checkout url".into()))
+    }
+
+    /// Mint a Stripe Customer Portal URL for the caller. Surfaces a
+    /// `NO_STRIPE_CUSTOMER` error when the caller has never
+    /// subscribed; the UI routes those to Checkout instead.
+    pub fn create_portal_session(&mut self) -> Result<String, RemoteError> {
+        let v = self.gql(
+            super::CREATE_PORTAL_SESSION_MUTATION,
+            Some("CreatePortalSession"),
+            serde_json::json!({}),
+        )?;
+        v.pointer("/createPortalSession/url")
+            .and_then(|x| x.as_str())
+            .map(String::from)
+            .ok_or_else(|| RemoteError::Malformed("missing portal url".into()))
+    }
 }
 
 #[cfg(feature = "remote")]

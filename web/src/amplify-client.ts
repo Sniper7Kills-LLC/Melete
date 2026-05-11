@@ -362,6 +362,30 @@ interface SubscribeStrokesBatchArgs {
   notebookId: string;
 }
 
+export interface CheckoutUrl {
+  url: string;
+}
+
+export interface PortalUrl {
+  url: string;
+}
+
+export interface AdminUserSummary {
+  userId: string;
+  email: string;
+  enabled: boolean;
+  status: string;
+  createdAtIso?: string | null;
+}
+
+export interface AdminSearchUsersResult {
+  items: AdminUserSummary[];
+}
+
+export interface AdminMutateResult {
+  after?: string | null;
+}
+
 interface MutationOps {
   upsertStrokesBatch(
     args: UpsertStrokesBatchInput,
@@ -377,6 +401,22 @@ interface MutationOps {
     args: ForkArgs,
   ): Promise<MutationResult<NotebookTemplateRow>>;
   forkBrush(args: ForkArgs): Promise<MutationResult<BrushRow>>;
+  createCheckoutSession(args: {
+    tier: string;
+    interval: string;
+  }): Promise<MutationResult<CheckoutUrl>>;
+  createPortalSession(args?: Record<string, never>): Promise<
+    MutationResult<PortalUrl>
+  >;
+  adminSearchUsers(args: {
+    email: string;
+  }): Promise<MutationResult<AdminSearchUsersResult>>;
+  adminMutate(args: {
+    action: string;
+    targetUserId: string;
+    payload?: string;
+    reason: string;
+  }): Promise<MutationResult<AdminMutateResult>>;
 }
 
 interface NotebookUpdateInput {
@@ -511,6 +551,81 @@ interface SubscriptionsOps {
   };
 }
 
+export interface UserEntitlementRow {
+  id: string;
+  tier: string;
+  status: string;
+  periodEnd?: string | null;
+  trialEndsAt?: string | null;
+  educationVerified?: boolean | null;
+  notebookCap: number;
+  strokesPerPageCap: number;
+  strokesPerNotebookCap: number;
+  dailyWriteCap: number;
+  s3BytesCap: number;
+  templatePublishCap: number;
+  historyDays?: number | null;
+  liveSyncEnabled?: boolean | null;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+}
+
+export interface TierConfigRow {
+  id: string;
+  notebookCap: number;
+  strokesPerPageCap: number;
+  strokesPerNotebookCap: number;
+  dailyWriteCap: number;
+  s3BytesCap: number;
+  templatePublishCap: number;
+  historyDays?: number | null;
+  liveSyncEnabled?: boolean | null;
+  priceMonthlyCents?: number | null;
+  priceYearlyCents?: number | null;
+}
+
+export interface UserDailyUsageRow {
+  id: string;
+  userId: string;
+  date: string;
+  strokeWrites?: number | null;
+  mutationCount?: number | null;
+  subMessages?: number | null;
+}
+
+export interface AdminStatsRow {
+  id: string;
+  totalUsers: number;
+  freeUsers: number;
+  proUsers: number;
+  studioUsers: number;
+  trialingUsers: number;
+  pastDueUsers: number;
+  canceledUsers: number;
+  totalNotebooks: number;
+  mrrCents: number;
+  lastUpdatedIso?: string | null;
+}
+
+interface UserEntitlementOps {
+  get(args: { id: string }): Promise<GetResult<UserEntitlementRow>>;
+}
+
+interface UserDailyUsageOps {
+  get(args: { id: string }): Promise<GetResult<UserDailyUsageRow>>;
+}
+
+interface TierConfigOps {
+  list(args?: {
+    limit?: number;
+    nextToken?: string | null;
+  }): Promise<{ data: TierConfigRow[]; nextToken?: string | null }>;
+}
+
+interface AdminStatsOps {
+  get(args: { id: string }): Promise<GetResult<AdminStatsRow>>;
+}
+
 interface AmplifyDataClient {
   models: {
     PageTemplate: PageTemplateOps;
@@ -521,6 +636,10 @@ interface AmplifyDataClient {
     RemoteSection: RemoteSectionOps;
     RemotePage: RemotePageOps;
     RemoteStroke: RemoteStrokeOps;
+    UserEntitlement: UserEntitlementOps;
+    UserDailyUsage: UserDailyUsageOps;
+    TierConfig: TierConfigOps;
+    AdminStats: AdminStatsOps;
   };
   mutations: MutationOps;
   subscriptions: SubscriptionsOps;

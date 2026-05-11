@@ -740,7 +740,18 @@ pub fn open_account_settings(parent: &ApplicationWindow, state: SharedState) {
         .build();
     sync_group.add(&autosync_row);
 
+    // ── Subscription ────────────────────────────────────────────────
+    let subscription_group = adw::PreferencesGroup::builder()
+        .title("Subscription")
+        .description("Tier + caps for cloud sync. Manage billing in Stripe.")
+        .build();
+    crate::subscription_settings::populate_subscription_group(
+        parent,
+        &subscription_group,
+    );
+
     page.add(&account_group);
+    page.add(&subscription_group);
     page.add(&sync_group);
     prefs.add(&page);
 

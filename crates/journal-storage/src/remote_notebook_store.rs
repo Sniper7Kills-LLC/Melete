@@ -196,8 +196,8 @@ mutation UpdateRemoteStroke($input: UpdateRemoteStrokeInput!) {
 "#;
 
 const M_UPSERT_STROKES_BATCH: &str = r#"
-mutation UpsertStrokesBatch($notebookId: ID!, $items: AWSJSON!) {
-  upsertStrokesBatch(notebookId: $notebookId, items: $items) {
+mutation UpsertStrokesBatch($notebookId: ID!, $items: AWSJSON!, $kind: String) {
+  upsertStrokesBatch(notebookId: $notebookId, items: $items, kind: $kind) {
     upserted unprocessed
   }
 }
@@ -564,8 +564,17 @@ impl RemoteNotebookStore {
             ),
             total: net_new_strokes,
         });
+        // Route new strokes through the Lambda-backed batch upsert
+        // (same code path that powers live sync) so the daily-usage
+        // counter actually sees them. The previous M_CREATE_STROKE
+        // auto-CRUD mutation bypassed the Lambda entirely, which left
+        // the billing page reporting zero strokes regardless of how
+        // many a free user pushed in a save. `kind: "snapshot"` keeps
+        // the cap-rejection off for manual saves.
         let mut strokes_n = 0usize;
         let mut strokes_done = 0usize;
+        const CREATE_BATCH: usize = 25;
+        let mut new_items: Vec<UpsertStrokeItem> = Vec::new();
         for (page_id, strokes) in strokes_per_page {
             for st in strokes {
                 if remote_stroke_ids.contains(&st.id) {
@@ -573,29 +582,34 @@ impl RemoteNotebookStore {
                 }
                 let body_json = serde_json::to_string(st)
                     .map_err(|e| NotebookSyncError::Encode(format!("stroke: {e}")))?;
-                let input = serde_json::json!({
-                    "id": st.id.to_string(),
-                    "notebookId": notebook.id.0.to_string(),
-                    "pageId": page_id.0.to_string(),
-                    "strokeJson": body_json,
-                    "createdAt": now.clone(),
-                });
-                // Treat a duplicate as success — the row's already up
-                // there. Real updates need a diff path later.
-                let res = self.gql(M_CREATE_STROKE, serde_json::json!({ "input": input }));
-                match res {
-                    Ok(_) => strokes_n += 1,
-                    Err(NotebookSyncError::GraphQl(graphql::GraphQlError::Service(msg)))
-                        if msg.contains("ConditionalCheckFailed")
-                            || msg.contains("already exists") => {}
-                    Err(e) => return Err(e),
-                }
-                strokes_done += 1;
-                on_progress(SyncProgress::Step {
-                    done: strokes_done,
-                    total: net_new_strokes,
+                new_items.push(UpsertStrokeItem {
+                    id: st.id,
+                    page_id: *page_id,
+                    payload: body_json,
+                    created_at: now.clone(),
+                    updated_at: now.clone(),
+                    deleted_at: None,
                 });
             }
+        }
+        for chunk in new_items.chunks(CREATE_BATCH) {
+            match self.upsert_strokes_batch_with_kind(notebook.id, chunk, "snapshot") {
+                Ok((upserted, _unprocessed, _failed_ids)) => {
+                    strokes_n += upserted;
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "sync_notebook batch creates failed for chunk of {}: {}",
+                        chunk.len(),
+                        e
+                    );
+                }
+            }
+            strokes_done += chunk.len();
+            on_progress(SyncProgress::Step {
+                done: strokes_done,
+                total: net_new_strokes,
+            });
         }
 
         // Cleanup: delete any remote rows that don't have a local
@@ -617,15 +631,27 @@ impl RemoteNotebookStore {
         // instead of N. The Lambda treats already-gone rows as
         // success, so we mark every id as purgeable on a clean
         // batch return.
+        //
+        // Filter the tombstones against the pre-pull's `remote_stroke_ids`
+        // so we don't repeatedly push deletes the cloud already
+        // applied. Without this, a save with no real changes still
+        // re-stamps every prior delete with `now_iso` — every row
+        // succeeds (newer timestamp) and the daily-usage counter
+        // bumps for work the user didn't redo.
         let mut strokes_purged: Vec<Uuid> = Vec::new();
+        let deletes_to_push: Vec<Uuid> = deleted_stroke_ids
+            .iter()
+            .copied()
+            .filter(|id| remote_stroke_ids.contains(id))
+            .collect();
         on_progress(SyncProgress::Phase {
-            label: format!("Pushing {} local deletes (batched)", deleted_stroke_ids.len()),
-            total: deleted_stroke_ids.len(),
+            label: format!("Pushing {} local deletes (batched)", deletes_to_push.len()),
+            total: deletes_to_push.len(),
         });
         const BATCH: usize = 25;
         let now_iso = chrono::Utc::now().to_rfc3339();
         let mut deletes_done = 0usize;
-        for chunk in deleted_stroke_ids.chunks(BATCH) {
+        for chunk in deletes_to_push.chunks(BATCH) {
             // Soft-delete = upsert with deleted_at set. Empty
             // payload is fine — the row already exists with the
             // last known body. The cloud just bumps deleted_at.
@@ -640,7 +666,7 @@ impl RemoteNotebookStore {
                     deleted_at: Some(now_iso.clone()),
                 })
                 .collect();
-            match self.upsert_strokes_batch(notebook.id, &items) {
+            match self.upsert_strokes_batch_with_kind(notebook.id, &items, "snapshot") {
                 Ok((_upserted, unprocessed, _failed_ids)) => {
                     let processed = chunk.len().saturating_sub(unprocessed);
                     strokes_purged.extend(chunk[..processed].iter().copied());
@@ -661,9 +687,18 @@ impl RemoteNotebookStore {
             deletes_done += chunk.len();
             on_progress(SyncProgress::Step {
                 done: deletes_done,
-                total: deleted_stroke_ids.len(),
+                total: deletes_to_push.len(),
             });
         }
+        // Locally-tombstoned ids that were never in the cloud (or
+        // were already deleted in a prior sync) can still be purged
+        // locally — their tombstone has nothing to chase.
+        strokes_purged.extend(
+            deleted_stroke_ids
+                .iter()
+                .filter(|id| !remote_stroke_ids.contains(*id))
+                .copied(),
+        );
 
         on_progress(SyncProgress::Phase {
             label: "Cleaning up orphan rows".into(),
@@ -789,6 +824,21 @@ impl RemoteNotebookStore {
         notebook_id: NotebookId,
         items: &[UpsertStrokeItem],
     ) -> Result<(usize, usize, Vec<Uuid>), NotebookSyncError> {
+        self.upsert_strokes_batch_with_kind(notebook_id, items, "live")
+    }
+
+    /// Variant that lets the caller mark the batch as a `"snapshot"`
+    /// (explicit manual save) instead of the default `"live"` (live
+    /// sync). Snapshot batches still increment usage counters but
+    /// bypass the daily-write cap rejection — used by the initial
+    /// notebook push so a free user with a fresh notebook can save
+    /// without slamming into the 1k/day cap.
+    pub fn upsert_strokes_batch_with_kind(
+        &mut self,
+        notebook_id: NotebookId,
+        items: &[UpsertStrokeItem],
+        kind: &str,
+    ) -> Result<(usize, usize, Vec<Uuid>), NotebookSyncError> {
         if items.is_empty() {
             return Ok((0, 0, Vec::new()));
         }
@@ -810,10 +860,11 @@ impl RemoteNotebookStore {
         let n = items.len();
         let payload_len = payload.len();
         tracing::info!(
-            "STROKE_MOD http upsert_strokes_batch: -> AppSync notebook={:?} items={} payload_bytes={}",
+            "STROKE_MOD http upsert_strokes_batch: -> AppSync notebook={:?} items={} payload_bytes={} kind={}",
             notebook_id,
             n,
-            payload_len
+            payload_len,
+            kind,
         );
         let t0 = std::time::Instant::now();
         let v = self.gql(
@@ -821,6 +872,7 @@ impl RemoteNotebookStore {
             serde_json::json!({
                 "notebookId": notebook_id.0.to_string(),
                 "items": payload,
+                "kind": kind,
             }),
         )?;
         let elapsed = t0.elapsed();

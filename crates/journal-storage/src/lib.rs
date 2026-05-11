@@ -14,6 +14,7 @@ mod stroke_codec;
 mod util;
 
 pub mod backend;
+pub mod entitlement;
 pub mod multi_file_backend;
 pub mod sqlite_backend;
 pub mod template_migration;
@@ -27,8 +28,49 @@ pub mod remote_template_store {
     pub mod config;
     pub mod graphql;
     pub mod identity;
+    pub(crate) mod jwt;
     pub mod s3;
     pub mod store;
+
+    /// GraphQL query/mutation strings reused across `store.rs` and
+    /// the entitlement service. Kept in one place so the wire shape
+    /// is documented in a single file.
+    pub const ENTITLEMENT_QUERY: &str = r#"
+query GetMyEntitlement($id: ID!) {
+  getUserEntitlement(id: $id) {
+    id
+    tier
+    status
+    periodEnd
+    trialEndsAt
+    educationVerified
+    notebookCap
+    strokesPerPageCap
+    strokesPerNotebookCap
+    dailyWriteCap
+    s3BytesCap
+    templatePublishCap
+    historyDays
+    liveSyncEnabled
+  }
+}
+"#;
+
+    pub const CREATE_CHECKOUT_SESSION_MUTATION: &str = r#"
+mutation CreateCheckoutSession($tier: String!, $interval: String!) {
+  createCheckoutSession(tier: $tier, interval: $interval) {
+    url
+  }
+}
+"#;
+
+    pub const CREATE_PORTAL_SESSION_MUTATION: &str = r#"
+mutation CreatePortalSession {
+  createPortalSession {
+    url
+  }
+}
+"#;
 }
 
 /// Phase 6.5 — user-notebook (the actual document) sync. Snapshot

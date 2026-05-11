@@ -22,7 +22,13 @@ import { Gallery } from "./pages/Gallery";
 import { My } from "./pages/My";
 import { Share } from "./pages/Share";
 import { NotebookViewer } from "./pages/NotebookViewer";
+import { Billing } from "./pages/Billing";
+import { Admin } from "./pages/Admin";
+import { Landing } from "./pages/Landing";
 import { useUnits } from "./store/unitsStore";
+import { useAuthenticator } from "@aws-amplify/ui-react";
+import { fetchAuthSession } from "aws-amplify/auth";
+import { useEffect, useState } from "react";
 
 // Configure Amplify before any GraphQL or auth call. `amplify_outputs.json`
 // (Gen 2 shape with top-level `auth` / `data` / `storage` blocks) is
@@ -70,6 +76,7 @@ function NavBar() {
         <NavLink to="/my" className={linkClass}>
           My library
         </NavLink>
+        <BillingAndAdminLinks linkClass={linkClass} />
       </nav>
       <UnitsSelector />
       <span className="text-xs text-slate-400">
@@ -77,6 +84,74 @@ function NavBar() {
       </span>
       <AccountChip />
     </header>
+  );
+}
+
+// Gated nav cluster: Billing visible to signed-in users; Admin
+// visible only when the JWT carries the `admin` or `superadmin`
+// Cognito group. Anonymous users see neither — both routes still
+// render their own auth/forbidden guards as belt-and-braces.
+function BillingAndAdminLinks({
+  linkClass,
+}: {
+  linkClass: (args: { isActive: boolean }) => string;
+}) {
+  const { authStatus, user } = useAuthenticator((c) => [
+    c.authStatus,
+    c.user,
+  ]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    async function check() {
+      if (authStatus !== "authenticated") {
+        if (alive) setIsAdmin(false);
+        return;
+      }
+      try {
+        const session = await fetchAuthSession();
+        const tok = session.tokens?.idToken?.toString();
+        if (!tok) {
+          if (alive) setIsAdmin(false);
+          return;
+        }
+        const parts = tok.split(".");
+        if (parts.length < 2) {
+          if (alive) setIsAdmin(false);
+          return;
+        }
+        const claims = JSON.parse(
+          atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")),
+        );
+        const groups: unknown = claims["cognito:groups"];
+        if (alive) {
+          setIsAdmin(
+            Array.isArray(groups) &&
+              groups.some((g) => g === "admin" || g === "superadmin"),
+          );
+        }
+      } catch {
+        if (alive) setIsAdmin(false);
+      }
+    }
+    void check();
+    return () => {
+      alive = false;
+    };
+  }, [authStatus, user]);
+  if (authStatus !== "authenticated") return null;
+  return (
+    <>
+      <span aria-hidden className="mx-2 h-5 w-px bg-slate-200" />
+      <NavLink to="/billing" className={linkClass}>
+        Billing
+      </NavLink>
+      {isAdmin && (
+        <NavLink to="/admin" className={linkClass}>
+          Admin
+        </NavLink>
+      )}
+    </>
   );
 }
 
@@ -108,11 +183,10 @@ function App() {
           <NavBar />
           <main className="flex-1 overflow-hidden">
             <Routes>
-              {/* Home lands on Gallery — there's no real /-only content
-                  in the POC, and Gallery is the discovery surface. The
-                  sample-notebook Viewer moves to /demo so it stays
-                  reachable for screenshots / smoke tests. */}
-              <Route path="/" element={<Navigate to="/gallery" replace />} />
+              {/* Marketing landing for new visitors. Authenticated
+                  users still get the same page — the nav already
+                  highlights /gallery + /my for them. */}
+              <Route path="/" element={<Landing />} />
               <Route path="/demo" element={<Viewer />} />
               <Route path="/designer" element={<Designer />} />
               <Route path="/templeter" element={<Templeter />} />
@@ -125,6 +199,8 @@ function App() {
                 element={<Navigate to="/gallery" replace />}
               />
               <Route path="/my" element={<My />} />
+              <Route path="/billing" element={<Billing />} />
+              <Route path="/admin" element={<Admin />} />
               <Route path="/t/:kind/:id" element={<Share />} />
               <Route path="/n/:id" element={<NotebookViewer />} />
               <Route

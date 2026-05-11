@@ -4,6 +4,11 @@ import {
   ConditionalCheckFailedException,
 } from '@aws-sdk/client-dynamodb';
 import { marshall } from '@aws-sdk/util-dynamodb';
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  UpdateCommand,
+} from '@aws-sdk/lib-dynamodb';
 
 // Single-path upsert against the RemoteStroke table. Every item
 // (create / update / soft-delete) is a conditional PutItem. Cloud is
@@ -18,8 +23,174 @@ import { marshall } from '@aws-sdk/util-dynamodb';
 // ensures stale writers silently lose, which is what LWW means.
 
 const ddb = new DynamoDBClient({});
+const docDdb = DynamoDBDocumentClient.from(ddb);
 
 const TABLE_ENV = 'REMOTE_STROKE_TABLE_NAME';
+const ENTITLEMENT_TABLE_ENV = 'USER_ENTITLEMENT_TABLE_NAME';
+const USAGE_TABLE_ENV = 'USER_DAILY_USAGE_TABLE_NAME';
+
+const DEFAULT_FREE_DAILY_CAP = 1000;
+
+interface EntitlementRow {
+  id: string;
+  dailyWriteCap?: number;
+  status?: string;
+}
+
+// Structured error body shape carried across the paywall. AppSync's
+// direct-Lambda integration only ferries `errorType` (= Error.name)
+// and `errorMessage` (= Error.message). To get a structured payload
+// we JSON-encode the body in the message; the Rust client decodes it
+// when `errorType` is one of {QuotaExceeded, SubscriptionInactive}.
+// JS resolver pipeline steps use `util.error(msg, type, data, info)`
+// instead — `info` lands natively in `errors[].errorInfo`.
+const UPGRADE_URL =
+  process.env.APP_BILLING_BASE_URL ?? 'http://localhost:3000';
+
+interface PaywallErrorBody {
+  error: string;
+  code: string;
+  message: string;
+  limit?: number;
+  current?: number;
+  resetsAt?: string;
+  upgradeUrl: string;
+}
+
+function throwStructured(name: string, body: PaywallErrorBody): never {
+  const err = new Error(JSON.stringify(body));
+  err.name = name;
+  throw err;
+}
+
+class QuotaExceededError extends Error {
+  code: string;
+  limit: number;
+  current: number;
+  resetsAt: string;
+  constructor(limit: number, current: number) {
+    const resetsAt = new Date(
+      Math.floor(Date.now() / 86400000 + 1) * 86400000,
+    ).toISOString();
+    const msg = `Daily write limit (${limit}) reached. Resets at ${resetsAt}.`;
+    super(msg);
+    this.name = 'QuotaExceeded';
+    this.code = 'DAILY_WRITE_LIMIT';
+    this.limit = limit;
+    this.current = current;
+    this.resetsAt = resetsAt;
+  }
+}
+
+interface QuotaPlan {
+  cap: number;
+  current: number;
+  acceptable: number;
+}
+
+/// Compute how many items of `bumpBy` fit under the daily-write cap.
+/// Snapshot (enforce=false) accepts everything; live accepts up to
+/// `cap - current`. Subscription-inactive blocks ALL writes (manual or
+/// live) — past_due / canceled users get SUBSCRIPTION_INACTIVE.
+async function planDailyUsage(
+  sub: string,
+  bumpBy: number,
+  enforceCap: boolean,
+): Promise<QuotaPlan> {
+  const entTable = process.env[ENTITLEMENT_TABLE_ENV];
+  const usageTable = process.env[USAGE_TABLE_ENV];
+  if (!entTable || !usageTable) {
+    throw new Error(
+      `SERVER_MISCONFIGURED: missing entitlement/usage table env`,
+    );
+  }
+
+  if (!enforceCap) {
+    // Snapshot: no cap, no status block. Counter still bumps after
+    // the writes succeed.
+    return { cap: 0, current: 0, acceptable: bumpBy };
+  }
+
+  const entRow = await docDdb.send(
+    new GetCommand({ TableName: entTable, Key: { id: sub } }),
+  );
+  const ent = entRow.Item as EntitlementRow | undefined;
+  const cap = ent?.dailyWriteCap ?? DEFAULT_FREE_DAILY_CAP;
+  if (
+    ent &&
+    ent.status &&
+    ent.status !== 'active' &&
+    ent.status !== 'trialing'
+  ) {
+    throwStructured('SubscriptionInactive', {
+      error: 'SubscriptionInactive',
+      code: 'SUBSCRIPTION_INACTIVE',
+      message: `Subscription is ${ent.status}.`,
+      upgradeUrl: UPGRADE_URL,
+    });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const id = `${sub}#${today}`;
+  const usage = await docDdb.send(
+    new GetCommand({ TableName: usageTable, Key: { id } }),
+  );
+  const current = (usage.Item?.strokeWrites as number | undefined) ?? 0;
+  const remaining = Math.max(cap - current, 0);
+  const acceptable = Math.min(bumpBy, remaining);
+  return { cap, current, acceptable };
+}
+
+/// Bump the daily-usage counter by `delta`. Idempotent retries are
+/// caller's problem — we trust the count produced by the actual
+/// PutItem success path. No condition expression: we already
+/// pre-checked via `planDailyUsage`. Counter always bumps regardless
+/// of snapshot vs live so the billing page sees real totals.
+async function commitDailyUsage(sub: string, delta: number): Promise<void> {
+  if (delta <= 0) return;
+  const usageTable = process.env[USAGE_TABLE_ENV];
+  if (!usageTable) {
+    throw new Error(`SERVER_MISCONFIGURED: missing ${USAGE_TABLE_ENV}`);
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const id = `${sub}#${today}`;
+  const ttlEpoch = Math.floor(Date.now() / 1000) + 14 * 24 * 3600;
+  const nowIso = new Date().toISOString();
+  // System fields (`__typename`, `createdAt`, `updatedAt`) MUST be
+  // set on first create — Amplify Gen 2's auto-generated list/get
+  // resolvers filter rows missing these out, so the billing page
+  // would never see the counter bump. `if_not_exists` keeps them
+  // stable across subsequent increments.
+  await docDdb.send(
+    new UpdateCommand({
+      TableName: usageTable,
+      Key: { id },
+      UpdateExpression:
+        'SET strokeWrites = if_not_exists(strokeWrites, :zero) + :n, ' +
+        'mutationCount = if_not_exists(mutationCount, :zero) + :one, ' +
+        'userId = :uid, #date = :date, #owner = :uid, #ttl = :ttl, ' +
+        '#typename = if_not_exists(#typename, :typename), ' +
+        'createdAt = if_not_exists(createdAt, :now), ' +
+        'updatedAt = :now',
+      ExpressionAttributeNames: {
+        '#date': 'date',
+        '#owner': 'owner',
+        '#ttl': 'ttl',
+        '#typename': '__typename',
+      },
+      ExpressionAttributeValues: {
+        ':zero': 0,
+        ':one': 1,
+        ':n': delta,
+        ':uid': sub,
+        ':date': today,
+        ':ttl': ttlEpoch,
+        ':typename': 'UserDailyUsage',
+        ':now': nowIso,
+      },
+    }),
+  );
+}
 
 interface UpsertItem {
   id: string;
@@ -40,6 +211,10 @@ interface BatchArgs {
   // an already-parsed object/array (older runtimes) or as a JSON
   // string (newer). Accept both.
   items: string | UpsertItem[];
+  /** "snapshot" = explicit manual save; counts toward usage but
+   *  bypasses the daily-write cap rejection. "live" (default) =
+   *  streaming live sync, both counted and cap-enforced. */
+  kind?: string;
 }
 
 interface BatchResult {
@@ -100,6 +275,24 @@ export const handler = async (event: {
     );
   }
   items = dedupedItems;
+
+  // Soft cap. Live batches are trimmed at the cap — anything beyond
+  // gets reported as `unprocessed` so the desktop's worker requeues
+  // it for the next quota window. Snapshot batches always accept
+  // every item (cap only applies to recurring live cost). Counter
+  // bumps after the writes succeed, by the actual processed count.
+  const isSnapshot = args.kind === 'snapshot';
+  let quotaRejected: UpsertItem[] = [];
+  if (items.length > 0) {
+    const plan = await planDailyUsage(sub, items.length, /* enforceCap = */ !isSnapshot);
+    if (plan.acceptable < items.length) {
+      quotaRejected = items.slice(plan.acceptable);
+      items = items.slice(0, plan.acceptable);
+      console.log(
+        `[sync-strokes-batch] soft-cap trimmed ${quotaRejected.length} item(s) past daily-write cap (cap=${plan.cap} current=${plan.current})`,
+      );
+    }
+  }
 
   const now = new Date().toISOString();
   const ids: string[] = [];
@@ -175,15 +368,32 @@ export const handler = async (event: {
     }
   }
 
+  // Counter bumps by what actually landed in DDB, not what the caller
+  // sent. Soft-cap trimmed items are reported separately via
+  // `unprocessed`/`failedIds` so the client can requeue them.
+  if (upserted > 0) {
+    try {
+      await commitDailyUsage(sub, upserted);
+    } catch (e) {
+      console.warn(
+        `[sync-strokes-batch] commitDailyUsage failed (writes already landed): ${(e as Error).message}`,
+      );
+    }
+  }
+
+  for (const it of quotaRejected) {
+    failedIds.push(it.id);
+  }
+
   const result = {
     notebookId: args.notebookId,
     upserted,
-    unprocessed: failed,
+    unprocessed: failed + quotaRejected.length,
     ids,
     failedIds,
   };
   console.log(
-    `[sync-strokes-batch] result: upserted=${upserted} stale_skipped=${staleSkipped} failed=${failed} ids=${ids.length}`,
+    `[sync-strokes-batch] result: upserted=${upserted} stale_skipped=${staleSkipped} failed=${failed} quota_rejected=${quotaRejected.length} ids=${ids.length}`,
   );
   return result;
 };

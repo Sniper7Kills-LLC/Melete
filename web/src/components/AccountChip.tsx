@@ -4,6 +4,8 @@ import { Authenticator, useAuthenticator } from "@aws-amplify/ui-react";
 import "@aws-amplify/ui-react/styles.css";
 
 import { isStubBackend } from "@/amplify-config";
+import { useUsage } from "@/useUsage";
+import { client, type UserEntitlementRow } from "@/amplify-client";
 
 /**
  * Persistent header account chip. Anonymous → "Sign in" button that
@@ -89,12 +91,24 @@ function AccountChipImpl() {
             </div>
             <div className="px-3 py-1 pb-2 text-xs text-slate-700">{email}</div>
             <div className="border-t border-slate-100" />
+            <UsageBlock
+              userId={user?.userId}
+              onNavigate={() => setMenuOpen(false)}
+            />
+            <div className="border-t border-slate-100" />
             <Link
               to="/my"
               onClick={() => setMenuOpen(false)}
               className="block px-3 py-2 text-slate-700 hover:bg-slate-100"
             >
               My library
+            </Link>
+            <Link
+              to="/billing"
+              onClick={() => setMenuOpen(false)}
+              className="block px-3 py-2 text-slate-700 hover:bg-slate-100"
+            >
+              Billing
             </Link>
             <div className="border-t border-slate-100" />
             <button
@@ -110,6 +124,105 @@ function AccountChipImpl() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function UsageBlock({
+  userId,
+  onNavigate,
+}: {
+  userId: string | undefined;
+  onNavigate: () => void;
+}) {
+  const { usage } = useUsage(userId);
+  const [entitlement, setEntitlement] = useState<UserEntitlementRow | null>(
+    null,
+  );
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      if (!userId) return;
+      try {
+        const r = await client.models.UserEntitlement.get({ id: userId });
+        if (!alive) return;
+        setEntitlement(r.data);
+      } catch {
+        // Soft-fail — UsageBlock degrades to "showing usage / —".
+      }
+    }
+    void load();
+    return () => {
+      alive = false;
+    };
+  }, [userId]);
+
+  const tier = entitlement?.tier ?? "free";
+  // Free defaults mirror TierConfig seed values; kept here to avoid a
+  // second round-trip just to render a dropdown.
+  const notebookCap = entitlement?.notebookCap ?? 1;
+  const dailyCap = entitlement?.dailyWriteCap ?? 1000;
+
+  return (
+    <Link
+      to="/billing"
+      onClick={onNavigate}
+      className="block px-3 py-2 hover:bg-slate-50"
+    >
+      <div className="flex items-baseline justify-between">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
+          Usage
+        </span>
+        <span className="rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+          {tier}
+        </span>
+      </div>
+      <div className="mt-1.5 space-y-1.5">
+        <UsageMini
+          label="Notebooks"
+          used={usage?.notebooksUsed ?? 0}
+          cap={notebookCap}
+        />
+        <UsageMini
+          label="Strokes today"
+          used={usage?.strokesToday ?? 0}
+          cap={dailyCap}
+        />
+      </div>
+    </Link>
+  );
+}
+
+function UsageMini({
+  label,
+  used,
+  cap,
+}: {
+  label: string;
+  used: number;
+  cap: number;
+}) {
+  const pct = Math.min(Math.max(used / Math.max(cap, 1), 0), 1);
+  const barColor =
+    pct >= 0.9
+      ? "bg-rose-500"
+      : pct >= 0.7
+        ? "bg-amber-500"
+        : "bg-emerald-500";
+  return (
+    <div>
+      <div className="flex items-baseline justify-between text-[11px] text-slate-600">
+        <span>{label}</span>
+        <span className="font-medium tabular-nums text-slate-700">
+          {used.toLocaleString()} / {cap.toLocaleString()}
+        </span>
+      </div>
+      <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-slate-200">
+        <div
+          className={`h-full ${barColor} transition-all`}
+          style={{ width: `${pct * 100}%` }}
+        />
+      </div>
     </div>
   );
 }
