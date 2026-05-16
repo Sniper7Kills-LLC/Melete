@@ -1,0 +1,436 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-00000000001c"
+name = "Chore Day"
+description = "Portrait single-day chore page: morning/midday/afternoon/evening anchor routines on the left, plus today's one-room focus, quick 5-min wins, self-care non-negotiables, and tomorrow setup on the right. ADHD-friendly daily companion to the weekly chore sheets."
+size_mm = [
+    215.9,
+    279.4,
+]
+tiling = "none"
+category = "Daily Planner"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c01c0001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Chore Day — {weekday} {month_name} {day}, {year}"
+font_size_mm = 8.0
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 199.9
+height = 12.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "MORNING"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 8.0
+y = 24.0
+width = 97.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Make the bed",
+    "Get dressed (not pajamas)",
+    "Breakfast + meds / vitamins",
+    "Start 1 load of laundry",
+    "5-min kitchen reset",
+]
+
+[widgets.rect]
+x = 8.0
+y = 30.0
+width = 97.95
+height = 55.349999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c000c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "MIDDAY"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 8.0
+y = 86.35
+width = 97.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c000d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Swap laundry to dryer",
+    "Today's one-room focus (right →)",
+    "Lunch + dishes done",
+    "Water plants / pets fed",
+]
+
+[widgets.rect]
+x = 8.0
+y = 92.35
+width = 97.95
+height = 55.349999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c000e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "AFTERNOON"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 8.0
+y = 148.7
+width = 97.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c000f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Fold laundry (show / podcast OK)",
+    "Tidy main living area",
+    "10-min outside / fresh air",
+    "Snack + water refill",
+]
+
+[widgets.rect]
+x = 8.0
+y = 154.7
+width = 97.95
+height = 55.349999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c0010-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "EVENING"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 8.0
+y = 211.04999999999998
+width = 97.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c0011-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Kitchen wiped, dishes done",
+    "10-min hot-spot pickup",
+    "Bath / wind-down routine",
+    "Lights + locks check",
+]
+
+[widgets.rect]
+x = 8.0
+y = 217.04999999999998
+width = 97.95
+height = 55.349999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c001e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "TODAY'S ONE-ROOM FOCUS"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 109.95
+y = 24.0
+width = 97.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c001f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "lines_region"
+spacing_mm = 7.0
+
+[widgets.rect]
+x = 109.95
+y = 30.0
+width = 97.95
+height = 47.867999999999995
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c0028-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "QUICK WINS  (5-min each)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 109.95
+y = 78.868
+width = 97.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c0029-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Wipe one surface (counter, table, sink)",
+    "Clear one flat surface",
+    "Empty one trash can",
+    "Run / unload dishwasher",
+    "Put 10 things away",
+    "Sort today's mail",
+]
+
+[widgets.rect]
+x = 109.95
+y = 84.868
+width = 97.95
+height = 62.831999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c0032-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "SELF-CARE  (non-negotiable)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 109.95
+y = 148.7
+width = 97.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c0033-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Drink water (8 cups)",
+    "Eat 3 meals",
+    "Move 10 min",
+    "Step outside",
+    "5-min sit + breathe",
+    "Bed before midnight",
+]
+
+[widgets.rect]
+x = 109.95
+y = 154.7
+width = 97.95
+height = 62.831999999999994
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c003c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "TOMORROW SETUP"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 109.95
+y = 218.53199999999998
+width = 97.95
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01c003d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Clothes laid out",
+    "Bag / keys / wallet ready",
+    "Coffee + breakfast plan",
+    "Top 1 thing for tomorrow",
+]
+
+[widgets.rect]
+x = 109.95
+y = 224.53199999999998
+width = 97.95
+height = 47.867999999999995
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

@@ -1,0 +1,771 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-00000000001b"
+name = "Chore Sheet — Stay at Home (weekly)"
+description = "Landscape weekly chore sheet tuned for stay-at-home parents and anyone home most of the day: morning/midday/afternoon/evening anchor routines, a one-room-a-day Weekly Rotation, and Kids/Family + Self-Care stacks so housework spreads across the week without burnout."
+size_mm = [
+    279.4,
+    215.9,
+]
+tiling = "none"
+category = "Weekly Planner"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c01b0001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Stay-at-Home Chore Sheet — Week of {month_name} {day}, {year}"
+font_size_mm = 7.0
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 263.4
+height = 10.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0002-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "DAILY ANCHORS  (by time block)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 8.0
+y = 22.0
+width = 85.13333333333333
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0003-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "WEEKLY ROTATION  (one focus / day)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 97.13333333333333
+y = 22.0
+width = 85.13333333333333
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0004-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "KIDS / FAMILY  +  SELF-CARE"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 186.26666666666665
+y = 22.0
+width = 85.13333333333333
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "MORNING  (wake → coffee)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 8.0
+y = 29.0
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b000b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Make the bed",
+    "Open blinds, get dressed (not pajamas)",
+    "Breakfast for self / kids",
+    "Start 1 load of laundry",
+    "5-min kitchen reset",
+]
+
+[widgets.rect]
+x = 8.0
+y = 34.0
+width = 85.13333333333333
+height = 39.225
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b000c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "MIDDAY  (nap / school hours)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 8.0
+y = 74.225
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b000d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Swap laundry to dryer",
+    "15-min focused chore (rotation)",
+    "Lunch + dishes done",
+    "Water plants / pets fed",
+    "Sit + eat — phone down",
+]
+
+[widgets.rect]
+x = 8.0
+y = 79.225
+width = 85.13333333333333
+height = 39.225
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b000e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "AFTERNOON  (energy dip)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 8.0
+y = 119.45
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b000f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Fold laundry (podcast / show OK)",
+    "Tidy main living area",
+    "Snack prep + drink water",
+    "Prep tomorrow: bag, outfits",
+    "10-min outside / fresh air",
+]
+
+[widgets.rect]
+x = 8.0
+y = 124.45
+width = 85.13333333333333
+height = 39.225
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0010-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "EVENING  (wind down)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 8.0
+y = 164.675
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0011-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Kitchen wiped, dishes done",
+    "10-min hot-spot pickup",
+    "Bath / wind-down routine",
+    "Set out tomorrow: clothes, keys",
+    "Lights + locks check",
+]
+
+[widgets.rect]
+x = 8.0
+y = 169.675
+width = 85.13333333333333
+height = 39.225
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b001e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "MON · BATHROOMS"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 29.0
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b001f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Toilet bowl + lid + seat",
+    "Sink, mirror, fixtures",
+    "Tub / shower walls",
+    "Mop floor, restock TP + soap",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 34.0
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0020-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "TUE · KITCHEN"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 54.84285714285714
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0021-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Counters + stovetop",
+    "Wipe appliances + handles",
+    "Clean sink + drain",
+    "Sweep + mop, trash out",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 59.84285714285714
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0022-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "WED · BEDROOMS + BEDDING"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 80.68571428571428
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0023-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Strip + wash sheets",
+    "Wash pillowcases + duvet cover",
+    "Dust nightstands + dressers",
+    "Vacuum bedroom floors",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 85.68571428571428
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0024-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "THU · FLOORS + ENTRIES"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 106.52857142857144
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0025-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Vacuum all rooms",
+    "Mop hard floors",
+    "Shake doormats, sweep porch",
+    "Wipe baseboards (one room)",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 111.52857142857144
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0026-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "FRI · LAUNDRY + ERRANDS"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 132.37142857142857
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0027-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Catch up all laundry",
+    "Fold + put away",
+    "Groceries / prescriptions",
+    "Meal-plan for next week",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 137.37142857142857
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0028-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "SAT · LIVING ROOM + EXTRAS"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 158.21428571428572
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0029-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Dust surfaces + electronics",
+    "Vacuum couch + cushions",
+    "Wipe windows / mirrors",
+    "Declutter one zone",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 163.21428571428572
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b002a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "SUN · RESET + PREP"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 184.05714285714288
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b002b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Meal prep / freezer check",
+    "Kid lunches + outfits for week",
+    "Calendar + bills review",
+    "Light tidy + restock supplies",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 189.05714285714288
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b003c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "KIDS / FAMILY  (daily)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 186.26666666666665
+y = 29.0
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b003d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Pack / unpack school bags",
+    "School lunches prepped",
+    "Permission slips + forms",
+    "Kid laundry sorted",
+    "Bath / shower for kids",
+    "Read together / homework",
+    "Calendar check (appts, events)",
+    "Tomorrow's outfits laid out",
+    "Library books / returns",
+    "Toys reset to bins",
+]
+
+[widgets.rect]
+x = 186.26666666666665
+y = 34.0
+width = 85.13333333333333
+height = 94.495
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0046-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "SELF-CARE  (don't skip — daily)"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 186.26666666666665
+y = 130.495
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01b0047-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "10-min outside / walk",
+    "Drink water (aim 8 cups)",
+    "1 thing JUST for you",
+    "Stretch / move 5 min",
+    "Eat a real lunch",
+    "Connect with an adult",
+    "Sit + breathe 5 min",
+    "Shower + dress (not pajamas)",
+    "Phone-free meal",
+    "Bed before midnight",
+]
+
+[widgets.rect]
+x = 186.26666666666665
+y = 135.495
+width = 85.13333333333333
+height = 74.405
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200

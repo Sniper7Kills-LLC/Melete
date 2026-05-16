@@ -1,0 +1,519 @@
+schema_version = 1
+id = "00000000-0000-0000-0000-00000000001a"
+name = "Chore Sheet (weekly)"
+description = "Landscape weekly chore sheet for ADHD-friendly home upkeep: a short Daily Reset, a one-room-a-day Weekly Rotation, and a pick-one Monthly / As-Needed column. Designed to spread housework across the week instead of one massive cleaning session."
+size_mm = [
+    279.4,
+    215.9,
+]
+tiling = "none"
+category = "Weekly Planner"
+
+[background]
+type = "blank"
+
+[[widgets]]
+id = "c01a0001-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "Chore Sheet — Week of {month_name} {day}, {year}"
+font_size_mm = 7.0
+
+[widgets.rect]
+x = 8.0
+y = 8.0
+width = 263.4
+height = 10.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0002-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "DAILY RESET  (10–15 min total)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 8.0
+y = 22.0
+width = 85.13333333333333
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0003-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "WEEKLY ROTATION  (one focus / day, ~20 min)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 97.13333333333333
+y = 22.0
+width = 85.13333333333333
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0004-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "MONTHLY / AS-NEEDED  (pick one this week)"
+font_size_mm = 4.0
+
+[widgets.rect]
+x = 186.26666666666665
+y = 22.0
+width = 85.13333333333333
+height = 5.0
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a000a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Make the bed",
+    "Open blinds, let in light",
+    "5-min kitchen reset",
+    "Dishes → dishwasher",
+    "Wipe one bathroom surface",
+    "Start / swap / fold 1 load laundry",
+    "10-min hot-spot pickup",
+    "Quick sweep entryway",
+    "Trash + recycling check",
+    "Set out tomorrow: clothes, bag, keys",
+]
+
+[widgets.rect]
+x = 8.0
+y = 29.0
+width = 85.13333333333333
+height = 180.9
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0014-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "MON · BATHROOMS"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 29.0
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0015-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Toilet bowl + lid + seat",
+    "Sink, mirror, fixtures",
+    "Sweep + spot-mop floor",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 34.0
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0016-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "TUE · KITCHEN"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 54.84285714285714
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0017-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Wipe counters + stovetop",
+    "Wipe inside microwave",
+    "Take trash + recycling out",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 59.84285714285714
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0018-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "WED · BEDROOM + BEDDING"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 80.68571428571428
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0019-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Strip + wash sheets",
+    "Wash pillowcases",
+    "Dust nightstand + lamp",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 85.68571428571428
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a001a-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "THU · FLOORS"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 106.52857142857144
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a001b-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Vacuum carpets + rugs",
+    "Mop entry + kitchen",
+    "Shake out doormats",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 111.52857142857144
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a001c-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "FRI · LAUNDRY + ERRANDS"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 132.37142857142857
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a001d-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Wash + fold remaining laundry",
+    "Groceries / prescriptions",
+    "Put away clean clothes",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 137.37142857142857
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a001e-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "SAT · LIVING SPACES"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 158.21428571428572
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a001f-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Dust surfaces + electronics",
+    "Vacuum couch + cushions",
+    "Declutter one drawer / shelf",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 163.21428571428572
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0020-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "text_block"
+text = "SUN · RESET + PLAN"
+font_size_mm = 3.5
+
+[widgets.rect]
+x = 97.13333333333333
+y = 184.05714285714288
+width = 85.13333333333333
+height = 4.5
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0021-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Meal prep / freezer check",
+    "Look at next week",
+    "Light tidy + restock supplies",
+]
+
+[widgets.rect]
+x = 97.13333333333333
+y = 189.05714285714288
+width = 85.13333333333333
+height = 19.842857142857145
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
+
+[[widgets]]
+id = "c01a0032-0000-0000-0000-000000000000"
+
+[widgets.kind]
+kind = "checklist"
+items = [
+    "Wipe inside microwave",
+    "Clean fridge shelves top→bottom",
+    "Wash bath mats + hand towels",
+    "Vacuum under couch cushions",
+    "Dust ceiling fans + vents",
+    "Descale shower head + faucets",
+    "Wash windows / mirrors deep",
+    "Change HVAC filter",
+    "Clean coffee maker / kettle",
+    "Wipe doorknobs + light switches",
+    "Vacuum + flip mattress",
+    "Check pantry expirations",
+    "Wash trash cans",
+    "Clean inside of car",
+    "Restock first-aid + meds",
+]
+
+[widgets.rect]
+x = 186.26666666666665
+y = 29.0
+width = 85.13333333333333
+height = 180.9
+
+[widgets.style]
+stroke_width_mm = 0.3
+
+[widgets.style.stroke_color]
+r = 60
+g = 60
+b = 80
+a = 200
