@@ -53,7 +53,7 @@ jobs:
             libvulkan-dev libpoppler-glib-dev libdbus-1-dev
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -314,7 +314,7 @@ jobs:
           brew install gtk4 libadwaita poppler pkg-config dylibbundler create-dmg librsvg
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -405,7 +405,7 @@ jobs:
           echo "INCLUDE=$env:GVSBUILD_ROOT\include;$env:INCLUDE" >> $env:GITHUB_ENV
 
       - name: Cache cargo
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
