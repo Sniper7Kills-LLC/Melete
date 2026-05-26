@@ -15,15 +15,15 @@
   "dependencies": {
     "@aws-amplify/ui-react": "^6.5.5",
     "aws-amplify": "^6.6.6",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "react-router-dom": "^6.26.2",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
     "@types/node": "^25.6.2",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
