@@ -40,7 +40,21 @@ pub struct AppWindow {
     parent: ApplicationWindow,
     current_notebook: Rc<RefCell<Option<NotebookId>>>,
     current_sidebar: Rc<RefCell<Option<GtkBox>>>,
-    previous_view: Rc<RefCell<Option<NotebookId>>>,
+    previous_view: Rc<RefCell<PreviousView>>,
+}
+
+/// Where the user should land when they back out of a full-screen
+/// sub-editor (page-template editor, tool editor, notebook-template
+/// editor). Resolved at the moment the sub-editor opens by reading
+/// the currently-visible stack child, so nested opens (e.g. notebook-
+/// template editor → page-template chip → page-template editor) wind
+/// back to the right parent instead of collapsing through to home.
+#[derive(Clone, Copy, Debug, Default)]
+enum PreviousView {
+    #[default]
+    Home,
+    Notebook(NotebookId),
+    NotebookTemplateEditor,
 }
 
 pub type SharedWindow = Rc<RefCell<AppWindow>>;
@@ -261,7 +275,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         parent: parent.clone(),
         current_notebook,
         current_sidebar: Rc::new(RefCell::new(None)),
-        previous_view: Rc::new(RefCell::new(None)),
+        previous_view: Rc::new(RefCell::new(PreviousView::default())),
     }));
 
     {
@@ -1053,6 +1067,52 @@ pub fn show_home(win: &SharedWindow) {
     w.title_label.set_text("Melete");
 }
 
+/// Read which top-level view is currently displayed so sub-editors
+/// can return to it after Back / Save. Done by name-matching against
+/// the stack's visible child so a nested chip-open from inside the
+/// notebook-template editor correctly winds back to that editor
+/// instead of falling through to home (#23).
+fn current_previous_view(win: &SharedWindow) -> PreviousView {
+    let w = win.borrow();
+    let name = w
+        .stack
+        .visible_child_name()
+        .map(|n| n.to_string())
+        .unwrap_or_default();
+    match name.as_str() {
+        NOTEBOOK_TEMPLATE_EDITOR_NAME => PreviousView::NotebookTemplateEditor,
+        NOTEBOOK_NAME => match *w.current_notebook.borrow() {
+            Some(id) => PreviousView::Notebook(id),
+            None => PreviousView::Home,
+        },
+        _ => PreviousView::Home,
+    }
+}
+
+/// Dispatch back to the captured view. Used by every sub-editor's
+/// `on_done` so the same Back / Save path covers nested editor opens.
+/// For `NotebookTemplateEditor` we re-show the stack page in place
+/// rather than rebuilding the editor — the editor's existing widget
+/// tree (and the user's in-progress notebook-template state) stays in
+/// the container while the page-template chip is open, so a stack
+/// switch is enough.
+fn restore_previous_view(win: &SharedWindow) {
+    let prev = *win.borrow().previous_view.borrow();
+    match prev {
+        PreviousView::Home => show_home(win),
+        PreviousView::Notebook(id) => show_notebook(win, id),
+        PreviousView::NotebookTemplateEditor => {
+            let w = win.borrow();
+            w.stack
+                .set_visible_child_name(NOTEBOOK_TEMPLATE_EDITOR_NAME);
+            w.title_label.set_text("Notebook Template Editor");
+            w.back_btn.set_visible(false);
+            w.sidebar_toggle_btn.set_visible(false);
+            w.notebook_settings_btn.set_visible(false);
+        }
+    }
+}
+
 pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
     {
         let mut cfg = crate::config::load();
@@ -1231,19 +1291,14 @@ fn show_template_editor_inner(win: &SharedWindow, edit: Option<PageTemplate>, re
     }
 
     // Remember where we came from so Back/Save can return to it.
-    let return_notebook = *win.borrow().current_notebook.borrow();
-    *win.borrow().previous_view.borrow_mut() = return_notebook;
+    *win.borrow().previous_view.borrow_mut() = current_previous_view(win);
 
     let state = win.borrow().state.clone();
     let parent = win.borrow().parent.clone();
 
     let win_for_done = win.clone();
     let on_done: Rc<dyn Fn()> = Rc::new(move || {
-        let prev = *win_for_done.borrow().previous_view.borrow();
-        match prev {
-            Some(nb_id) => show_notebook(&win_for_done, nb_id),
-            None => show_home(&win_for_done),
-        }
+        restore_previous_view(&win_for_done);
     });
 
     let view = crate::template_creator::build_editor_view(
@@ -1291,19 +1346,14 @@ fn show_tool_editor_inner(
     }
 
     // Remember where we came from so Done/Cancel can return.
-    let return_notebook = *win.borrow().current_notebook.borrow();
-    *win.borrow().previous_view.borrow_mut() = return_notebook;
+    *win.borrow().previous_view.borrow_mut() = current_previous_view(win);
 
     let state = win.borrow().state.clone();
     let parent = win.borrow().parent.clone();
 
     let win_for_done = win.clone();
     let on_done: Rc<dyn Fn()> = Rc::new(move || {
-        let prev = *win_for_done.borrow().previous_view.borrow();
-        match prev {
-            Some(nb_id) => show_notebook(&win_for_done, nb_id),
-            None => show_home(&win_for_done),
-        }
+        restore_previous_view(&win_for_done);
     });
 
     let view =
@@ -1345,19 +1395,14 @@ fn show_notebook_template_editor_inner(
     }
 
     // Remember where we came from.
-    let return_notebook = *win.borrow().current_notebook.borrow();
-    *win.borrow().previous_view.borrow_mut() = return_notebook;
+    *win.borrow().previous_view.borrow_mut() = current_previous_view(win);
 
     let state = win.borrow().state.clone();
     let parent = win.borrow().parent.clone();
 
     let win_for_done = win.clone();
     let on_done: Rc<dyn Fn()> = Rc::new(move || {
-        let prev = *win_for_done.borrow().previous_view.borrow();
-        match prev {
-            Some(nb_id) => show_notebook(&win_for_done, nb_id),
-            None => show_home(&win_for_done),
-        }
+        restore_previous_view(&win_for_done);
     });
 
     let win_for_chip = win.clone();

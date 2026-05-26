@@ -1039,6 +1039,18 @@ fn begin_selection(state: &SharedState, sx: f64, sy: f64) {
                 s.selection_resize_bbox_orig = Some(bbox);
                 s.selection_resize_cumulative = (1.0, 1.0);
                 s.selection_resize_anchor = (anchor_x, anchor_y);
+                let selected_ids = s.selected_stroke_ids.clone();
+                s.selection_resize_snapshot = Some(
+                    s.strokes
+                        .iter()
+                        .filter(|st| selected_ids.contains(&st.id))
+                        .map(|st| crate::state::SelectionResizeSnapshot {
+                            id: st.id,
+                            points: st.points.clone(),
+                            bbox: st.bounding_box,
+                        })
+                        .collect(),
+                );
                 s.selection_drag_start = None;
                 return;
             }
@@ -1079,7 +1091,7 @@ fn extend_selection(state: &SharedState, sx: f64, sy: f64) {
 
     if s.selection_resize_handle.is_some() {
         let handle = s.selection_resize_handle.unwrap();
-        let (prev_sx, prev_sy) = match s.selection_resize_start {
+        let (start_sx, start_sy) = match s.selection_resize_start {
             Some(p) => p,
             None => return,
         };
@@ -1088,8 +1100,12 @@ fn extend_selection(state: &SharedState, sx: f64, sy: f64) {
             None => return,
         };
 
-        let dx_screen = sx - prev_sx;
-        let dy_screen = sy - prev_sy;
+        // Total mouse delta from the drag-start point — NOT the
+        // per-frame increment. Replaying against the original bbox +
+        // snapshot keeps the gesture linear in user drag distance
+        // (#21): wiggling back to the start exactly returns identity.
+        let dx_screen = sx - start_sx;
+        let dy_screen = sy - start_sy;
         let zoom = s.transform.zoom().max(1e-6);
         let dx = dx_screen / zoom;
         let dy = dy_screen / zoom;
@@ -1101,29 +1117,41 @@ fn extend_selection(state: &SharedState, sx: f64, sy: f64) {
             return;
         }
 
-        s.selection_resize_cumulative.0 *= sx_factor;
-        s.selection_resize_cumulative.1 *= sy_factor;
+        s.selection_resize_cumulative = (sx_factor, sy_factor);
         s.selection_resize_anchor = (anchor_x, anchor_y);
 
-        let selected_ids: Vec<Uuid> = s.selected_stroke_ids.iter().cloned().collect();
-        for st in s.strokes.iter_mut() {
-            if selected_ids.contains(&st.id) {
-                for pt in st.points.iter_mut() {
-                    pt.x = anchor_x + (pt.x - anchor_x) * sx_factor;
-                    pt.y = anchor_y + (pt.y - anchor_y) * sy_factor;
-                }
-                let bb = &mut st.bounding_box;
-                let new_x = anchor_x + (bb.x - anchor_x) * sx_factor;
-                let new_y = anchor_y + (bb.y - anchor_y) * sy_factor;
-                bb.width *= sx_factor.abs();
-                bb.height *= sy_factor.abs();
-                bb.x = new_x.min(new_x + bb.width);
-                bb.y = new_y.min(new_y + bb.height);
-            }
+        let snapshot = match s.selection_resize_snapshot.clone() {
+            Some(s) => s,
+            None => return,
+        };
+        // Index snapshot by id so the lookup inside the strokes loop
+        // is O(1) instead of O(n²) for a large multi-select.
+        let mut snap_by_id: std::collections::HashMap<Uuid, &crate::state::SelectionResizeSnapshot> =
+            std::collections::HashMap::with_capacity(snapshot.len());
+        for snap in &snapshot {
+            snap_by_id.insert(snap.id, snap);
         }
-
-        s.selection_resize_start = Some((sx, sy));
-        s.selection_resize_bbox_orig = selection_combined_bbox(&s.strokes, &s.selected_stroke_ids);
+        for st in s.strokes.iter_mut() {
+            let Some(snap) = snap_by_id.get(&st.id) else {
+                continue;
+            };
+            for (dst, src) in st.points.iter_mut().zip(snap.points.iter()) {
+                dst.x = anchor_x + (src.x - anchor_x) * sx_factor;
+                dst.y = anchor_y + (src.y - anchor_y) * sy_factor;
+            }
+            // Re-derive the bbox from the two transformed extremes of
+            // the original bbox; min/max picks the correct edges
+            // under horizontal or vertical flip (sx_factor < 0 or
+            // sy_factor < 0).
+            let x_a = anchor_x + (snap.bbox.x - anchor_x) * sx_factor;
+            let x_b = anchor_x + (snap.bbox.x + snap.bbox.width - anchor_x) * sx_factor;
+            let y_a = anchor_y + (snap.bbox.y - anchor_y) * sy_factor;
+            let y_b = anchor_y + (snap.bbox.y + snap.bbox.height - anchor_y) * sy_factor;
+            st.bounding_box.x = x_a.min(x_b);
+            st.bounding_box.y = y_a.min(y_b);
+            st.bounding_box.width = (x_b - x_a).abs();
+            st.bounding_box.height = (y_b - y_a).abs();
+        }
 
         return;
     }
@@ -1221,6 +1249,7 @@ fn finish_selection(state: &SharedState) {
             s.selection_resize_handle = None;
             s.selection_resize_start = None;
             s.selection_resize_bbox_orig = None;
+            s.selection_resize_snapshot = None;
 
             let (csx, csy) = s.selection_resize_cumulative;
             let (ax, ay) = s.selection_resize_anchor;
@@ -1430,6 +1459,13 @@ pub fn undo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
     let area: &gtk4::Widget = &area.clone().upcast();
     let op = {
         let mut s = state.borrow_mut();
+        // Clear any in-flight resize state — applying an undone Op on
+        // top of a partial drag would compound transforms (#21).
+        s.selection_resize_handle = None;
+        s.selection_resize_start = None;
+        s.selection_resize_bbox_orig = None;
+        s.selection_resize_snapshot = None;
+        s.selection_resize_cumulative = (1.0, 1.0);
         s.history.undo.pop()
     };
     let Some(op) = op else { return };
@@ -1535,6 +1571,11 @@ pub fn redo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
     let area: &gtk4::Widget = &area.clone().upcast();
     let op = {
         let mut s = state.borrow_mut();
+        s.selection_resize_handle = None;
+        s.selection_resize_start = None;
+        s.selection_resize_bbox_orig = None;
+        s.selection_resize_snapshot = None;
+        s.selection_resize_cumulative = (1.0, 1.0);
         s.history.redo.pop()
     };
     let Some(op) = op else { return };
@@ -1764,4 +1805,165 @@ pub fn paste_clipboard(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
 
     tracing::info!("pasted {} stroke(s)", new_strokes.len());
     area.queue_draw();
+}
+
+#[cfg(test)]
+mod resize_math_tests {
+    //! Pure-math coverage of the resize gesture (#21):
+    //! - `compute_scale_factors` per handle (positive scale only;
+    //!   the function clamps `new_w/new_h` to ≥ 1.0 so flips never
+    //!   land here in practice).
+    //! - The bbox-edge formula used by `extend_selection` to handle
+    //!   horizontal / vertical / both flips correctly via
+    //!   `min`/`abs` of the two transformed extremes, instead of the
+    //!   prior `new_x.min(new_x + width)` formula.
+
+    use super::*;
+    use melete_core::Rect;
+
+    fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {
+        Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        }
+    }
+
+    /// Apply the same edge formula `extend_selection` uses inside its
+    /// resize branch. Kept here so the test corpus exercises the
+    /// formula directly without spinning up a CanvasState.
+    fn resized_bbox(orig: Rect, anchor_x: f64, anchor_y: f64, sx: f64, sy: f64) -> Rect {
+        let x_a = anchor_x + (orig.x - anchor_x) * sx;
+        let x_b = anchor_x + (orig.x + orig.width - anchor_x) * sx;
+        let y_a = anchor_y + (orig.y - anchor_y) * sy;
+        let y_b = anchor_y + (orig.y + orig.height - anchor_y) * sy;
+        Rect {
+            x: x_a.min(x_b),
+            y: y_a.min(y_b),
+            width: (x_b - x_a).abs(),
+            height: (y_b - y_a).abs(),
+        }
+    }
+
+    #[test]
+    fn br_handle_expands_from_top_left_anchor() {
+        let orig = rect(10.0, 20.0, 100.0, 50.0);
+        let (sx, sy, ax, ay) = compute_scale_factors(HandlePos::BR, orig, 50.0, 25.0);
+        assert!((sx - 1.5).abs() < 1e-9);
+        assert!((sy - 1.5).abs() < 1e-9);
+        assert_eq!(ax, 10.0);
+        assert_eq!(ay, 20.0);
+    }
+
+    #[test]
+    fn tl_handle_contracts_from_bottom_right_anchor() {
+        let orig = rect(0.0, 0.0, 100.0, 100.0);
+        let (sx, sy, ax, ay) = compute_scale_factors(HandlePos::TL, orig, 25.0, 25.0);
+        // dragging the TL handle in by 25 in each direction shrinks the box to 75x75
+        assert!((sx - 0.75).abs() < 1e-9);
+        assert!((sy - 0.75).abs() < 1e-9);
+        assert_eq!(ax, 100.0);
+        assert_eq!(ay, 100.0);
+    }
+
+    #[test]
+    fn edge_handles_lock_orthogonal_axis() {
+        let orig = rect(0.0, 0.0, 100.0, 100.0);
+        let (sx, sy, _, _) = compute_scale_factors(HandlePos::R, orig, 50.0, 999.0);
+        assert!((sx - 1.5).abs() < 1e-9);
+        assert_eq!(sy, 1.0);
+
+        let (sx, sy, _, _) = compute_scale_factors(HandlePos::B, orig, 999.0, 25.0);
+        assert_eq!(sx, 1.0);
+        assert!((sy - 1.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn anchor_lives_opposite_the_handle() {
+        let orig = rect(10.0, 20.0, 100.0, 50.0);
+        let cases = [
+            (HandlePos::TL, 110.0, 70.0),
+            (HandlePos::TR, 10.0, 70.0),
+            (HandlePos::BL, 110.0, 20.0),
+            (HandlePos::BR, 10.0, 20.0),
+            (HandlePos::T, 60.0, 70.0),
+            (HandlePos::B, 60.0, 20.0),
+            (HandlePos::L, 110.0, 45.0),
+            (HandlePos::R, 10.0, 45.0),
+        ];
+        for (h, ax_expected, ay_expected) in cases {
+            let (_, _, ax, ay) = compute_scale_factors(h, orig, 0.0, 0.0);
+            assert!(
+                (ax - ax_expected).abs() < 1e-9,
+                "handle {h:?}: anchor_x {ax} != {ax_expected}"
+            );
+            assert!(
+                (ay - ay_expected).abs() < 1e-9,
+                "handle {h:?}: anchor_y {ay} != {ay_expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn resized_bbox_pure_positive_scale_grows_about_anchor() {
+        let orig = rect(0.0, 0.0, 100.0, 100.0);
+        let bb = resized_bbox(orig, 0.0, 0.0, 2.0, 2.0);
+        assert!((bb.x - 0.0).abs() < 1e-9);
+        assert!((bb.y - 0.0).abs() < 1e-9);
+        assert!((bb.width - 200.0).abs() < 1e-9);
+        assert!((bb.height - 200.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn resized_bbox_x_flip_picks_left_edge() {
+        // 100-wide box at x=0, anchor at right edge, flip across.
+        let orig = rect(0.0, 0.0, 100.0, 50.0);
+        let bb = resized_bbox(orig, 100.0, 0.0, -1.0, 1.0);
+        // mirrored box should land at x=100..200; width unchanged.
+        assert!((bb.x - 100.0).abs() < 1e-9);
+        assert!((bb.width - 100.0).abs() < 1e-9);
+        // y axis untouched.
+        assert!((bb.y - 0.0).abs() < 1e-9);
+        assert!((bb.height - 50.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn resized_bbox_y_flip_picks_top_edge() {
+        let orig = rect(0.0, 0.0, 50.0, 100.0);
+        let bb = resized_bbox(orig, 0.0, 100.0, 1.0, -1.0);
+        assert!((bb.y - 100.0).abs() < 1e-9);
+        assert!((bb.height - 100.0).abs() < 1e-9);
+        assert!((bb.x - 0.0).abs() < 1e-9);
+        assert!((bb.width - 50.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn resized_bbox_both_flip_lands_diagonally_opposite() {
+        let orig = rect(10.0, 20.0, 30.0, 40.0);
+        let bb = resized_bbox(orig, 0.0, 0.0, -1.0, -1.0);
+        // original at (10,20)-(40,60); flipped about origin → (-40,-60)-(-10,-20).
+        assert!((bb.x + 40.0).abs() < 1e-9);
+        assert!((bb.y + 60.0).abs() < 1e-9);
+        assert!((bb.width - 30.0).abs() < 1e-9);
+        assert!((bb.height - 40.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn resized_bbox_identity_is_input() {
+        let orig = rect(7.5, -3.5, 42.0, 13.0);
+        let bb = resized_bbox(orig, 0.0, 0.0, 1.0, 1.0);
+        assert_eq!(bb.x, orig.x);
+        assert_eq!(bb.y, orig.y);
+        assert_eq!(bb.width, orig.width);
+        assert_eq!(bb.height, orig.height);
+    }
+
+    #[test]
+    fn resized_bbox_non_uniform_scale() {
+        let orig = rect(0.0, 0.0, 100.0, 50.0);
+        let bb = resized_bbox(orig, 0.0, 0.0, 2.0, 3.0);
+        assert!((bb.width - 200.0).abs() < 1e-9);
+        assert!((bb.height - 150.0).abs() < 1e-9);
+    }
 }
