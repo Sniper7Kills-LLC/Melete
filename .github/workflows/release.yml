@@ -213,20 +213,24 @@ jobs:
           cp target/release/melete-app "${STAGE}/"
           cp resources/app.melete.Melete.desktop "${STAGE}/"
           cp resources/icons/app.melete.Melete.svg "${STAGE}/"
-          tar -czf "packaging/arch/melete-${VERSION}.tar.gz" -C "${STAGE}" .
           # Arch's `pkgver` rejects hyphens. Translate semver/pre-release
-          # markers to underscores: `0.1.0-rc1` → `0.1.0_rc1`.
+          # markers to underscores: `0.1.0-rc1` → `0.1.0_rc1`. Tarball
+          # filename must match PKGBUILD's `source` entry, which
+          # uses `${pkgver}` — so both must agree on underscores.
           ARCH_PKGVER="${VERSION//-/_}"
+          tar -czf "packaging/arch/melete-${ARCH_PKGVER}.tar.gz" -C "${STAGE}" .
           sed -i "s/^pkgver=.*/pkgver=${ARCH_PKGVER}/" packaging/arch/PKGBUILD
 
       - name: makepkg
         working-directory: packaging/arch
         run: |
           chown -R builder .
-          # --nodeps: pre-built binary; we don't need to install gtk4
-          # etc. into the build container, only declare them as runtime
-          # deps for users installing the .pkg.tar.zst later.
-          sudo -u builder makepkg --noextract --skipchecksums --skipinteg --nodeps --noconfirm
+          # --nodeps: pre-built binary; we declare gtk4 etc. as runtime
+          # deps for end-users but don't need them in the build
+          # container. No --noextract: makepkg unpacks the staged
+          # tarball into $srcdir so PKGBUILD's package() can find the
+          # files via `cd "${srcdir}"`.
+          sudo -u builder makepkg --skipchecksums --skipinteg --nodeps --noconfirm
 
       - name: Stage + SHA256
         run: |
