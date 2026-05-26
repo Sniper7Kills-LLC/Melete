@@ -1,16 +1,27 @@
-# Amplify Hosting build spec.
+# Amplify Hosting build spec (Gen 2 fullstack).
 #
-# Single-app config: builds the Vite SPA at web/ as the published
-# artifact. The SPA's `prebuild` script compiles two Rust crates
-# (melete-web-shim, melete-web-viewer) to wasm32 and wasm-bindgens
-# the output into web/src/wasm/generated/{shim,viewer}/ before Vite
-# bundles, so the Amplify build container needs a Rust toolchain in
-# addition to Node.
+# Two phases per Amplify Hosting build:
 #
-# Build cache covers web/node_modules + the Rust home + target/, so
-# only the first build pays the ~5 min cargo-install wasm-bindgen-cli
+# 1. `backend:` runs `ampx pipeline-deploy --branch $AWS_BRANCH
+#    --app-id $AWS_APP_ID`. This synth+deploys the CDK stack defined
+#    by `amplify/backend.ts` (auth + data + storage + 8 Lambda
+#    functions). On success it writes `amplify_outputs.json` at the
+#    repo root with the live Cognito / AppSync / S3 endpoints for
+#    this branch.
+#
+# 2. `frontend:` builds the Vite SPA at `web/`. The SPA's prebuild
+#    script compiles two Rust crates (melete-web-shim,
+#    melete-web-viewer) to wasm32 and wasm-bindgens the output into
+#    `web/src/wasm/generated/{shim,viewer}/` before Vite bundles, so
+#    the Amplify build container needs a Rust toolchain in addition
+#    to Node. Vite picks up the freshly-written `amplify_outputs.json`
+#    via `web/src/amplify-config.ts`'s import.meta.glob trick and
+#    bakes the endpoints into the bundle.
+#
+# Build cache covers web/node_modules + Rust home + target/, so only
+# the first build pays the ~5 min cargo-install wasm-bindgen-cli
 # cost. Cache invalidates on Cargo.lock or web/package-lock.json
-# changes (Amplify Hosting tracks cache keys per pipeline).
+# changes.
 #
 # Secrets / env this expects on the Amplify app:
 #   * VITE_RELEASES_MANIFEST_URL   public URL of the releases
@@ -20,6 +31,17 @@
 #                                  link if unset.
 
 version: 1
+backend:
+  phases:
+    build:
+      commands:
+        # Pipeline-deploy synthesises the backend CDK stack and
+        # deploys it under the Hosting branch's identifier. Idempotent
+        # — re-running a build re-applies the same stack and only
+        # surfaces real changes. Writes `amplify_outputs.json` at the
+        # repo root for the frontend phase to consume.
+        - npm ci
+        - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
 frontend:
   phases:
     preBuild:
@@ -36,6 +58,11 @@ frontend:
     build:
       commands:
         - export PATH="$HOME/.cargo/bin:$PATH"
+        # The repo-root `amplify_outputs.json` written by the backend
+        # phase has to be visible to Vite at `web/amplify_outputs.json`
+        # for `import.meta.glob` to pick it up. Symlink it; the file
+        # is gitignored so this never collides with a real commit.
+        - ln -sf ../amplify_outputs.json amplify_outputs.json
         # `npm run build` in web/ triggers prebuild → build-wasm.sh →
         # cargo build the wasm crates → wasm-bindgen → vite build.
         # Single command keeps the build graph in one place.
