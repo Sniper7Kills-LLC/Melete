@@ -9,7 +9,7 @@ versions follow [SemVer](https://semver.org/) once the project hits `1.0.0`.
 - **Renamed the project to Melete** (Greek Muse of meditation and
   practice). All crates renamed `journal-*` → `melete-*`; trait
   `JournalBackend` → `NotebookBackend`; AppId `dev.s7k.journal` →
-  `dev.s7k.melete`; env vars `JOURNAL_*` → `MELETE_*`; GitHub repo
+  `app.melete`; env vars `JOURNAL_*` → `MELETE_*`; GitHub repo
   renamed to `Sniper7Kills-LLC/Melete`. Domain
   [melete.app](https://melete.app) is the new home. Storage paths
   `~/.local/share/journal/` and `~/.config/journal/` migrate

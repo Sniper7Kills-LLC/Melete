@@ -82,13 +82,13 @@ jobs:
         run: |
           strip target/release/melete-app
           mkdir -p dist
-          cp resources/dev.s7k.melete.desktop dist/
-          cp resources/icons/dev.s7k.melete.svg dist/
+          cp resources/app.melete.desktop dist/
+          cp resources/icons/app.melete.svg dist/
           cp target/release/melete-app dist/
           cp Makefile dist/
           cd dist
           tar czf "melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
-            melete-app dev.s7k.melete.desktop dev.s7k.melete.svg Makefile
+            melete-app app.melete.desktop app.melete.svg Makefile
           sha256sum "melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
             > "melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz.sha256"
 

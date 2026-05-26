@@ -83,4 +83,4 @@ Amplify Hosting builds the SPA via [`amplify.yml`](amplify.yml) — installs Rus
 
 ## Flatpak (stub)
 
-A manifest skeleton lives at `packaging/dev.s7k.melete.yaml`. Not yet end-to-end buildable; Rust SDK extension + vendored deps still need wiring.
+A manifest skeleton lives at `packaging/app.melete.yaml`. Not yet end-to-end buildable; Rust SDK extension + vendored deps still need wiring.

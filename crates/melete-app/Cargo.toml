@@ -53,3 +53,50 @@ remote = ["melete-storage/remote"]
 # machete only matches by Cargo.toml name.
 # `poppler-rs` is feature-gated behind `pdf` and used in template_manager.rs.
 ignored = ["cairo-rs", "poppler-rs"]
+
+# `cargo deb` driver. Consumed by the packaging.yml Linux job to
+# produce a `.deb` for Debian / Ubuntu / Mint / Pop! / derivatives.
+# Depends are resolved per-Debian-version automatically when the deb
+# is built on the target distro; the names below match Ubuntu 24.04
+# (noble) and recent Debian. The `assets` list mirrors the Makefile
+# install pattern.
+[package.metadata.deb]
+name = "melete"
+maintainer = "Sniper7Kills LLC <sniper7kills@gmail.com>"
+copyright = "2026 Sniper7Kills LLC"
+extended-description = """\
+Personal OneNote / rnote alternative for Linux. Stylus-friendly
+notebook, journal, and planner with infinite-scroll pages,
+GPU-accelerated Vello rendering, and a composable brush engine."""
+section = "graphics"
+priority = "optional"
+assets = [
+  ["target/release/melete-app", "usr/bin/", "755"],
+  ["resources/app.melete.desktop", "usr/share/applications/", "644"],
+  ["resources/icons/app.melete.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+]
+depends = "libgtk-4-1 (>= 4.12), libadwaita-1-0 (>= 1.4), libpoppler-glib8, libegl1, libgles2, libvulkan1, libdbus-1-3"
+
+# `cargo generate-rpm` driver. Same `assets` table shape — installed
+# paths under `/usr` mirror Debian. RPM-side dependency names match
+# Fedora 40+ / openSUSE Leap 15.5; older distros may need adjustment
+# downstream. Skipped on the `melete-app` crate's lib target — RPMs
+# only contain the binary + desktop entry + icon.
+[package.metadata.generate-rpm]
+name = "melete"
+license = "AGPL-3.0-or-later"
+summary = "Personal stylus-friendly notebook, journal & planner."
+assets = [
+  { source = "target/release/melete-app", dest = "/usr/bin/melete-app", mode = "755" },
+  { source = "resources/app.melete.desktop", dest = "/usr/share/applications/app.melete.desktop", mode = "644" },
+  { source = "resources/icons/app.melete.svg", dest = "/usr/share/icons/hicolor/scalable/apps/app.melete.svg", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+"gtk4" = ">= 4.12"
+"libadwaita" = ">= 1.4"
+"poppler-glib" = "*"
+"mesa-libEGL" = "*"
+"mesa-libGLES" = "*"
+"vulkan-loader" = "*"
+"dbus-libs" = "*"

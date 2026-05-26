@@ -5,8 +5,8 @@ ICON_DIR      := $(DESTDIR)$(PREFIX)/share/icons/hicolor/scalable/apps
 HICOLOR_DIR   := $(DESTDIR)$(PREFIX)/share/icons/hicolor
 
 BINARY        := target/release/melete-app
-DESKTOP       := resources/dev.s7k.melete.desktop
-ICON          := resources/icons/dev.s7k.melete.svg
+DESKTOP       := resources/app.melete.desktop
+ICON          := resources/icons/app.melete.svg
 
 .PHONY: build install uninstall all
 
@@ -19,9 +19,9 @@ install:
 	@test -f $(BINARY) || { echo "Error: $(BINARY) missing. Run 'make build' as your user first."; exit 1; }
 	install -Dm755 $(BINARY) $(BIN_DIR)/melete-app
 	install -d $(APP_DIR)
-	sed 's|^Exec=melete-app|Exec=$(PREFIX)/bin/melete-app|' $(DESKTOP) > $(APP_DIR)/dev.s7k.melete.desktop
-	chmod 644 $(APP_DIR)/dev.s7k.melete.desktop
-	install -Dm644 $(ICON) $(ICON_DIR)/dev.s7k.melete.svg
+	sed 's|^Exec=melete-app|Exec=$(PREFIX)/bin/melete-app|' $(DESKTOP) > $(APP_DIR)/app.melete.desktop
+	chmod 644 $(APP_DIR)/app.melete.desktop
+	install -Dm644 $(ICON) $(ICON_DIR)/app.melete.svg
 	@if command -v update-desktop-database >/dev/null 2>&1; then \
 		update-desktop-database $(APP_DIR); \
 	fi
@@ -31,8 +31,8 @@ install:
 
 uninstall:
 	rm -f $(BIN_DIR)/melete-app
-	rm -f $(APP_DIR)/dev.s7k.melete.desktop
-	rm -f $(ICON_DIR)/dev.s7k.melete.svg
+	rm -f $(APP_DIR)/app.melete.desktop
+	rm -f $(ICON_DIR)/app.melete.svg
 	@if command -v update-desktop-database >/dev/null 2>&1; then \
 		update-desktop-database $(APP_DIR); \
 	fi
