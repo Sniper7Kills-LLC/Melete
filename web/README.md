@@ -18,7 +18,7 @@ Vite + React + TypeScript SPA that hosts:
 ```bash
 # One-time WASM toolchain (only needed for Viewer / Designer / etc.):
 rustup target add wasm32-unknown-unknown
-cargo install wasm-bindgen-cli --version 0.2.120  # match wasm-bindgen crate
+cargo install wasm-bindgen-cli --version 0.2.122  # match wasm-bindgen crate
 ```
 
 ## Run

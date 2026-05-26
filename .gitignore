@@ -1,7 +1,11 @@
 # Rust
 /target/
 **/*.rs.bk
-Cargo.lock
+# Cargo.lock IS checked in: the workspace produces binary artefacts
+# (melete-app + the two wasm cdylibs consumed by the Amplify Hosting
+# build), so reproducible builds need a pinned resolver state. Without
+# this, CI / Amplify pulls the latest 0.2.x of wasm-bindgen on every
+# run and breaks when the cli pin no longer matches the schema.
 
 # IDE
 .vscode/
