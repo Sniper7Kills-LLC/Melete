@@ -19,6 +19,19 @@ Parameters:
     Type: String
     Default: Sniper7Kills-LLC/Melete
     Description: GitHub <owner>/<repo>.
+  GitHubConnectionArn:
+    Type: String
+    Description: >
+      Existing AWS CodeConnections (GitHub) ARN. Must be in
+      AVAILABLE state — CodeBuild refuses references to a
+      PENDING_HANDSHAKE connection. Create + finish OAuth before
+      deploying the stack:
+        aws codeconnections create-connection \\
+          --connection-name melete-github \\
+          --provider-type GitHub \\
+          --profile melete --region us-east-1
+      then open the Console → CodeConnections → click through OAuth.
+    AllowedPattern: '^arn:aws:codeconnections:[a-z0-9-]+:[0-9]+:connection/[a-f0-9-]+$'
   ReleasesBucketName:
     Type: String
     Default: ''
@@ -88,17 +101,6 @@ Resources:
       Protocol: email
       Endpoint: !Ref NotificationEmail
 
-  # ─── GitHub source connection ────────────────────────────────────
-  # Created in PENDING_HANDSHAKE state. Operator must click through
-  # the OAuth flow in the AWS Console (CodeBuild → Settings →
-  # Connections → melete-github → "Update pending connection") before
-  # any project can pull source.
-  GitHubConnection:
-    Type: AWS::CodeConnections::Connection
-    Properties:
-      ConnectionName: melete-github
-      ProviderType: GitHub
-
   # ─── CodeBuild service role ──────────────────────────────────────
   CodeBuildServiceRole:
     Type: AWS::IAM::Role
@@ -142,10 +144,10 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: codeconnections:GetConnectionToken
-                Resource: !Ref GitHubConnection
+                Resource: !Ref GitHubConnectionArn
               - Effect: Allow
                 Action: codeconnections:UseConnection
-                Resource: !Ref GitHubConnection
+                Resource: !Ref GitHubConnectionArn
         - PolicyName: PublishStatusToSns
           PolicyDocument:
             Version: '2012-10-17'
@@ -166,7 +168,7 @@ Resources:
         BuildSpec: packaging/linux/buildspec.yml
         Auth:
           Type: CODECONNECTIONS
-          Resource: !Ref GitHubConnection
+          Resource: !Ref GitHubConnectionArn
       SourceVersion: refs/heads/main
       Triggers:
         Webhook: true
@@ -203,7 +205,7 @@ Resources:
         BuildSpec: packaging/windows/buildspec.yml
         Auth:
           Type: CODECONNECTIONS
-          Resource: !Ref GitHubConnection
+          Resource: !Ref GitHubConnectionArn
       SourceVersion: refs/heads/main
       Triggers:
         Webhook: true
@@ -240,7 +242,7 @@ Resources:
         BuildSpec: packaging/macos/buildspec.yml
         Auth:
           Type: CODECONNECTIONS
-          Resource: !Ref GitHubConnection
+          Resource: !Ref GitHubConnectionArn
       SourceVersion: refs/heads/main
       Triggers:
         Webhook: true
@@ -279,7 +281,7 @@ Resources:
         BuildSpec: packaging/manifest/buildspec.yml
         Auth:
           Type: CODECONNECTIONS
-          Resource: !Ref GitHubConnection
+          Resource: !Ref GitHubConnectionArn
       SourceVersion: refs/heads/main
       Environment:
         Type: LINUX_CONTAINER
@@ -306,7 +308,7 @@ Outputs:
     Description: >
       CodeConnections ARN — finish the OAuth handshake via the AWS
       Console before any CodeBuild project can pull source.
-    Value: !Ref GitHubConnection
+    Value: !Ref GitHubConnectionArn
   BuildStatusTopicArn:
     Description: Subscribe additional endpoints to this SNS topic for build alerts.
     Value: !Ref BuildStatusTopic

@@ -43,6 +43,35 @@ that replaces the (now-deleted) GitHub Actions `packaging.yml`.
 
 ## Deploy
 
+Two-step because CodeBuild rejects references to a connection that's
+still in `PENDING_HANDSHAKE` — OAuth must complete before stack
+create.
+
+### 1. Create the source connection + finish OAuth
+
+```
+aws codeconnections create-connection \
+  --connection-name melete-github \
+  --provider-type GitHub \
+  --profile melete --region us-east-1
+```
+
+Returns a `ConnectionArn`. Open the AWS Console → **Developer Tools
+→ Settings → Connections → melete-github → Update pending connection**
+→ click through the GitHub OAuth flow. The connection's status flips
+to `AVAILABLE` once you authorize the AWS app on the GitHub side.
+
+Verify:
+```
+aws codeconnections get-connection --connection-arn <ARN> \
+  --profile melete --region us-east-1 \
+  --query 'Connection.ConnectionStatus'
+```
+
+Should print `"AVAILABLE"`.
+
+### 2. Deploy the stack
+
 ```
 aws cloudformation deploy \
   --profile melete \
@@ -52,6 +81,7 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides \
     GitHubRepo=Sniper7Kills-LLC/Melete \
+    GitHubConnectionArn=<ARN-from-step-1> \
     NotificationEmail=sniper7kills@gmail.com \
     EnableMacOS=false
 ```
@@ -59,24 +89,12 @@ aws cloudformation deploy \
 `EnableMacOS=false` for the first deploy — flip to `true` after you
 confirm preview access (otherwise the stack rolls back).
 
-## Post-deploy steps
+## Post-deploy
 
-1. **Finish the GitHub OAuth handshake.** The stack creates the
-   connection in `PENDING_HANDSHAKE`:
-   ```
-   aws cloudformation describe-stacks --stack-name melete-build \
-     --profile melete --query 'Stacks[0].Outputs[?OutputKey==`GitHubConnectionArn`].OutputValue' \
-     --output text
-   ```
-   Open the AWS Console → **Developer Tools → Settings → Connections
-   → melete-github → Update pending connection** → click through the
-   GitHub OAuth flow. CodeBuild projects can't pull source until this
-   is `AVAILABLE`.
+1. **Subscribe the SNS topic.** Already wired if you passed
+   `NotificationEmail`; confirm the AWS-sent email.
 
-2. **Subscribe the SNS topic.** Already done if you passed
-   `NotificationEmail`; confirm the AWS-sent confirmation email.
-
-3. **Smoke test.** Tag a test version:
+2. **Smoke test.** Tag a test version:
    ```
    git tag v0.0.1-test && git push origin v0.0.1-test
    ```
