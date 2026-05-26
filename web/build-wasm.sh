@@ -4,7 +4,7 @@
 #
 # Prereqs (one-time):
 #   rustup target add wasm32-unknown-unknown
-#   cargo install wasm-bindgen-cli --version 0.2.120  # match wasm-bindgen crate
+#   cargo install wasm-bindgen-cli --version 0.2.122  # match wasm-bindgen crate
 #
 # Run from the repo root or the web/ dir — both work.
 

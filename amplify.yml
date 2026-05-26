@@ -27,7 +27,10 @@ frontend:
         - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
         - export PATH="$HOME/.cargo/bin:$PATH"
         - rustup target add wasm32-unknown-unknown
-        - cargo install wasm-bindgen-cli --version 0.2.120 --locked
+        # Must match the wasm-bindgen crate version in Cargo.lock —
+        # wasm-bindgen-cli rejects bytecode written by a different
+        # schema version. Bump in lockstep with the crate.
+        - cargo install wasm-bindgen-cli --version 0.2.122 --locked
         - cd web
         - npm ci
     build:
