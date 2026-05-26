@@ -250,10 +250,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install flatpak + flatpak-builder
+      - name: Install flatpak + flatpak-builder + elfutils (eu-strip)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils
 
       - name: Add Flathub remote + install GNOME 47 runtime
         run: |
