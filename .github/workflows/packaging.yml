@@ -19,6 +19,16 @@ on:
   workflow_dispatch:
   push:
     tags: ['v*']
+  # Run on PRs that touch the packaging pipeline so we catch breakage
+  # before it lands on main. Path-scoped — unrelated PRs don't pay the
+  # ~30-45min matrix cost.
+  pull_request:
+    paths:
+      - '.github/workflows/packaging.yml'
+      - 'packaging/**'
+      - 'crates/melete-app/Cargo.toml'
+      - 'resources/**'
+      - 'Cargo.lock'
 
 permissions:
   contents: read
