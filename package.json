@@ -14,7 +14,7 @@
     "@aws-amplify/backend-cli": "^1.4.0",
     "@aws-appsync/utils": "^2.1.1",
     "@aws-sdk/lib-dynamodb": "^3.1045.0",
-    "@types/node": "^22.19.18",
+    "@types/node": "^25.9.1",
     "aws-cdk": "^2.158.0",
     "aws-cdk-lib": "^2.158.0",
     "constructs": "^10.4.2",
