@@ -47,8 +47,8 @@ package() {
   install -Dm755 melete-app "${pkgdir}/usr/bin/melete-app"
 
   # Desktop entry + icon
-  install -Dm644 app.melete.desktop \
-    "${pkgdir}/usr/share/applications/app.melete.desktop"
-  install -Dm644 app.melete.svg \
-    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/app.melete.svg"
+  install -Dm644 app.melete.Melete.desktop \
+    "${pkgdir}/usr/share/applications/app.melete.Melete.desktop"
+  install -Dm644 app.melete.Melete.svg \
+    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/app.melete.Melete.svg"
 }

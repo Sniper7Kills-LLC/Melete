@@ -210,8 +210,8 @@ jobs:
           chmod +x target/release/melete-app
           STAGE=$(mktemp -d)
           cp target/release/melete-app "${STAGE}/"
-          cp resources/app.melete.desktop "${STAGE}/"
-          cp resources/icons/app.melete.svg "${STAGE}/"
+          cp resources/app.melete.Melete.desktop "${STAGE}/"
+          cp resources/icons/app.melete.Melete.svg "${STAGE}/"
           tar -czf "packaging/arch/melete-${VERSION}.tar.gz" -C "${STAGE}" .
           sed -i "s/^pkgver=.*/pkgver=${VERSION}/" packaging/arch/PKGBUILD
 
@@ -261,9 +261,9 @@ jobs:
           mkdir -p dist
           flatpak-builder --user --install-deps-from=flathub \
             --force-clean --repo=dist/flatpak-repo \
-            dist/flatpak-build packaging/app.melete.yaml
+            dist/flatpak-build packaging/app.melete.Melete.yaml
           flatpak build-bundle dist/flatpak-repo \
-            "dist/melete-${VERSION}.flatpak" app.melete
+            "dist/melete-${VERSION}.flatpak" app.melete.Melete
           sha256sum "dist/melete-${VERSION}.flatpak" > "dist/melete-${VERSION}.flatpak.sha256"
 
       - uses: actions/upload-artifact@v4

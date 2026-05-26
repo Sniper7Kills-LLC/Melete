@@ -15,8 +15,8 @@
 #
 # Inputs:
 #   - target/release/melete-app
-#   - resources/app.melete.desktop  (informational; macOS ignores it)
-#   - resources/icons/app.melete.svg
+#   - resources/app.melete.Melete.desktop  (informational; macOS ignores it)
+#   - resources/icons/app.melete.Melete.svg
 #   - packaging/macos/Info.plist
 #
 # Outputs:
@@ -65,17 +65,17 @@ rm -rf "${ICONSET}"
 mkdir -p "${ICONSET}"
 if command -v sips >/dev/null 2>&1 && command -v rsvg-convert >/dev/null 2>&1; then
     for size in 16 32 64 128 256 512; do
-        rsvg-convert -w "${size}" -h "${size}" resources/icons/app.melete.svg \
+        rsvg-convert -w "${size}" -h "${size}" resources/icons/app.melete.Melete.svg \
             -o "${ICONSET}/icon_${size}x${size}.png"
         # @2x retina variants share the same source rasterised at 2× px.
         rsvg-convert -w "$((size * 2))" -h "$((size * 2))" \
-            resources/icons/app.melete.svg \
+            resources/icons/app.melete.Melete.svg \
             -o "${ICONSET}/icon_${size}x${size}@2x.png"
     done
     iconutil -c icns "${ICONSET}" -o "${APP}/Contents/Resources/AppIcon.icns" \
-        || cp resources/icons/app.melete.svg "${APP}/Contents/Resources/AppIcon.svg"
+        || cp resources/icons/app.melete.Melete.svg "${APP}/Contents/Resources/AppIcon.svg"
 else
-    cp resources/icons/app.melete.svg "${APP}/Contents/Resources/AppIcon.svg"
+    cp resources/icons/app.melete.Melete.svg "${APP}/Contents/Resources/AppIcon.svg"
 fi
 
 # Bundle dylib dependencies into Frameworks/. dylibbundler rewrites

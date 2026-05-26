@@ -87,9 +87,9 @@ mkdir -p "${BIN_DIR}" "${APP_DIR}" "${ICON_DIR}"
 echo "==> Installing to ${PREFIX}"
 install -Dm755 "${TMP}/melete-app" "${BIN_DIR}/melete-app"
 sed "s|^Exec=melete-app|Exec=${BIN_DIR}/melete-app|" \
-    "${TMP}/app.melete.desktop" > "${APP_DIR}/app.melete.desktop"
-chmod 644 "${APP_DIR}/app.melete.desktop"
-install -Dm644 "${TMP}/app.melete.svg" "${ICON_DIR}/app.melete.svg"
+    "${TMP}/app.melete.Melete.desktop" > "${APP_DIR}/app.melete.Melete.desktop"
+chmod 644 "${APP_DIR}/app.melete.Melete.desktop"
+install -Dm644 "${TMP}/app.melete.Melete.svg" "${ICON_DIR}/app.melete.Melete.svg"
 
 if command -v update-desktop-database >/dev/null 2>&1; then
     update-desktop-database "${APP_DIR}" || true

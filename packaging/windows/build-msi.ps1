@@ -9,7 +9,7 @@
 #
 # Inputs:
 #   - target/release/melete-app.exe
-#   - resources/icons/app.melete.svg
+#   - resources/icons/app.melete.Melete.svg
 #   - packaging/windows/wix/main.wxs
 #
 # Outputs:
