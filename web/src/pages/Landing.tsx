@@ -6,27 +6,39 @@
 // Newsreader (body), JetBrains Mono (eyebrows + CTAs). Hand-drawn
 // inline SVG ornaments instead of icon-pack flourishes.
 //
-// The hero download CTA reads `latest.json` from the releases
-// bucket (URL configurable via VITE_RELEASES_MANIFEST_URL at build
-// time) to render the current version and link straight at the
-// signed S3 / CloudFront tarball. Falls back to a GitHub-releases
-// link if the manifest can't load, so the page never ships a
-// broken download.
+// The hero download CTA fetches `manifest.json` from the latest
+// GitHub Release. The release.yml workflow attaches that manifest +
+// per-platform installers to every `v*` tag, so this page is always
+// pointing at the freshest published version. Falls back to the
+// GitHub Releases page if the manifest can't load (network blip
+// during build, in-flight release without a manifest yet) so the
+// download CTA never ships broken.
 
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+const GITHUB_REPO = "Sniper7Kills-LLC/Melete";
+const GITHUB_RELEASES_FALLBACK = `https://github.com/${GITHUB_REPO}/releases`;
+// `/releases/latest/download/<asset>` is the GitHub-provided stable
+// redirect that always points at the latest release's asset; lets us
+// fetch the manifest without going through the GitHub REST API.
 const RELEASES_MANIFEST_URL =
   (import.meta.env.VITE_RELEASES_MANIFEST_URL as string | undefined) ??
-  "https://releases.journal.app/latest.json";
+  `https://github.com/${GITHUB_REPO}/releases/latest/download/manifest.json`;
 
-const GITHUB_RELEASES_FALLBACK =
-  "https://github.com/Sniper7Kills-LLC/Melete/releases";
+interface ReleaseAsset {
+  url: string;
+  sha256?: string;
+  sizeBytes?: number;
+}
 
 interface ReleaseManifest {
   version: string;
   publishedAt: string;
-  platforms: Record<string, { url: string; sha256?: string; sizeBytes?: number }>;
+  // Per-platform, per-format. `linux-x86_64` has subkeys
+  // `appimage` / `deb` / `rpm` / `arch` / `flatpak`; `macos-arm64`
+  // has `dmg` / `app`; `windows-x86_64` has `msi` / `portable`.
+  platforms: Record<string, Record<string, ReleaseAsset>>;
 }
 
 function useLatestRelease(): {
@@ -110,8 +122,12 @@ export function Landing() {
 
 function Hero() {
   const { manifest } = useLatestRelease();
-  const linuxRelease = manifest?.platforms?.["linux-x86_64"];
-  const downloadHref = linuxRelease?.url ?? GITHUB_RELEASES_FALLBACK;
+  // AppImage is the universal Linux installer — runs on any distro
+  // without a package-manager dance, ideal for the headline CTA.
+  // Distro-native .deb/.rpm/.pkg.tar.zst/.flatpak are surfaced on the
+  // Downloads page (linked off the Release page on github).
+  const linuxAppImage = manifest?.platforms?.["linux-x86_64"]?.appimage;
+  const downloadHref = linuxAppImage?.url ?? GITHUB_RELEASES_FALLBACK;
   const versionLabel = manifest?.version ?? "Linux-native";
   return (
     <section className="paper-grain relative overflow-hidden">

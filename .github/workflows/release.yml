@@ -1,70 +1,56 @@
-# Tagged-release builder.
+# Tagged-release builder + GitHub Releases publisher (Phase 7.5, #43).
 #
-# Triggers on `v*` tag push (e.g. `v0.1.0`). Builds the Linux x86_64
-# binary, uploads to a private S3 bucket, and updates a public
-# `latest.json` manifest the marketing landing page reads to wire
-# its "Download for Linux" CTA.
+# Triggers on `v*` tag push. Matrix builds installable artefacts for
+# Linux (deb/rpm/AppImage/Arch/Flatpak), macOS (DMG + .app zip,
+# unsigned), and Windows (MSI + portable zip, unsigned). A final
+# `release` job aggregates SHA256SUMS + manifest.json and attaches
+# everything to a GitHub Release. The Landing page links downloads
+# off `github.com/Sniper7Kills-LLC/Melete/releases/latest`.
 #
-# Storage layout in the bucket:
-#   binaries/<tag>/melete-app-<tag>-linux-x86_64.tar.gz
-#   binaries/<tag>/melete-app-<tag>-linux-x86_64.tar.gz.sha256
-#   latest.json     ← always points at the most recent tag's URLs
-#
-# `latest.json` shape (consumed by web/src/pages/Landing.tsx):
-#   {
-#     "version": "v0.1.0",
-#     "publishedAt": "2026-05-11T00:00:00Z",
-#     "platforms": {
-#       "linux-x86_64": { "url": "...", "sha256": "..." }
-#     }
-#   }
-#
-# Required repo secrets:
-#   AWS_RELEASE_ROLE_ARN   IAM role with `s3:PutObject` +
-#                          `s3:PutObjectAcl` on the releases bucket
-#                          and trust policy allowing GitHub OIDC.
-#   AWS_REGION             e.g. `us-east-1`.
-#   RELEASES_BUCKET        Bucket name (e.g. `journal-releases-prod`).
-#   RELEASES_PUBLIC_URL    Public URL prefix where binaries are served
-#                          (e.g. `https://releases.melete.app` if a
-#                          CloudFront distro is in front of the bucket,
-#                          or the S3 website endpoint).
+# Signing (Apple Developer ID, Windows EV cert) is Phase B — users
+# get the OS "unidentified developer" warning until then.
 
 name: release
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
+  # Manual fire-with-tag-input for ad-hoc verification + dry-runs.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag-like version (e.g. v0.0.1-test) — does NOT publish, only builds + uploads artefacts as workflow run outputs.
+        required: true
+        type: string
 
 permissions:
-  id-token: write   # OIDC into AWS
-  contents: read
+  contents: write   # creating the GitHub Release + uploading assets
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-linux-x86_64:
-    # Needs gtk4 4.12+ for the v4_12 feature; ubuntu-22.04 ships 4.6.9.
+  # ─── Linux x86_64 binary (shared by every Linux artefact job) ────
+  linux-bin:
+    name: linux x86_64 binary
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
 
       - name: Install GTK4 / libadwaita / GL / dbus deps
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev \
-            libadwaita-1-dev \
-            libgl1-mesa-dev \
-            libegl1-mesa-dev \
-            libgles2-mesa-dev \
-            libvulkan-dev \
-            libpoppler-glib-dev \
-            libdbus-1-dev
+            libgtk-4-dev libadwaita-1-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libvulkan-dev libpoppler-glib-dev libdbus-1-dev
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -73,78 +59,488 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: cargo-release-linux-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-release-linux-${{ runner.os }}-
 
-      - name: Build melete-app (release)
+      - name: cargo build --release
         run: cargo build --release -p melete-app --features remote,vello
 
-      - name: Strip + tarball
+      - name: Resolve version
+        id: meta
         run: |
-          strip target/release/melete-app
-          mkdir -p dist
-          cp resources/app.melete.desktop dist/
-          cp resources/icons/app.melete.svg dist/
-          cp target/release/melete-app dist/
-          cp Makefile dist/
-          cd dist
-          tar czf "melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
-            melete-app app.melete.desktop app.melete.svg Makefile
-          sha256sum "melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
-            > "melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz.sha256"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ inputs.tag }}" ]]; then
+            t="${{ inputs.tag }}"
+            echo "version=${t#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(date -u +%Y%m%d.%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
         with:
-          role-to-assume: ${{ secrets.AWS_RELEASE_ROLE_ARN }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          name: melete-linux-x86_64-binary
+          path: target/release/melete-app
+          retention-days: 7
 
-      - name: Upload binary + checksum
-        env:
-          BUCKET: ${{ secrets.RELEASES_BUCKET }}
-        run: |
-          aws s3 cp \
-            "dist/melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz" \
-            "s3://${BUCKET}/binaries/${GITHUB_REF_NAME}/" \
-            --content-type application/gzip \
-            --cache-control "max-age=31536000, immutable, public"
-          aws s3 cp \
-            "dist/melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz.sha256" \
-            "s3://${BUCKET}/binaries/${GITHUB_REF_NAME}/" \
-            --content-type text/plain \
-            --cache-control "max-age=31536000, immutable, public"
+  linux-pkgs:
+    name: linux .deb / .rpm
+    needs: linux-bin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Build + upload latest.json manifest
-        env:
-          BUCKET: ${{ secrets.RELEASES_BUCKET }}
-          PUBLIC_URL: ${{ secrets.RELEASES_PUBLIC_URL }}
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build deps (cargo-deb needs pkg-config probes)
         run: |
-          ARTIFACT="melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz"
-          SHA=$(awk '{print $1}' "dist/${ARTIFACT}.sha256")
-          PUBLISHED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          cat > latest.json <<EOF
-          {
-            "version": "${GITHUB_REF_NAME}",
-            "publishedAt": "${PUBLISHED_AT}",
-            "platforms": {
-              "linux-x86_64": {
-                "url": "${PUBLIC_URL}/binaries/${GITHUB_REF_NAME}/${ARTIFACT}",
-                "sha256": "${SHA}",
-                "sizeBytes": $(stat -c %s "dist/${ARTIFACT}")
-              }
-            }
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev libpoppler-glib-dev libdbus-1-dev
+
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: melete-linux-x86_64-binary
+          path: target/release/
+
+      - run: chmod +x target/release/melete-app
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm
+
+      - name: cargo deb
+        run: |
+          mkdir -p dist
+          cargo deb -p melete-app --no-build --output dist/
+
+      - name: cargo generate-rpm
+        run: cargo generate-rpm -p crates/melete-app --output dist/
+
+      - name: SHA256 sidecars
+        run: |
+          cd dist
+          for f in *.deb *.rpm; do
+            [ -f "$f" ] && sha256sum "$f" > "$f.sha256"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-x86_64-pkgs
+          path: dist/
+          retention-days: 7
+
+  linux-appimage:
+    name: linux AppImage
+    needs: linux-bin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install runtime libs the AppImage will bundle
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-1 libadwaita-1-0 libpoppler-glib8 \
+            libegl1 libgles2 libvulkan1 libdbus-1-3 \
+            libgdk-pixbuf-2.0-0 librsvg2-common \
+            adwaita-icon-theme hicolor-icon-theme \
+            fuse libfuse2 desktop-file-utils
+
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: melete-linux-x86_64-binary
+          path: target/release/
+
+      - run: chmod +x target/release/melete-app
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ needs.linux-bin.outputs.version }}
+        run: bash packaging/appimage/build.sh
+
+      - name: SHA256
+        run: |
+          for f in dist/Melete-*-x86_64.AppImage; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-x86_64-appimage
+          path: dist/Melete-*-x86_64.AppImage*
+          retention-days: 7
+
+  linux-arch:
+    name: linux Arch .pkg.tar.zst
+    needs: linux-bin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: archlinux:latest
+      options: --user root
+    steps:
+      - name: Bootstrap container (makepkg refuses to run as root)
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed base-devel git sudo
+          useradd -m -G wheel builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+
+      - uses: actions/checkout@v4
+
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: melete-linux-x86_64-binary
+          path: target/release/
+
+      - name: Stage tarball PKGBUILD expects
+        env:
+          VERSION: ${{ needs.linux-bin.outputs.version }}
+        run: |
+          set -euxo pipefail
+          chmod +x target/release/melete-app
+          STAGE=$(mktemp -d)
+          cp target/release/melete-app "${STAGE}/"
+          cp resources/app.melete.desktop "${STAGE}/"
+          cp resources/icons/app.melete.svg "${STAGE}/"
+          tar -czf "packaging/arch/melete-${VERSION}.tar.gz" -C "${STAGE}" .
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" packaging/arch/PKGBUILD
+
+      - name: makepkg
+        working-directory: packaging/arch
+        run: |
+          chown -R builder .
+          sudo -u builder makepkg --noextract --skipchecksums --skipinteg --noconfirm
+
+      - name: Stage + SHA256
+        run: |
+          mkdir -p dist
+          mv packaging/arch/melete-bin-*.pkg.tar.zst dist/
+          for f in dist/*.pkg.tar.zst; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-x86_64-arch
+          path: dist/
+          retention-days: 7
+
+  linux-flatpak:
+    name: linux Flatpak
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flatpak + flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+
+      - name: Add Flathub remote + install GNOME 47 runtime
+        run: |
+          flatpak --user remote-add --if-not-exists \
+            flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install -y --noninteractive flathub \
+            org.gnome.Platform//47 org.gnome.Sdk//47
+
+      - name: Build .flatpak bundle
+        env:
+          VERSION: ${{ needs.linux-bin.outputs.version }}
+        run: |
+          mkdir -p dist
+          flatpak-builder --user --install-deps-from=flathub \
+            --force-clean --repo=dist/flatpak-repo \
+            dist/flatpak-build packaging/app.melete.yaml
+          flatpak build-bundle dist/flatpak-repo \
+            "dist/melete-${VERSION}.flatpak" app.melete
+          sha256sum "dist/melete-${VERSION}.flatpak" > "dist/melete-${VERSION}.flatpak.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-flatpak
+          path: |
+            dist/*.flatpak
+            dist/*.sha256
+          retention-days: 7
+
+  # ─── macOS unsigned .app + DMG ───────────────────────────────────
+  macos:
+    name: macOS .app + DMG (unsigned)
+    runs-on: macos-14
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install GTK4 / libadwaita / poppler / dylibbundler / create-dmg / librsvg
+        run: |
+          brew update
+          brew install gtk4 libadwaita poppler pkg-config dylibbundler create-dmg librsvg
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-release-macos-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-release-macos-${{ runner.os }}-
+
+      - name: cargo build --release
+        run: cargo build --release -p melete-app --features remote,vello
+
+      - name: Resolve version
+        id: meta
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ inputs.tag }}" ]]; then
+            t="${{ inputs.tag }}"
+            echo "version=${t#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(date -u +%Y%m%d.%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build .app + DMG
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ARCH: arm64
+        run: bash packaging/macos/build-app.sh
+
+      - name: Zip the .app (preserves bundle resources + perms)
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent dist/Melete.app dist/Melete-${{ steps.meta.outputs.version }}-arm64-app.zip
+
+      - name: SHA256
+        run: |
+          cd dist
+          for f in *.dmg *-app.zip; do
+            [ -f "$f" ] && shasum -a 256 "$f" > "$f.sha256"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: melete-macos-arm64
+          path: |
+            dist/*.dmg
+            dist/*-app.zip
+            dist/*.sha256
+          retention-days: 7
+
+  # ─── Windows unsigned MSI + portable zip ─────────────────────────
+  windows:
+    name: Windows MSI + portable zip (unsigned)
+    runs-on: windows-latest
+    timeout-minutes: 75
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    env:
+      GVSBUILD_VERSION: '2026.4.1'
+      GVSBUILD_ROOT: 'C:\gvsbuild'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-wix
+
+      - name: Download + unpack gvsbuild GTK4 prebuilt
+        shell: pwsh
+        run: |
+          $asset = "GTK4_Gvsbuild_${env:GVSBUILD_VERSION}_x64.zip"
+          $url   = "https://github.com/wingtk/gvsbuild/releases/download/${env:GVSBUILD_VERSION}/${asset}"
+          Write-Host "Fetching $url"
+          New-Item -ItemType Directory -Force -Path $env:GVSBUILD_ROOT | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\gtk.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\gtk.zip" -DestinationPath $env:GVSBUILD_ROOT -Force
+
+      - name: Set GTK env
+        shell: pwsh
+        run: |
+          echo "PKG_CONFIG_PATH=$env:GVSBUILD_ROOT\lib\pkgconfig" >> $env:GITHUB_ENV
+          echo "PATH=$env:GVSBUILD_ROOT\bin;$env:PATH" >> $env:GITHUB_ENV
+          echo "LIB=$env:GVSBUILD_ROOT\lib;$env:LIB" >> $env:GITHUB_ENV
+          echo "INCLUDE=$env:GVSBUILD_ROOT\include;$env:INCLUDE" >> $env:GITHUB_ENV
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-release-windows-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-release-windows-${{ runner.os }}-
+
+      - name: cargo build --release
+        run: cargo build --release -p melete-app --no-default-features --features vello,remote
+
+      - name: Resolve version
+        id: meta
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $v = $env:GITHUB_REF_NAME -replace '^v',''
+          } elseif ($env:INPUT_TAG) {
+            $v = $env:INPUT_TAG -replace '^v',''
+          } else {
+            $v = "$(Get-Date -Format yyyyMMdd.HHmmss)-$($env:GITHUB_SHA.Substring(0,7))"
           }
-          EOF
-          # Short cache TTL — the landing page refetches per visit.
-          aws s3 cp latest.json "s3://${BUCKET}/latest.json" \
-            --content-type application/json \
-            --cache-control "max-age=300, public"
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+
+      - name: Build MSI + portable zip
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: powershell -ExecutionPolicy Bypass -File packaging\windows\build-msi.ps1
+
+      - name: SHA256
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\*.msi, dist\*-portable.zip | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)" | Set-Content "$($_.FullName).sha256"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: melete-windows-x86_64
+          path: |
+            dist/*.msi
+            dist/*-portable.zip
+            dist/*.sha256
+          retention-days: 7
+
+  # ─── GitHub Release + aggregate manifest ─────────────────────────
+  release:
+    name: publish GitHub Release
+    needs: [linux-bin, linux-pkgs, linux-appimage, linux-arch, linux-flatpak, macos, windows]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download every per-OS artefact
+        uses: actions/download-artifact@v4
+        with:
+          path: incoming/
+
+      - name: Flatten + aggregate manifests
+        env:
+          VERSION: ${{ needs.linux-bin.outputs.version }}
+        run: |
+          set -euxo pipefail
+          mkdir -p out
+          # Pull every artefact (including .sha256 sidecars) under
+          # incoming/<artifact-name>/ — flatten into out/.
+          find incoming -mindepth 2 -type f \
+            ! -name 'melete-app' \
+            -exec cp -v {} out/ \;
+          # SHA256SUMS — already have per-file sidecars; concat sorted.
+          (cd out && cat *.sha256 2>/dev/null | sort > SHA256SUMS && rm -f *.sha256)
+          # Per-version manifest.json — drives the in-app updater + the
+          # Landing page's per-platform download tiles. URL points at
+          # the GitHub Release asset path.
+          python3 - <<'PY'
+          import json, os, pathlib
+          from datetime import datetime, timezone
+
+          version = os.environ['VERSION']
+          repo    = 'Sniper7Kills-LLC/Melete'
+          base    = f'https://github.com/{repo}/releases/download/v{version}'
+
+          ext_to_kind = {
+              '.AppImage':     ('linux-x86_64',   'appimage'),
+              '.deb':          ('linux-x86_64',   'deb'),
+              '.rpm':          ('linux-x86_64',   'rpm'),
+              '.pkg.tar.zst':  ('linux-x86_64',   'arch'),
+              '.flatpak':      ('linux-x86_64',   'flatpak'),
+              '.dmg':          ('macos-arm64',    'dmg'),
+              '-app.zip':      ('macos-arm64',    'app'),
+              '.msi':          ('windows-x86_64', 'msi'),
+              '-portable.zip': ('windows-x86_64', 'portable'),
+          }
+
+          sums = {}
+          with open('out/SHA256SUMS') as f:
+              for line in f:
+                  line = line.strip()
+                  if not line: continue
+                  h, name = line.split(None, 1)
+                  sums[name.lstrip('*')] = h
+
+          platforms = {p: {} for p in {'linux-x86_64', 'macos-arm64', 'windows-x86_64'}}
+          for p in pathlib.Path('out').iterdir():
+              if p.name in ('SHA256SUMS', 'manifest.json'):
+                  continue
+              for ext, (platform, kind) in sorted(ext_to_kind.items(), key=lambda kv: -len(kv[0])):
+                  if p.name.endswith(ext):
+                      platforms[platform][kind] = {
+                          'url':       f'{base}/{p.name}',
+                          'sha256':    sums.get(p.name, ''),
+                          'sizeBytes': p.stat().st_size,
+                      }
+                      break
+
+          manifest = {
+              'version':      version,
+              'publishedAt':  datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+              'platforms':    platforms,
+              'releaseNotes': f'https://github.com/{repo}/releases/tag/v{version}',
+          }
+          with open('out/manifest.json', 'w') as f:
+              json.dump(manifest, f, indent=2, sort_keys=True)
+          print(json.dumps(manifest, indent=2))
+          PY
+
+      - name: Create GitHub Release + upload assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euxo pipefail
+          # Release notes body. `gh release view` returns 0 if the
+          # tag was created with an annotated message — pick that up
+          # so the Release page shows whatever the tagger wrote.
+          BODY=$(git tag -l --format='%(contents)' "$TAG" || true)
+          if [ -z "${BODY// }" ]; then
+            BODY="Automated release for ${TAG}.
+
+          See \`SHA256SUMS\` for asset checksums and \`manifest.json\` for the machine-readable platform/format index used by the in-app updater + the Landing page download tiles."
+          fi
+          gh release create "$TAG" \
+            --title "Melete ${TAG}" \
+            --notes "$BODY" \
+            out/*
 
       - name: Summary
         env:
-          PUBLIC_URL: ${{ secrets.RELEASES_PUBLIC_URL }}
+          TAG: ${{ github.ref_name }}
         run: |
-          echo "## Released ${GITHUB_REF_NAME}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Released ${TAG}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Binary:** [${PUBLIC_URL}/binaries/${GITHUB_REF_NAME}/melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz](${PUBLIC_URL}/binaries/${GITHUB_REF_NAME}/melete-app-${GITHUB_REF_NAME}-linux-x86_64.tar.gz)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Manifest:** ${PUBLIC_URL}/latest.json" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Release page:** https://github.com/${{ github.repository }}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"
