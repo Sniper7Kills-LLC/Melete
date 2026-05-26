@@ -15,7 +15,12 @@ concurrency:
 jobs:
   rust:
     name: rust (fmt / clippy / build / test)
-    runs-on: ubuntu-22.04
+    # ubuntu-22.04 ships gtk4 4.6.9 via apt, but the workspace
+    # `gtk4` dep pins `features = ["v4_12"]` — gdk4-sys's build
+    # script then rejects pkg-config's older version. ubuntu-24.04
+    # ships gtk4 4.14, which satisfies both the v4_12 ABI and the
+    # poppler-glib / libadwaita 0.7 floors.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
