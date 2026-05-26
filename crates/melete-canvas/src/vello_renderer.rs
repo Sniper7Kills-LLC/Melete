@@ -1602,7 +1602,11 @@ fn catmull_rom_polyline(path: &mut BezPath, points: &[(f64, f64)]) {
         let p_minus = if i == 0 { points[i] } else { points[i - 1] };
         let p0 = points[i];
         let p1 = points[i + 1];
-        let p_plus = if i + 2 < n { points[i + 2] } else { points[i + 1] };
+        let p_plus = if i + 2 < n {
+            points[i + 2]
+        } else {
+            points[i + 1]
+        };
         let c1 = (
             p0.0 + (p1.0 - p_minus.0) / 6.0,
             p0.1 + (p1.1 - p_minus.1) / 6.0,

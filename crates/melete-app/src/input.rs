@@ -1126,8 +1126,10 @@ fn extend_selection(state: &SharedState, sx: f64, sy: f64) {
         };
         // Index snapshot by id so the lookup inside the strokes loop
         // is O(1) instead of O(n²) for a large multi-select.
-        let mut snap_by_id: std::collections::HashMap<Uuid, &crate::state::SelectionResizeSnapshot> =
-            std::collections::HashMap::with_capacity(snapshot.len());
+        let mut snap_by_id: std::collections::HashMap<
+            Uuid,
+            &crate::state::SelectionResizeSnapshot,
+        > = std::collections::HashMap::with_capacity(snapshot.len());
         for snap in &snapshot {
             snap_by_id.insert(snap.id, snap);
         }

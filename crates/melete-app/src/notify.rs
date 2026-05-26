@@ -31,7 +31,6 @@ impl Severity {
             Severity::Error => 8,
         }
     }
-
 }
 
 thread_local! {

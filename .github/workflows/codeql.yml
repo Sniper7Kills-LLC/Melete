@@ -27,52 +27,24 @@ jobs:
         include:
           - language: actions
             build-mode: none
+          # CodeQL Rust support only ships `build-mode: none` (buildless
+          # extraction) today; `manual` errors out with "Rust does not
+          # support the manual build mode". The standalone extractor is
+          # less precise than tracing extraction, but it's what's
+          # available until the codeql-action Rust extractor lands tracing.
           - language: javascript-typescript
             build-mode: none
           - language: rust
-            build-mode: manual
+            build-mode: none
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install GTK4 / libadwaita / GL deps (rust only)
-        if: matrix.language == 'rust'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libgtk-4-dev \
-            libadwaita-1-dev \
-            libgl1-mesa-dev \
-            libegl1-mesa-dev \
-            libgles2-mesa-dev \
-            libvulkan-dev \
-            libpoppler-glib-dev
-
-      - name: Install Rust toolchain (rust only)
-        if: matrix.language == 'rust'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo (rust only)
-        if: matrix.language == 'rust'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-codeql-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            cargo-codeql-${{ runner.os }}-
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-
-      - name: Build (rust only)
-        if: matrix.language == 'rust'
-        run: cargo build --workspace --features remote,vello
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3

@@ -329,7 +329,9 @@ mod tests {
         Brush::one_layer(
             Uuid::nil(),
             "Test Pen",
-            Geometry::Smooth { resample_step_mm: 0.5 },
+            Geometry::Smooth {
+                resample_step_mm: 0.5,
+            },
             WidthMode::Constant { width_mult: 1.0 },
             TipShape::Round,
         )
@@ -363,7 +365,9 @@ mod tests {
         let b = Brush::one_layer(
             Uuid::nil(),
             "Arrow Pen",
-            Geometry::Smooth { resample_step_mm: 0.5 },
+            Geometry::Smooth {
+                resample_step_mm: 0.5,
+            },
             WidthMode::Constant { width_mult: 1.0 },
             TipShape::Custom {
                 points: vec![(0.0, -1.0), (0.7, 0.4), (-0.7, 0.4)],
@@ -415,6 +419,8 @@ mod tests {
     fn nib_presets_include_round_and_at_least_one_custom() {
         let presets = nib_presets();
         assert!(presets.iter().any(|(name, _)| *name == "Round point"));
-        assert!(presets.iter().any(|(_, t)| matches!(t, TipShape::Custom { .. })));
+        assert!(presets
+            .iter()
+            .any(|(_, t)| matches!(t, TipShape::Custom { .. })));
     }
 }
