@@ -13,22 +13,22 @@
     "@aws-amplify/backend": "^1.4.0",
     "@aws-amplify/backend-cli": "^1.4.0",
     "@aws-appsync/utils": "^2.1.1",
-    "@aws-sdk/lib-dynamodb": "^3.1045.0",
+    "@aws-sdk/lib-dynamodb": "^3.1053.0",
     "@types/node": "^22.19.18",
-    "aws-cdk": "^2.158.0",
-    "aws-cdk-lib": "^2.158.0",
+    "aws-cdk": "^2.1124.1",
+    "aws-cdk-lib": "^2.257.0",
     "constructs": "^10.4.2",
-    "esbuild": "^0.24.0",
+    "esbuild": "^0.28.0",
     "toml": "^3.0.0",
-    "tsx": "^4.19.2",
+    "tsx": "^4.22.3",
     "typescript": "^5.6.3"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.687.0",
-    "@aws-sdk/client-s3": "^3.687.0",
-    "@aws-sdk/s3-request-presigner": "^3.687.0",
+    "@aws-sdk/client-dynamodb": "^3.1053.0",
+    "@aws-sdk/client-s3": "^3.1053.0",
+    "@aws-sdk/s3-request-presigner": "^3.1053.0",
     "@aws-sdk/util-dynamodb": "^3.687.0",
     "stripe": "^17.4.0",
-    "@aws-sdk/client-cognito-identity-provider": "^3.687.0"
+    "@aws-sdk/client-cognito-identity-provider": "^3.1053.0"
   }
 }
