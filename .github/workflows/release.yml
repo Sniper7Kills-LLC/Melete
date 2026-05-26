@@ -223,7 +223,10 @@ jobs:
         working-directory: packaging/arch
         run: |
           chown -R builder .
-          sudo -u builder makepkg --noextract --skipchecksums --skipinteg --noconfirm
+          # --nodeps: pre-built binary; we don't need to install gtk4
+          # etc. into the build container, only declare them as runtime
+          # deps for users installing the .pkg.tar.zst later.
+          sudo -u builder makepkg --noextract --skipchecksums --skipinteg --nodeps --noconfirm
 
       - name: Stage + SHA256
         run: |
