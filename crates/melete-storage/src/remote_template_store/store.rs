@@ -88,6 +88,11 @@ pub trait RemoteTemplateOps {
         -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
     fn list_public_brushes(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
 
+    // ── browse my own (any visibility — owner-only read via byOwner GSI) ──
+    fn list_my_page_templates(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
+    fn list_my_notebook_templates(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
+    fn list_my_brushes(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
+
     fn get_page_template(&mut self, id: Uuid)
         -> Result<(TemplateRow, Vec<AssetMeta>), RemoteError>;
     fn get_notebook_template(&mut self, id: Uuid) -> Result<TemplateRow, RemoteError>;
@@ -153,6 +158,39 @@ query ListPublicNotebookTemplates {
 pub(crate) const Q_LIST_BRUSHES_PUBLIC: &str = r#"
 query ListPublicBrushes {
   listBrushesByVisibility(visibility: PUBLIC, sortDirection: DESC) {
+    items {
+      id owner name description visibility
+      forkedFrom forkCount viewCount updatedAtSort
+    }
+  }
+}
+"#;
+
+pub(crate) const Q_LIST_PAGE_TEMPLATES_MINE: &str = r#"
+query ListMyPageTemplates($owner: String!) {
+  listPageTemplatesByOwner(owner: $owner, sortDirection: DESC) {
+    items {
+      id owner name description category visibility
+      forkedFrom forkCount viewCount updatedAtSort
+    }
+  }
+}
+"#;
+
+pub(crate) const Q_LIST_NOTEBOOK_TEMPLATES_MINE: &str = r#"
+query ListMyNotebookTemplates($owner: String!) {
+  listNotebookTemplatesByOwner(owner: $owner, sortDirection: DESC) {
+    items {
+      id owner name description visibility
+      forkedFrom forkCount viewCount updatedAtSort
+    }
+  }
+}
+"#;
+
+pub(crate) const Q_LIST_BRUSHES_MINE: &str = r#"
+query ListMyBrushes($owner: String!) {
+  listBrushesByOwner(owner: $owner, sortDirection: DESC) {
     items {
       id owner name description visibility
       forkedFrom forkCount viewCount updatedAtSort
@@ -542,6 +580,48 @@ impl RemoteTemplateOps for RemoteTemplateStore {
         let v = self.gql(Q_LIST_BRUSHES_PUBLIC, None, serde_json::json!({}))?;
         let items = v
             .pointer("/listBrushesByVisibility/items")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| RemoteError::Malformed("missing items".into()))?;
+        items.iter().map(parse_summary).collect()
+    }
+
+    fn list_my_page_templates(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError> {
+        let sub = self.user_sub()?;
+        let v = self.gql(
+            Q_LIST_PAGE_TEMPLATES_MINE,
+            None,
+            serde_json::json!({ "owner": sub }),
+        )?;
+        let items = v
+            .pointer("/listPageTemplatesByOwner/items")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| RemoteError::Malformed("missing items".into()))?;
+        items.iter().map(parse_summary).collect()
+    }
+
+    fn list_my_notebook_templates(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError> {
+        let sub = self.user_sub()?;
+        let v = self.gql(
+            Q_LIST_NOTEBOOK_TEMPLATES_MINE,
+            None,
+            serde_json::json!({ "owner": sub }),
+        )?;
+        let items = v
+            .pointer("/listNotebookTemplatesByOwner/items")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| RemoteError::Malformed("missing items".into()))?;
+        items.iter().map(parse_summary).collect()
+    }
+
+    fn list_my_brushes(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError> {
+        let sub = self.user_sub()?;
+        let v = self.gql(
+            Q_LIST_BRUSHES_MINE,
+            None,
+            serde_json::json!({ "owner": sub }),
+        )?;
+        let items = v
+            .pointer("/listBrushesByOwner/items")
             .and_then(|x| x.as_array())
             .ok_or_else(|| RemoteError::Malformed("missing items".into()))?;
         items.iter().map(parse_summary).collect()

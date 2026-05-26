@@ -409,24 +409,52 @@ fn open_account_popover(
 
     let signed_in = crate::sign_in_modal::is_signed_in();
 
-    // Header: email when signed-in, "Not signed in" + Sign in CTA otherwise.
+    // Header: avatar + email when signed-in, "Not signed in" + Sign in CTA otherwise.
     if signed_in {
-        let email_lbl = Label::builder()
-            .label(
-                crate::sign_in_modal::current_email()
-                    .map(|e| format!("Signed in as {}", e))
-                    .unwrap_or_else(|| "Signed in".to_string()),
-            )
+        let email = crate::sign_in_modal::current_email();
+
+        let header_row = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(8)
+            .build();
+
+        // Initials avatar — libadwaita derives initials from the text.
+        let avatar = adw::Avatar::new(40, email.as_deref(), true);
+        header_row.append(&avatar);
+
+        let info_col = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(0)
+            .hexpand(true)
+            .build();
+        let signed_in_lbl = Label::builder()
+            .label("Signed in")
             .halign(Align::Start)
             .build();
-        email_lbl.add_css_class("dim-label");
-        vbox.append(&email_lbl);
+        signed_in_lbl.add_css_class("caption");
+        signed_in_lbl.add_css_class("dim-label");
+        info_col.append(&signed_in_lbl);
+        let email_lbl = Label::builder()
+            .label(email.clone().unwrap_or_default())
+            .halign(Align::Start)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
+            .build();
+        info_col.append(&email_lbl);
+        header_row.append(&info_col);
+        vbox.append(&header_row);
 
         // Live usage block. Single sync fetch on popover open — same
         // pattern as remote_browser. Two HTTPS roundtrips, runs at
         // user-initiated cadence so it doesn't matter that it blocks.
         if let Some(usage_widget) = build_usage_block() {
             vbox.append(&usage_widget);
+        }
+
+        // Published counts (one byOwner GSI call per kind). Renders as
+        // a single horizontal row of three small badges so the popover
+        // stays compact.
+        if let Some(published_widget) = build_published_block() {
+            vbox.append(&published_widget);
         }
     } else {
         let header_lbl = Label::builder()
@@ -486,11 +514,16 @@ fn open_account_popover(
         "emblem-default-symbolic",
         unlock_tip,
     ));
-    vbox.append(&build_gated_row(
-        "Published items",
-        "view-list-symbolic",
-        unlock_tip,
-    ));
+    if !signed_in {
+        // Once signed in, real counts are surfaced inline above by
+        // `build_published_block`; the gated placeholder would just
+        // duplicate the same word.
+        vbox.append(&build_gated_row(
+            "Published items",
+            "view-list-symbolic",
+            unlock_tip,
+        ));
+    }
 
     vbox.append(&Separator::new(Orientation::Horizontal));
 
@@ -640,6 +673,74 @@ fn build_usage_block() -> Option<gtk4::Widget> {
     ));
 
     Some(outer.upcast())
+}
+
+#[cfg(feature = "remote")]
+fn build_published_block() -> Option<gtk4::Widget> {
+    use melete_storage::remote_template_store::store::{RemoteTemplateOps, RemoteTemplateStore};
+
+    let mut store = RemoteTemplateStore::connect().ok()?;
+    if !store.is_signed_in() {
+        return None;
+    }
+    let pt = store.list_my_page_templates().map(|v| v.len()).unwrap_or(0);
+    let nt = store
+        .list_my_notebook_templates()
+        .map(|v| v.len())
+        .unwrap_or(0);
+    let br = store.list_my_brushes().map(|v| v.len()).unwrap_or(0);
+
+    let outer = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_top(4)
+        .margin_bottom(4)
+        .build();
+
+    let head = Label::builder()
+        .label("Your published items")
+        .halign(Align::Start)
+        .build();
+    head.add_css_class("caption-heading");
+    head.add_css_class("dim-label");
+    outer.append(&head);
+
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .build();
+    row.append(&build_published_badge(
+        "view-list-symbolic",
+        "Page templates",
+        pt,
+    ));
+    row.append(&build_published_badge(
+        "x-office-document-symbolic",
+        "Notebook templates",
+        nt,
+    ));
+    row.append(&build_published_badge(
+        "applications-graphics-symbolic",
+        "Brushes",
+        br,
+    ));
+    outer.append(&row);
+
+    Some(outer.upcast())
+}
+
+#[cfg(feature = "remote")]
+fn build_published_badge(icon_name: &str, tooltip: &str, count: usize) -> gtk4::Widget {
+    let cell = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(4)
+        .tooltip_text(tooltip)
+        .build();
+    cell.append(&Image::from_icon_name(icon_name));
+    let val = Label::builder().label(count.to_string()).build();
+    val.add_css_class("caption");
+    cell.append(&val);
+    cell.upcast()
 }
 
 #[cfg(feature = "remote")]
