@@ -1,0 +1,80 @@
+version: 0.2
+
+# macOS arm64 build for Melete (Phase 7.5, #43). Produces:
+#   - Melete.app (zipped via ditto)
+#   - Melete-${VERSION}-arm64.dmg
+#   - .sha256 sidecars
+#
+# UNSIGNED. Gatekeeper warning until Phase B's Apple Developer ID
+# signing + notarization lands.
+#
+# Uploads to:
+#   s3://${RELEASES_BUCKET}/binaries/v${VERSION}/macos-arm64/
+
+env:
+  shell: bash
+
+phases:
+  install:
+    commands:
+      - set -euxo pipefail
+      # Homebrew is preinstalled on CodeBuild macOS images.
+      - brew update
+      - brew install rustup pkg-config gtk4 libadwaita poppler dylibbundler create-dmg librsvg
+      - rustup-init -y --default-toolchain stable
+      - source "$HOME/.cargo/env"
+
+  pre_build:
+    commands:
+      - set -euxo pipefail
+      - source "$HOME/.cargo/env"
+      - |
+        if [[ "${CODEBUILD_WEBHOOK_HEAD_REF:-}" =~ ^refs/tags/v(.*)$ ]]; then
+          export VERSION="${BASH_REMATCH[1]}"
+        else
+          export VERSION="$(date -u +%Y%m%d.%H%M%S)-${CODEBUILD_RESOLVED_SOURCE_VERSION:0:7}"
+        fi
+      - echo "VERSION=${VERSION}" >> /tmp/melete.env
+      - mkdir -p dist
+
+  build:
+    commands:
+      - set -euxo pipefail
+      - source "$HOME/.cargo/env"
+      - source /tmp/melete.env
+
+      - cargo build --release -p melete-app --features remote,vello
+
+      - VERSION="${VERSION}" ARCH=arm64 bash packaging/macos/build-app.sh
+
+      # Zip the .app for upload (preserves bundle resources + perms).
+      - ditto -c -k --sequesterRsrc --keepParent dist/Melete.app "dist/Melete-${VERSION}-arm64-app.zip"
+
+      - |
+        cd dist
+        for f in *.dmg *-app.zip; do
+          [[ -f "$f" ]] || continue
+          shasum -a 256 "$f" > "$f.sha256"
+        done
+        cd ..
+
+  post_build:
+    commands:
+      - set -euxo pipefail
+      - source /tmp/melete.env
+      - aws s3 cp dist/ "s3://${RELEASES_BUCKET}/binaries/v${VERSION}/macos-arm64/" --recursive
+          --exclude "Melete.app/*" --exclude "AppIcon.iconset/*"
+      - echo "Uploaded artefacts to s3://${RELEASES_BUCKET}/binaries/v${VERSION}/macos-arm64/"
+
+artifacts:
+  files:
+    - dist/*.dmg
+    - dist/*-app.zip
+    - dist/*.sha256
+  discard-paths: yes
+
+cache:
+  paths:
+    - /Users/$(whoami)/.cargo/registry/**/*
+    - /Users/$(whoami)/.cargo/git/**/*
+    - target/**/*

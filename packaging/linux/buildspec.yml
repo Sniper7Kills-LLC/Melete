@@ -1,0 +1,131 @@
+version: 0.2
+
+# Linux x86_64 build for Melete (Phase 7.5, #43).
+#
+# Produces, in order:
+#   - target/release/melete-app
+#   - .deb            (cargo-deb)
+#   - .rpm            (cargo-generate-rpm)
+#   - .AppImage       (packaging/appimage/build.sh)
+#   - .pkg.tar.zst    (makepkg, run inside an archlinux container)
+#   - .flatpak        (flatpak-builder against packaging/app.melete.yaml)
+#
+# Each artefact gets a sidecar `.sha256` file written next to it.
+# All artefacts + sidecars are uploaded to:
+#   s3://${RELEASES_BUCKET}/binaries/v${VERSION}/linux-x86_64/
+#
+# `VERSION` is derived from the tag the build was triggered against;
+# defaults to a dated dev string when the build is run manually.
+
+env:
+  shell: bash
+  variables:
+    RUSTFLAGS: '-D warnings'
+
+phases:
+  install:
+    runtime-versions:
+      docker: latest
+    commands:
+      - set -euxo pipefail
+      - apt-get update
+      - apt-get install -y --no-install-recommends
+          libgtk-4-dev libadwaita-1-dev libpoppler-glib-dev libdbus-1-dev
+          libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev libvulkan-dev
+          libgdk-pixbuf-2.0-0 librsvg2-common rsvg-convert
+          adwaita-icon-theme hicolor-icon-theme desktop-file-utils
+          fuse libfuse2 rpm
+      # cargo-deb + cargo-generate-rpm via taiki-e/install-action's
+      # binary fast-path (curl one release tarball each — no source
+      # build).
+      - curl -fsSL https://github.com/kornelski/cargo-deb/releases/latest/download/cargo-deb-x86_64-unknown-linux-musl.tar.xz | tar -xJ -C /usr/local/bin/
+      - curl -fsSL https://github.com/cat-in-136/cargo-generate-rpm/releases/latest/download/cargo-generate-rpm-x86_64-unknown-linux-musl.tar.xz | tar -xJ -C /usr/local/bin/
+
+  pre_build:
+    commands:
+      - set -euxo pipefail
+      # Resolve version: tag → strip the leading `v`; otherwise a
+      # dated dev marker so manual builds don't collide.
+      - |
+        if [[ "${CODEBUILD_WEBHOOK_HEAD_REF:-}" =~ ^refs/tags/v(.*)$ ]]; then
+          export VERSION="${BASH_REMATCH[1]}"
+        else
+          export VERSION="$(date -u +%Y%m%d.%H%M%S)-${CODEBUILD_RESOLVED_SOURCE_VERSION:0:7}"
+        fi
+      - echo "VERSION=${VERSION}" >> /tmp/melete.env
+      - mkdir -p dist
+
+  build:
+    commands:
+      - set -euxo pipefail
+      - source /tmp/melete.env
+
+      # ─── melete-app binary ───
+      - cargo build --release -p melete-app --features remote,vello
+      - cp target/release/melete-app dist/melete-app
+
+      # ─── .deb ───
+      - cargo deb -p melete-app --no-build --output dist/
+
+      # ─── .rpm ───
+      - cargo generate-rpm -p crates/melete-app --output dist/
+
+      # ─── AppImage ───
+      - VERSION="${VERSION}" ARCH=x86_64 bash packaging/appimage/build.sh
+
+      # ─── Arch .pkg.tar.zst (containerised: makepkg refuses to run
+      #     as root + isn't on Ubuntu; pull the official Arch image) ───
+      - |
+        STAGE=$(mktemp -d)
+        cp target/release/melete-app "${STAGE}/"
+        cp resources/app.melete.desktop "${STAGE}/"
+        cp resources/icons/app.melete.svg "${STAGE}/"
+        tar -czf "packaging/arch/melete-${VERSION}.tar.gz" -C "${STAGE}" .
+        sed -i "s/^pkgver=.*/pkgver=${VERSION}/" packaging/arch/PKGBUILD
+        docker run --rm -v "$(pwd)/packaging/arch:/build" -w /build archlinux:latest \
+          bash -c "pacman -Syu --noconfirm && pacman -S --noconfirm --needed base-devel && \
+            useradd -m builder && chown -R builder . && \
+            sudo -u builder makepkg --noextract --skipchecksums --skipinteg --noconfirm"
+        mv packaging/arch/melete-bin-*.pkg.tar.zst dist/
+
+      # ─── Flatpak ───
+      - |
+        apt-get install -y --no-install-recommends flatpak flatpak-builder
+        flatpak --user remote-add --if-not-exists \
+          flathub https://flathub.org/repo/flathub.flatpakrepo
+        flatpak --user install -y --noninteractive flathub \
+          org.gnome.Platform//47 org.gnome.Sdk//47
+        flatpak-builder --user --install-deps-from=flathub \
+          --force-clean --repo=dist/flatpak-repo \
+          dist/flatpak-build packaging/app.melete.yaml
+        flatpak build-bundle dist/flatpak-repo \
+          "dist/melete-${VERSION}.flatpak" app.melete
+
+      # ─── sha256 sidecars ───
+      - |
+        cd dist
+        for f in melete-app *.deb *.rpm *.AppImage *.pkg.tar.zst *.flatpak; do
+          [[ -f "$f" ]] || continue
+          sha256sum "$f" > "$f.sha256"
+        done
+        cd ..
+
+  post_build:
+    commands:
+      - set -euxo pipefail
+      - source /tmp/melete.env
+      # Upload everything under dist/ to S3 at the versioned path.
+      - aws s3 cp dist/ "s3://${RELEASES_BUCKET}/binaries/v${VERSION}/linux-x86_64/" --recursive
+          --exclude "AppDir/*" --exclude "flatpak-build/*" --exclude "flatpak-repo/*" --exclude "tools/*"
+      - echo "Uploaded artefacts to s3://${RELEASES_BUCKET}/binaries/v${VERSION}/linux-x86_64/"
+
+artifacts:
+  files:
+    - dist/*
+  discard-paths: yes
+
+cache:
+  paths:
+    - /root/.cargo/registry/**/*
+    - /root/.cargo/git/**/*
+    - target/**/*

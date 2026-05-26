@@ -1,0 +1,80 @@
+version: 0.2
+
+# Windows x86_64 build for Melete (Phase 7.5, #43). Produces:
+#   - Melete-${VERSION}-x86_64.msi      (cargo-wix)
+#   - Melete-${VERSION}-x86_64-portable.zip
+#   - .sha256 sidecars
+#
+# UNSIGNED. SmartScreen warning until Phase B EV cert.
+#
+# Uploads to:
+#   s3://${RELEASES_BUCKET}/binaries/v${VERSION}/windows-x86_64/
+#
+# Runs on the Windows Server 2022 CodeBuild image. Visual Studio
+# Build Tools, choco, PowerShell, and 7-Zip are preinstalled.
+
+version: 0.2
+
+env:
+  shell: powershell.exe
+  variables:
+    GVSBUILD_VERSION: 2026.4.1
+    GVSBUILD_ROOT: 'C:\gvsbuild'
+
+phases:
+  install:
+    commands:
+      - choco install -y rustup.install
+      - $env:Path = 'C:\Users\ContainerAdministrator\.cargo\bin;' + $env:Path
+      - rustup default stable
+      - rustup target add x86_64-pc-windows-msvc
+      - cargo install cargo-wix --locked
+      # gvsbuild prebuilt GTK4 + libadwaita
+      - $url = "https://github.com/wingtk/gvsbuild/releases/download/${env:GVSBUILD_VERSION}/GTK4_Gvsbuild_${env:GVSBUILD_VERSION}_x64.zip"
+      - New-Item -ItemType Directory -Force -Path $env:GVSBUILD_ROOT | Out-Null
+      - Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\gtk.zip"
+      - Expand-Archive -Path "$env:TEMP\gtk.zip" -DestinationPath $env:GVSBUILD_ROOT -Force
+
+  pre_build:
+    commands:
+      - $env:PKG_CONFIG_PATH = "$env:GVSBUILD_ROOT\lib\pkgconfig"
+      - $env:Path = "$env:GVSBUILD_ROOT\bin;" + $env:Path
+      - $env:LIB = "$env:GVSBUILD_ROOT\lib;" + $env:LIB
+      - $env:INCLUDE = "$env:GVSBUILD_ROOT\include;" + $env:INCLUDE
+      - |
+        if ($env:CODEBUILD_WEBHOOK_HEAD_REF -match '^refs/tags/v(.*)$') {
+          $env:VERSION = $Matches[1]
+        } else {
+          $env:VERSION = (Get-Date -Format yyyyMMdd.HHmmss) + "-" + $env:CODEBUILD_RESOLVED_SOURCE_VERSION.Substring(0,7)
+        }
+      - New-Item -ItemType Directory -Force -Path dist | Out-Null
+
+  build:
+    commands:
+      # PDF feature off — Poppler not in gvsbuild's stock bundle.
+      - cargo build --release -p melete-app --no-default-features --features vello,remote
+      - powershell -ExecutionPolicy Bypass -File packaging\windows\build-msi.ps1
+      - |
+        Get-ChildItem dist\*.msi, dist\*-portable.zip | ForEach-Object {
+          $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($_.Name)" | Set-Content "$($_.FullName).sha256"
+        }
+
+  post_build:
+    commands:
+      - aws s3 cp dist\ "s3://$env:RELEASES_BUCKET/binaries/v$env:VERSION/windows-x86_64/" --recursive
+          --exclude "windows-stage\*"
+      - Write-Host "Uploaded artefacts to s3://$env:RELEASES_BUCKET/binaries/v$env:VERSION/windows-x86_64/"
+
+artifacts:
+  files:
+    - dist/*.msi
+    - dist/*-portable.zip
+    - dist/*.sha256
+  discard-paths: yes
+
+cache:
+  paths:
+    - 'C:\Users\ContainerAdministrator\.cargo\registry\**\*'
+    - 'C:\Users\ContainerAdministrator\.cargo\git\**\*'
+    - target\**\*

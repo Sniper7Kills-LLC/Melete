@@ -1,0 +1,321 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Melete desktop-app build pipeline (Phase 7.5, #43). Provisions:
+    - S3 bucket for release artefacts (versioned, AES256).
+    - CodeBuild projects per OS (Linux x86_64, macOS arm64, Windows
+      x86_64) that build the installer artefacts using the scripts
+      already checked into packaging/<os>/.
+    - CodeBuild "manifest" project that aggregates SHA256SUMS +
+      writes manifest.json + bumps latest.json after the per-OS
+      builds complete.
+    - GitHub source via aws_codeconnections (manual OAuth handshake
+      required post-deploy).
+    - IAM service role scoped to CloudWatch Logs + the releases bucket.
+    - Tag-push webhook trigger on `v*` (filtered).
+    - SNS topic for build-status notifications.
+
+Parameters:
+  GitHubRepo:
+    Type: String
+    Default: Sniper7Kills-LLC/Melete
+    Description: GitHub <owner>/<repo>.
+  ReleasesBucketName:
+    Type: String
+    Default: ''
+    Description: >
+      Explicit S3 bucket name. Leave blank to auto-generate
+      `melete-releases-<account-id>` so the stack can be deployed in
+      any account without name collisions.
+  NotificationEmail:
+    Type: String
+    Default: ''
+    Description: >
+      Subscribed to the SNS topic for build failures. Leave blank to
+      skip subscription (topic still created).
+  EnableMacOS:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      Provision the macOS CodeBuild project. AWS-provided ARM macOS
+      compute is preview-tier in most regions/accounts — set to
+      `false` until you've requested preview access via AWS Support
+      (otherwise the stack fails on project creation).
+
+Conditions:
+  HasExplicitBucketName: !Not [!Equals [!Ref ReleasesBucketName, '']]
+  HasNotificationEmail:  !Not [!Equals [!Ref NotificationEmail, '']]
+  ProvisionMacOS:        !Equals [!Ref EnableMacOS, 'true']
+
+Resources:
+  # ─── Storage ─────────────────────────────────────────────────────
+  ReleasesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !If
+        - HasExplicitBucketName
+        - !Ref ReleasesBucketName
+        - !Sub 'melete-releases-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        # All access is mediated by CloudFront (or signed URLs while
+        # the CDN is still being provisioned in a separate stack).
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  # ─── Notifications ───────────────────────────────────────────────
+  BuildStatusTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: melete-build-status
+      DisplayName: Melete build pipeline status
+
+  BuildStatusSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref BuildStatusTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ─── GitHub source connection ────────────────────────────────────
+  # Created in PENDING_HANDSHAKE state. Operator must click through
+  # the OAuth flow in the AWS Console (CodeBuild → Settings →
+  # Connections → melete-github → "Update pending connection") before
+  # any project can pull source.
+  GitHubConnection:
+    Type: AWS::CodeConnections::Connection
+    Properties:
+      ConnectionName: melete-github
+      ProviderType: GitHub
+
+  # ─── CodeBuild service role ──────────────────────────────────────
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'melete-codebuild-${AWS::AccountId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: codebuild.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/melete-*'
+                  - !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/melete-*:*'
+        - PolicyName: ReleasesBucketReadWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt ReleasesBucket.Arn
+                  - !Sub '${ReleasesBucket.Arn}/*'
+        - PolicyName: SourceConnection
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: codeconnections:GetConnectionToken
+                Resource: !Ref GitHubConnection
+              - Effect: Allow
+                Action: codeconnections:UseConnection
+                Resource: !Ref GitHubConnection
+        - PolicyName: PublishStatusToSns
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref BuildStatusTopic
+
+  # ─── Linux build project ─────────────────────────────────────────
+  LinuxBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: melete-build-linux
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Source:
+        Type: GITHUB
+        Location: !Sub 'https://github.com/${GitHubRepo}.git'
+        BuildSpec: packaging/linux/buildspec.yml
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: !Ref GitHubConnection
+      SourceVersion: refs/heads/main
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/v.*$
+      Environment:
+        Type: LINUX_CONTAINER
+        Image: aws/codebuild/standard:7.0
+        ComputeType: BUILD_GENERAL1_LARGE
+        PrivilegedMode: true   # Docker-in-Docker for Flatpak builder
+        EnvironmentVariables:
+          - Name: RELEASES_BUCKET
+            Value: !Ref ReleasesBucket
+      Artifacts:
+        Type: NO_ARTIFACTS
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: /aws/codebuild/melete-build-linux
+      TimeoutInMinutes: 60
+
+  # ─── Windows build project ───────────────────────────────────────
+  WindowsBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: melete-build-windows
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Source:
+        Type: GITHUB
+        Location: !Sub 'https://github.com/${GitHubRepo}.git'
+        BuildSpec: packaging/windows/buildspec.yml
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: !Ref GitHubConnection
+      SourceVersion: refs/heads/main
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/v.*$
+      Environment:
+        Type: WINDOWS_SERVER_2022_CONTAINER
+        Image: aws/codebuild/windows-base:2022-1.0
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        EnvironmentVariables:
+          - Name: RELEASES_BUCKET
+            Value: !Ref ReleasesBucket
+      Artifacts:
+        Type: NO_ARTIFACTS
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: /aws/codebuild/melete-build-windows
+      TimeoutInMinutes: 90
+
+  # ─── macOS build project (preview — conditional) ─────────────────
+  MacOSBuild:
+    Type: AWS::CodeBuild::Project
+    Condition: ProvisionMacOS
+    Properties:
+      Name: melete-build-macos
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Source:
+        Type: GITHUB
+        Location: !Sub 'https://github.com/${GitHubRepo}.git'
+        BuildSpec: packaging/macos/buildspec.yml
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: !Ref GitHubConnection
+      SourceVersion: refs/heads/main
+      Triggers:
+        Webhook: true
+        FilterGroups:
+          - - Type: EVENT
+              Pattern: PUSH
+            - Type: HEAD_REF
+              Pattern: ^refs/tags/v.*$
+      Environment:
+        Type: MAC_ARM
+        Image: aws/codebuild/macos-arm-base:14
+        ComputeType: BUILD_GENERAL1_LARGE
+        EnvironmentVariables:
+          - Name: RELEASES_BUCKET
+            Value: !Ref ReleasesBucket
+      Artifacts:
+        Type: NO_ARTIFACTS
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: /aws/codebuild/melete-build-macos
+      TimeoutInMinutes: 60
+
+  # ─── Manifest aggregator ─────────────────────────────────────────
+  # Triggered manually after the per-OS builds finish (V1). A future
+  # iteration adds an S3-event-driven Lambda that fires this once all
+  # expected artefacts have landed for the version.
+  ManifestBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: melete-build-manifest
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Source:
+        Type: GITHUB
+        Location: !Sub 'https://github.com/${GitHubRepo}.git'
+        BuildSpec: packaging/manifest/buildspec.yml
+        Auth:
+          Type: CODECONNECTIONS
+          Resource: !Ref GitHubConnection
+      SourceVersion: refs/heads/main
+      Environment:
+        Type: LINUX_CONTAINER
+        Image: aws/codebuild/standard:7.0
+        ComputeType: BUILD_GENERAL1_SMALL
+        EnvironmentVariables:
+          - Name: RELEASES_BUCKET
+            Value: !Ref ReleasesBucket
+      Artifacts:
+        Type: NO_ARTIFACTS
+      LogsConfig:
+        CloudWatchLogs:
+          Status: ENABLED
+          GroupName: /aws/codebuild/melete-build-manifest
+      TimeoutInMinutes: 15
+
+Outputs:
+  ReleasesBucketName:
+    Description: S3 bucket holding release artefacts + manifests.
+    Value: !Ref ReleasesBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ReleasesBucket'
+  GitHubConnectionArn:
+    Description: >
+      CodeConnections ARN — finish the OAuth handshake via the AWS
+      Console before any CodeBuild project can pull source.
+    Value: !Ref GitHubConnection
+  BuildStatusTopicArn:
+    Description: Subscribe additional endpoints to this SNS topic for build alerts.
+    Value: !Ref BuildStatusTopic
+  LinuxBuildName:
+    Value: !Ref LinuxBuild
+  WindowsBuildName:
+    Value: !Ref WindowsBuild
+  MacOSBuildName:
+    Condition: ProvisionMacOS
+    Value: !Ref MacOSBuild
+  ManifestBuildName:
+    Value: !Ref ManifestBuild

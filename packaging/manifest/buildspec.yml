@@ -1,0 +1,147 @@
+version: 0.2
+
+# Manifest aggregator (Phase 7.5, #43).
+#
+# Triggered manually after the per-OS builds finish (start via
+# `aws codebuild start-build --project-name melete-build-manifest
+# --environment-variables-override name=VERSION,value=0.1.0` or via
+# the AWS Console).
+#
+# Reads every artefact under s3://${RELEASES_BUCKET}/binaries/v${VERSION}/
+# and emits two manifests at the version's S3 prefix:
+#   - manifest.json   per-version, platform/format dict with url +
+#                     sha256 + sizeBytes per artefact
+#   - SHA256SUMS      flat text file (one `<hash>  <filename>` per line)
+#
+# Then bumps the root pointer at s3://${RELEASES_BUCKET}/latest.json
+# so the in-app updater (axoupdater, Phase B) and the Landing-page
+# download CTAs see the new version.
+#
+# Inputs (env):
+#   RELEASES_BUCKET — set by the CFN stack.
+#   VERSION         — override at `start-build`; required.
+
+env:
+  shell: bash
+  variables:
+    RUSTFLAGS: ''
+
+phases:
+  install:
+    commands:
+      - apt-get update && apt-get install -y --no-install-recommends jq
+
+  pre_build:
+    commands:
+      - set -euxo pipefail
+      - test -n "${VERSION:-}" || { echo "VERSION env var required"; exit 1; }
+      - mkdir -p out
+
+  build:
+    commands:
+      - set -euxo pipefail
+      - PREFIX="binaries/v${VERSION}"
+
+      # 1. Aggregate every .sha256 sidecar in the version prefix into
+      #    a single SHA256SUMS file (sorted, deterministic).
+      - aws s3 sync "s3://${RELEASES_BUCKET}/${PREFIX}/" out/ --exclude "*" --include "*.sha256"
+      - |
+        if compgen -G "out/**/*.sha256" > /dev/null; then
+          cat out/**/*.sha256 | sort > out/SHA256SUMS
+        else
+          echo "no .sha256 sidecars under ${PREFIX} — did the per-OS builds run?"
+          exit 1
+        fi
+
+      # 2. Build manifest.json from the same shas + a HEAD on every
+      #    object to read its size.
+      - |
+        python3 <<'PY'
+        import json, os, subprocess, sys
+        from datetime import datetime, timezone
+
+        bucket  = os.environ['RELEASES_BUCKET']
+        version = os.environ['VERSION']
+        prefix  = f'binaries/v{version}'
+
+        platforms = {
+            'linux-x86_64':   {},
+            'macos-arm64':    {},
+            'windows-x86_64': {},
+        }
+        ext_to_kind = {
+            '.AppImage':       ('linux-x86_64',   'appimage'),
+            '.deb':            ('linux-x86_64',   'deb'),
+            '.rpm':            ('linux-x86_64',   'rpm'),
+            '.pkg.tar.zst':    ('linux-x86_64',   'arch'),
+            '.flatpak':        ('linux-x86_64',   'flatpak'),
+            '.dmg':            ('macos-arm64',    'dmg'),
+            '-app.zip':        ('macos-arm64',    'app'),
+            '.msi':            ('windows-x86_64', 'msi'),
+            '-portable.zip':   ('windows-x86_64', 'portable'),
+        }
+
+        # Read SHA256SUMS produced in step 1.
+        sums = {}
+        with open('out/SHA256SUMS') as f:
+            for line in f:
+                line = line.strip()
+                if not line: continue
+                h, name = line.split(None, 1)
+                sums[name.lstrip('*')] = h
+
+        # Inventory the artefacts.
+        out = subprocess.check_output(
+            ['aws', 's3api', 'list-objects-v2',
+             '--bucket', bucket, '--prefix', prefix,
+             '--query', 'Contents[].{Key:Key,Size:Size}',
+             '--output', 'json'],
+            text=True,
+        )
+        for obj in json.loads(out) or []:
+            key  = obj['Key']
+            size = obj['Size']
+            name = key.rsplit('/', 1)[-1]
+            if name.endswith('.sha256'):
+                continue
+            # Match longest extension first so `-portable.zip` beats `.zip`.
+            for ext, (platform, kind) in sorted(ext_to_kind.items(), key=lambda kv: -len(kv[0])):
+                if name.endswith(ext):
+                    platforms[platform][kind] = {
+                        'url':       f'https://{bucket}.s3.amazonaws.com/{key}',
+                        'sha256':    sums.get(name, ''),
+                        'sizeBytes': size,
+                    }
+                    break
+
+        manifest = {
+            'version':     version,
+            'publishedAt': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+            'platforms':   platforms,
+            'releaseNotes': f'https://github.com/Sniper7Kills-LLC/Melete/releases/tag/v{version}',
+        }
+        with open('out/manifest.json', 'w') as f:
+            json.dump(manifest, f, indent=2, sort_keys=True)
+        print(json.dumps(manifest, indent=2))
+        PY
+
+  post_build:
+    commands:
+      - set -euxo pipefail
+      - PREFIX="binaries/v${VERSION}"
+      # Per-version artefacts (SHA256SUMS + manifest.json) under the
+      # version path. Short cache so a republish of the same version
+      # propagates fast; the artefacts themselves stay immutable.
+      - aws s3 cp out/SHA256SUMS  "s3://${RELEASES_BUCKET}/${PREFIX}/SHA256SUMS"
+          --content-type text/plain --cache-control "max-age=300, public"
+      - aws s3 cp out/manifest.json "s3://${RELEASES_BUCKET}/${PREFIX}/manifest.json"
+          --content-type application/json --cache-control "max-age=300, public"
+      # Bump the root pointer.
+      - aws s3 cp out/manifest.json "s3://${RELEASES_BUCKET}/latest.json"
+          --content-type application/json --cache-control "max-age=60, public"
+
+artifacts:
+  files:
+    - out/SHA256SUMS
+    - out/manifest.json
+  discard-paths: yes
