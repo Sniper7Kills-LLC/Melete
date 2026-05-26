@@ -1,0 +1,54 @@
+# Maintainer: Sniper7Kills LLC <sniper7kills@gmail.com>
+#
+# Arch Linux PKGBUILD (Phase 7.5, #43).
+#
+# Two paths:
+#   1. AUR submission as `melete-bin` — sources the pre-built tarball
+#      from releases.melete.app, no rust toolchain on the user side.
+#   2. Source build as `melete` — clones the repo, runs `cargo build
+#      --release`. Heavier first install (full Rust dep tree).
+#
+# The CI workflow uses path 1: downloads the artefact from the same
+# job, drops it into ./src/, then runs `makepkg --noextract` to
+# produce a binary `.pkg.tar.zst`. AUR upload (path 1) is a separate
+# manual step gated on the maintainer (Sniper7Kills LLC).
+
+pkgname=melete-bin
+_pkgname=melete
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Personal stylus-friendly notebook, journal & planner"
+arch=('x86_64')
+url="https://melete.app"
+license=('AGPL3')
+depends=(
+  'gtk4>=4.12'
+  'libadwaita>=1.4'
+  'poppler-glib'
+  'mesa'
+  'vulkan-icd-loader'
+  'dbus'
+)
+provides=("${_pkgname}=${pkgver}")
+conflicts=("${_pkgname}")
+options=('!strip' '!debug')
+
+# Source is the pre-built tarball produced by the packaging.yml
+# `linux-bin` job — `$pkgname-$pkgver.tar.gz` containing the
+# `melete-app` binary, the desktop entry, and the icon. The hash is
+# updated per-release by the CI step before `makepkg` runs.
+source=("${_pkgname}-${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "${srcdir}"
+
+  # melete-app binary
+  install -Dm755 melete-app "${pkgdir}/usr/bin/melete-app"
+
+  # Desktop entry + icon
+  install -Dm644 app.melete.desktop \
+    "${pkgdir}/usr/share/applications/app.melete.desktop"
+  install -Dm644 app.melete.svg \
+    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/app.melete.svg"
+}

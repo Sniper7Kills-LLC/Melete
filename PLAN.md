@@ -416,7 +416,7 @@ issue so the work splits cleanly across sessions.
 ### 7.1 Final product name
 
 - [x] Renamed the project to **Melete** (Greek Muse of meditation and
-  practice). AppId is `dev.s7k.melete`, domain is
+  practice). AppId is `app.melete`, domain is
   [melete.app](https://melete.app), repo is
   `Sniper7Kills-LLC/Melete`. All crates renamed `journal-*` →
   `melete-*`; storage paths migrate `~/.local/share/journal/` and

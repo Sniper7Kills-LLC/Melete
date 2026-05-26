@@ -1,0 +1,30 @@
+app-id: app.melete
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: melete-app
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --filesystem=xdg-data/melete:create
+  - --filesystem=xdg-config/melete:create
+  # Network access for the Amplify-backed catalog + remote sync. The
+  # `--share=network` finish-arg grants generic outbound TCP / DNS —
+  # the Rust client only talks to *.amazonaws.com / our domain so the
+  # Flatpak portal still mediates filesystem access.
+  - --share=network
+
+modules:
+  - name: melete-app
+    buildsystem: simple
+    build-commands:
+      - cargo build --release -p melete-app
+      - install -Dm755 target/release/melete-app /app/bin/melete-app
+      - install -Dm644 resources/app.melete.desktop /app/share/applications/app.melete.desktop
+      - install -Dm644 resources/icons/app.melete.svg /app/share/icons/hicolor/scalable/apps/app.melete.svg
+    sources:
+      - type: dir
+        path: ..

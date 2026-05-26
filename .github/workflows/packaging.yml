@@ -1,0 +1,502 @@
+# Cross-platform installer build pipeline (Phase 7.5, #43).
+#
+# Builds installable artefacts for Linux (.deb, .rpm, Arch, AppImage,
+# Flatpak), macOS (.app + DMG, unsigned), and Windows (MSI + portable
+# zip, unsigned). All jobs run on `workflow_dispatch` (manual trigger
+# for ad-hoc verification) and on every `v*` tag push (real release).
+# Tag pushes additionally upload to the releases S3 bucket from #66
+# once that stack is deployed — gated on the `AWS_RELEASE_ROLE_ARN`
+# secret being set; absence = skip upload, artefacts available in the
+# Actions run page only.
+#
+# Signing + notarization (Apple Developer ID + Windows EV cert) are
+# Phase B work — both macOS and Windows ship unsigned for now.
+# Flathub submission lives downstream of the per-tag build.
+
+name: packaging
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write   # OIDC into AWS for release uploads
+
+concurrency:
+  # Two parallel tag pushes would race on identical S3 paths and
+  # latest.json content. Serialise.
+  group: packaging-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ─── Linux ─────────────────────────────────────────────────────────
+  linux-bin:
+    name: linux x86_64 binary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install GTK4 / libadwaita / GL / dbus deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libvulkan-dev libpoppler-glib-dev libdbus-1-dev
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-pkg-linux-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-pkg-linux-${{ runner.os }}-
+
+      - name: cargo build --release
+        run: cargo build --release -p melete-app --features remote,vello
+
+      - name: Resolve version
+        id: meta
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(date -u +%Y%m%d.%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload binary artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-x86_64-binary
+          path: target/release/melete-app
+          retention-days: 7
+
+  linux-deb:
+    name: linux .deb
+    needs: linux-bin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install GTK4 system deps (build-script probes need pkg-config)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev libpoppler-glib-dev libdbus-1-dev
+
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: melete-linux-x86_64-binary
+          path: target/release/
+
+      - name: chmod +x downloaded binary
+        run: chmod +x target/release/melete-app
+
+      - name: Install cargo-deb
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+
+      - name: cargo deb --no-build
+        run: cargo deb -p melete-app --no-build --output target/debian/melete.deb
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-x86_64-deb
+          path: target/debian/melete.deb
+          retention-days: 30
+
+  linux-rpm:
+    name: linux .rpm
+    needs: linux-bin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: melete-linux-x86_64-binary
+          path: target/release/
+
+      - name: chmod +x downloaded binary
+        run: chmod +x target/release/melete-app
+
+      - name: Install cargo-generate-rpm
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-generate-rpm
+
+      - name: cargo generate-rpm
+        run: cargo generate-rpm -p crates/melete-app --output target/generate-rpm/melete.rpm
+
+      - name: Upload .rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-x86_64-rpm
+          path: target/generate-rpm/melete.rpm
+          retention-days: 30
+
+  linux-appimage:
+    name: linux AppImage
+    needs: linux-bin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GTK4 / libadwaita / loader plugins
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-1 libadwaita-1-0 libpoppler-glib8 \
+            libegl1 libgles2 libvulkan1 libdbus-1-3 \
+            libgdk-pixbuf-2.0-0 librsvg2-common \
+            adwaita-icon-theme hicolor-icon-theme \
+            fuse libfuse2 desktop-file-utils
+
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: melete-linux-x86_64-binary
+          path: target/release/
+
+      - name: chmod +x downloaded binary
+        run: chmod +x target/release/melete-app
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ needs.linux-bin.outputs.version }}
+        run: bash packaging/appimage/build.sh
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-x86_64-AppImage
+          path: dist/Melete-*-x86_64.AppImage
+          retention-days: 30
+
+  linux-arch:
+    name: linux Arch .pkg.tar.zst
+    needs: linux-bin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # makepkg only ships on Arch; bind-mount the repo into an Arch
+    # container so we don't have to bootstrap pacman on Ubuntu.
+    container:
+      image: archlinux:latest
+      options: --user root
+    steps:
+      - name: Install build deps inside container
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed base-devel git sudo
+          # makepkg refuses to run as root.
+          useradd -m -G wheel builder
+          echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+
+      - uses: actions/checkout@v4
+
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: melete-linux-x86_64-binary
+          path: target/release/
+
+      - name: Assemble source tarball PKGBUILD expects
+        env:
+          VERSION: ${{ needs.linux-bin.outputs.version }}
+        run: |
+          set -euxo pipefail
+          chmod +x target/release/melete-app
+          STAGE=$(mktemp -d)
+          cp target/release/melete-app "${STAGE}/"
+          cp resources/app.melete.desktop "${STAGE}/"
+          cp resources/icons/app.melete.svg "${STAGE}/"
+          tar -czf "packaging/arch/melete-${VERSION}.tar.gz" -C "${STAGE}" .
+          # Rewrite the pkgver in PKGBUILD so the .pkg.tar.zst is named
+          # consistently with the rest of the matrix.
+          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" packaging/arch/PKGBUILD
+
+      - name: makepkg
+        working-directory: packaging/arch
+        run: |
+          chown -R builder .
+          sudo -u builder makepkg --noextract --skipchecksums --skipinteg --noconfirm
+
+      - name: Upload .pkg.tar.zst
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-x86_64-arch
+          path: packaging/arch/melete-bin-*.pkg.tar.zst
+          retention-days: 30
+
+  linux-flatpak:
+    name: linux Flatpak
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Builds the existing `packaging/app.melete.yaml` manifest with
+    # flatpak-builder + the GNOME 47 Platform/SDK runtime. Output is
+    # a `.flatpak` bundle suitable for ad-hoc install
+    # (`flatpak install --user melete.flatpak`); Flathub submission
+    # is a separate manual PR against the flathub/dev.s7k.melete repo
+    # (Phase B work).
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install flatpak + flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            flatpak flatpak-builder
+
+      - name: Add Flathub remote (user-scope)
+        run: |
+          flatpak --user remote-add --if-not-exists \
+            flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install GNOME 47 Platform/SDK
+        run: |
+          flatpak --user install -y --noninteractive flathub \
+            org.gnome.Platform//47 org.gnome.Sdk//47
+
+      - name: Build Flatpak bundle
+        run: |
+          flatpak-builder --user --install-deps-from=flathub \
+            --force-clean --repo=dist/flatpak-repo \
+            dist/flatpak-build packaging/app.melete.yaml
+          flatpak build-bundle dist/flatpak-repo \
+            dist/melete.flatpak app.melete
+
+      - name: Upload Flatpak bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-linux-flatpak
+          path: dist/melete.flatpak
+          retention-days: 30
+
+  # ─── macOS ─────────────────────────────────────────────────────────
+  macos:
+    name: macOS .app + DMG (unsigned)
+    runs-on: macos-14   # Apple Silicon (arm64) runner
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install GTK4 / libadwaita / poppler / dylibbundler / create-dmg
+        run: |
+          brew update
+          brew install gtk4 libadwaita poppler pkg-config dylibbundler create-dmg librsvg
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-pkg-macos-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-pkg-macos-${{ runner.os }}-
+
+      - name: cargo build --release
+        run: cargo build --release -p melete-app --features remote,vello
+
+      - name: Resolve version
+        id: meta
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$(date -u +%Y%m%d.%H%M%S)-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build .app + DMG
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ARCH: arm64
+        run: bash packaging/macos/build-app.sh
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-macos-arm64-dmg
+          path: dist/Melete-*-arm64.dmg
+          retention-days: 30
+
+      - name: Upload .app (zipped — preserves bundle structure)
+        run: ditto -c -k --sequesterRsrc --keepParent dist/Melete.app dist/Melete-app-arm64.zip
+
+      - name: Upload .app zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-macos-arm64-app
+          path: dist/Melete-app-arm64.zip
+          retention-days: 30
+
+  # ─── Windows ───────────────────────────────────────────────────────
+  windows:
+    name: Windows MSI + portable zip (unsigned)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    env:
+      # gvsbuild releases publish prebuilt GTK4 + libadwaita tarballs;
+      # the workflow downloads and unpacks one to skip the 1 hr+
+      # local build. URL pinned to the version that matches our
+      # workspace's gtk4 v4_12 feature floor.
+      GVSBUILD_VERSION: '2025.7.0'
+      GVSBUILD_ROOT: 'C:\gvsbuild'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (msvc)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install cargo-wix
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-wix
+
+      - name: Download + unpack gvsbuild GTK4 prebuilt
+        shell: pwsh
+        run: |
+          $url = "https://github.com/wingtk/gvsbuild/releases/download/$env:GVSBUILD_VERSION/GTK4_Gvsbuild_$env:GVSBUILD_VERSION`_x64.zip"
+          New-Item -ItemType Directory -Force -Path $env:GVSBUILD_ROOT | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\gtk.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\gtk.zip" -DestinationPath $env:GVSBUILD_ROOT -Force
+
+      - name: Set GTK / pkg-config env for the build
+        shell: pwsh
+        run: |
+          echo "PKG_CONFIG_PATH=$env:GVSBUILD_ROOT\lib\pkgconfig" >> $env:GITHUB_ENV
+          echo "PATH=$env:GVSBUILD_ROOT\bin;$env:PATH" >> $env:GITHUB_ENV
+          echo "LIB=$env:GVSBUILD_ROOT\lib;$env:LIB" >> $env:GITHUB_ENV
+          echo "INCLUDE=$env:GVSBUILD_ROOT\include;$env:INCLUDE" >> $env:GITHUB_ENV
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-pkg-windows-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-pkg-windows-${{ runner.os }}-
+
+      - name: cargo build --release
+        # `pdf` feature dropped on Windows for now — Poppler doesn't
+        # ship in gvsbuild's stock GTK4 bundle. Tracked separately.
+        run: cargo build --release -p melete-app --no-default-features --features vello,remote
+
+      - name: Resolve version
+        id: meta
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $v = $env:GITHUB_REF_NAME -replace '^v',''
+          } else {
+            $v = "$(Get-Date -Format yyyyMMdd.HHmmss)-$($env:GITHUB_SHA.Substring(0,7))"
+          }
+          echo "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build MSI + portable zip
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: powershell -ExecutionPolicy Bypass -File packaging/windows/build-msi.ps1
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-windows-x86_64-msi
+          path: dist/Melete-*-x86_64.msi
+          retention-days: 30
+
+      - name: Upload portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: melete-windows-x86_64-portable
+          path: dist/Melete-*-x86_64-portable.zip
+          retention-days: 30
+
+  # ─── Release upload (tag push only) ────────────────────────────────
+  release-upload:
+    name: upload artefacts to releases.melete.app
+    needs: [linux-bin, linux-deb, linux-rpm, linux-appimage, linux-arch, linux-flatpak, macos, windows]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artefacts/
+
+      - name: Configure AWS credentials (OIDC)
+        # Skips silently when AWS_RELEASE_ROLE_ARN secret is unset — lets
+        # the rest of the workflow keep producing artefacts for the
+        # Actions run page even before the #66 stack is deployed.
+        if: ${{ env.AWS_RELEASE_ROLE_ARN != '' }}
+        env:
+          AWS_RELEASE_ROLE_ARN: ${{ secrets.AWS_RELEASE_ROLE_ARN }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_RELEASE_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Sync artefacts to S3
+        if: ${{ env.AWS_RELEASE_ROLE_ARN != '' }}
+        env:
+          AWS_RELEASE_ROLE_ARN: ${{ secrets.AWS_RELEASE_ROLE_ARN }}
+          BUCKET: ${{ secrets.RELEASES_BUCKET }}
+          VERSION: ${{ needs.linux-bin.outputs.version }}
+        run: |
+          for dir in artefacts/*/; do
+            name=$(basename "$dir")
+            aws s3 cp --recursive "$dir" "s3://${BUCKET}/binaries/v${VERSION}/" \
+              --cache-control "max-age=31536000, immutable, public"
+          done
+
+      - name: Skip notice (no releases stack yet)
+        if: ${{ env.AWS_RELEASE_ROLE_ARN == '' }}
+        env:
+          AWS_RELEASE_ROLE_ARN: ${{ secrets.AWS_RELEASE_ROLE_ARN }}
+        run: |
+          echo "## Artefacts built but not uploaded" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`AWS_RELEASE_ROLE_ARN\` is unset — deploy the releases stack from infra/releases/ then re-run the workflow to publish." >> "$GITHUB_STEP_SUMMARY"

@@ -62,7 +62,7 @@ use melete_storage::{MultiFileSqliteBackend, NotebookBackend};
 use melete_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use tracing_subscriber::EnvFilter;
 
-const APP_ID: &str = "dev.s7k.melete";
+const APP_ID: &str = "app.melete";
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
