@@ -75,8 +75,12 @@ fn sine_arc(style: ToolStyle, color: Color, width: f64) -> Stroke {
 }
 
 fn bbox_of(pts: &[StrokePoint]) -> Rect {
-    let (mut xmin, mut ymin, mut xmax, mut ymax) =
-        (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
+    let (mut xmin, mut ymin, mut xmax, mut ymax) = (
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NEG_INFINITY,
+    );
     for p in pts {
         xmin = xmin.min(p.x);
         ymin = ymin.min(p.y);

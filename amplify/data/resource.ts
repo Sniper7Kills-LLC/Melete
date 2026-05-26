@@ -381,6 +381,35 @@ const schema = a.schema({
       allow.groups(['admin', 'superadmin']).to(['read']),
     ]),
 
+  // User-submitted feedback (#42). Created by any caller — auth or
+  // public API key — so anonymous bug reports work too. Read-restricted
+  // to admins; the maintainer triages from the admin portal. No SES
+  // wiring yet; that's a follow-up under #42 once volume justifies an
+  // email pipeline. PK is auto id; sourceApp ∈ {"web","desktop"}.
+  Feedback: a
+    .model({
+      id: a.id().required(),
+      owner: a.string(),
+      sourceApp: a.string().required(),
+      version: a.string(),
+      severity: a.string().required(),
+      message: a.string().required(),
+      contactEmail: a.string(),
+      userAgent: a.string(),
+      createdAtIso: a.string().required(),
+      triagedAtIso: a.string(),
+    })
+    .secondaryIndexes((index) => [
+      index('sourceApp')
+        .sortKeys(['createdAtIso'])
+        .queryField('listFeedbackBySource'),
+    ])
+    .authorization((allow) => [
+      allow.publicApiKey().to(['create']),
+      allow.authenticated().to(['create']),
+      allow.groups(['admin', 'superadmin']).to(['read', 'update']),
+    ]),
+
   Visibility,
   SavedKind,
 

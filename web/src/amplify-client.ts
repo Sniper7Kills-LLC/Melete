@@ -626,6 +626,24 @@ interface AdminStatsOps {
   get(args: { id: string }): Promise<GetResult<AdminStatsRow>>;
 }
 
+export interface FeedbackCreateInput {
+  id: string;
+  sourceApp: 'web' | 'desktop';
+  version?: string | null;
+  severity: 'bug' | 'feature' | 'question' | 'other';
+  message: string;
+  contactEmail?: string | null;
+  userAgent?: string | null;
+  createdAtIso: string;
+}
+
+interface FeedbackOps {
+  create(
+    input: FeedbackCreateInput,
+    opts?: CreateOpts,
+  ): Promise<GetResult<unknown>>;
+}
+
 interface AmplifyDataClient {
   models: {
     PageTemplate: PageTemplateOps;
@@ -640,6 +658,7 @@ interface AmplifyDataClient {
     UserDailyUsage: UserDailyUsageOps;
     TierConfig: TierConfigOps;
     AdminStats: AdminStatsOps;
+    Feedback: FeedbackOps;
   };
   mutations: MutationOps;
   subscriptions: SubscriptionsOps;

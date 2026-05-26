@@ -25,6 +25,7 @@ import { NotebookViewer } from "./pages/NotebookViewer";
 import { Billing } from "./pages/Billing";
 import { Admin } from "./pages/Admin";
 import { Landing } from "./pages/Landing";
+import { Feedback } from "./pages/Feedback";
 import { useUnits } from "./store/unitsStore";
 import { useAuthenticator } from "@aws-amplify/ui-react";
 import { fetchAuthSession } from "aws-amplify/auth";
@@ -203,6 +204,7 @@ function App() {
               <Route path="/admin" element={<Admin />} />
               <Route path="/t/:kind/:id" element={<Share />} />
               <Route path="/n/:id" element={<NotebookViewer />} />
+              <Route path="/feedback" element={<Feedback />} />
               <Route
                 path="*"
                 element={

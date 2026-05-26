@@ -960,6 +960,32 @@ fn build_menu_button(
     }
     vbox.append(&prefs_btn);
 
+    // ── Send feedback (#42) ──────────────────────────────────────────
+    // Opens https://melete.app/feedback in the user's default browser
+    // with `?from=desktop&version=<v>` so the inbox attributes the
+    // report. Keeps the in-app surface tiny — full form lives on web.
+    let feedback_btn = Button::with_label("Send feedback…");
+    {
+        let popover_clone = popover.clone();
+        let parent_clone = parent.clone();
+        feedback_btn.connect_clicked(move |_| {
+            popover_clone.popdown();
+            let version = env!("CARGO_PKG_VERSION");
+            let url = format!("https://melete.app/feedback?from=desktop&version={version}");
+            let launcher = gtk4::UriLauncher::new(&url);
+            launcher.launch(
+                Some(&parent_clone),
+                gtk4::gio::Cancellable::NONE,
+                |result| {
+                    if let Err(e) = result {
+                        tracing::warn!("UriLauncher failed: {e}");
+                    }
+                },
+            );
+        });
+    }
+    vbox.append(&feedback_btn);
+
     popover.set_child(Some(&vbox));
 
     MenuButton::builder()
