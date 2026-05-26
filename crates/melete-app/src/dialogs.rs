@@ -29,6 +29,10 @@ pub(crate) fn persist_notebook_template(
     let res = crate::template_io::put_notebook_template(&s.backend, &s.notebook_templates, t);
     if let Err(e) = &res {
         tracing::warn!("persist_notebook_template {}: {:#}", t.id.0, e);
+        crate::notify::toast(
+            format!("Failed to save notebook template: {e}"),
+            crate::notify::Severity::Error,
+        );
     }
     res
 }

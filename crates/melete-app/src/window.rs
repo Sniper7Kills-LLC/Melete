@@ -23,7 +23,7 @@ pub const NOTEBOOK_TEMPLATE_EDITOR_NAME: &str = "notebook_template_editor";
 const TOOL_EDITOR_NAME: &str = "tool_editor";
 
 pub struct AppWindow {
-    pub root: GtkBox,
+    pub root: adw::ToastOverlay,
     pub canvas: DrawingArea,
     stack: Stack,
     home_container: GtkBox,
@@ -254,8 +254,17 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
 
     parent.set_titlebar(Some(&header));
 
-    let root = GtkBox::builder().orientation(Orientation::Vertical).build();
-    root.append(&stack);
+    let root_box = GtkBox::builder().orientation(Orientation::Vertical).build();
+    root_box.append(&stack);
+
+    // Wrap the main content in a ToastOverlay so the global
+    // `notify::toast(...)` helper has a surface to render transient
+    // banners on (#28). Registered once below — every call site that
+    // surfaces an error to the user goes through `notify`.
+    let toast_overlay = adw::ToastOverlay::new();
+    toast_overlay.set_child(Some(&root_box));
+    crate::notify::register_overlay(toast_overlay.clone());
+    let root = toast_overlay;
 
     let win = Rc::new(RefCell::new(AppWindow {
         root,

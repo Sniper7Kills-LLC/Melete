@@ -1524,7 +1524,13 @@ pub fn undo(state: &SharedState, area: &impl IsA<gtk4::Widget>) {
             };
             if let Some(pid) = page_id {
                 for child in &new {
-                    let _ = db.borrow_mut().delete_stroke(child.id);
+                    if let Err(e) = db.borrow_mut().delete_stroke(child.id) {
+                        tracing::warn!("undo lasso split: delete_stroke {}: {}", child.id, e);
+                        crate::notify::toast(
+                            "Undo couldn't fully clean up split child stroke",
+                            crate::notify::Severity::Warn,
+                        );
+                    }
                     #[cfg(feature = "remote")]
                     crate::notebook_sync::on_local_stroke_deleted(state, pid, child.id);
                 }

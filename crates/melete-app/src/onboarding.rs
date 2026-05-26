@@ -146,7 +146,13 @@ pub fn show_first_launch_tour(parent: &ApplicationWindow) {
             if pos + 1 >= total {
                 let mut cfg = crate::config::load();
                 cfg.tour_dismissed = true;
-                let _ = crate::config::save(&cfg);
+                if let Err(e) = crate::config::save(&cfg) {
+                    tracing::warn!("onboarding: tour_dismissed save: {e:#}");
+                    crate::notify::toast(
+                        format!("Couldn't save onboarding state: {e}"),
+                        crate::notify::Severity::Warn,
+                    );
+                }
                 win.close();
                 return;
             }
@@ -161,7 +167,13 @@ pub fn show_first_launch_tour(parent: &ApplicationWindow) {
         dismiss_btn.connect_clicked(move |_| {
             let mut cfg = crate::config::load();
             cfg.tour_dismissed = true;
-            let _ = crate::config::save(&cfg);
+            if let Err(e) = crate::config::save(&cfg) {
+                tracing::warn!("onboarding: tour_dismissed save: {e:#}");
+                crate::notify::toast(
+                    format!("Couldn't save onboarding state: {e}"),
+                    crate::notify::Severity::Warn,
+                );
+            }
             win.close();
         });
     }
@@ -183,7 +195,13 @@ pub fn show_first_launch_tour(parent: &ApplicationWindow) {
         win.connect_close_request(|_| {
             let mut cfg = crate::config::load();
             cfg.tour_dismissed = true;
-            let _ = crate::config::save(&cfg);
+            if let Err(e) = crate::config::save(&cfg) {
+                tracing::warn!("onboarding: tour_dismissed save (close): {e:#}");
+                crate::notify::toast(
+                    format!("Couldn't save onboarding state: {e}"),
+                    crate::notify::Severity::Warn,
+                );
+            }
             gtk4::glib::Propagation::Proceed
         });
     }
@@ -289,7 +307,13 @@ pub fn show_whats_new_if_upgraded(parent: &ApplicationWindow) {
             }
             let mut cfg = crate::config::load();
             cfg.last_seen_version = Some(APP_VERSION.to_string());
-            let _ = crate::config::save(&cfg);
+            if let Err(e) = crate::config::save(&cfg) {
+                tracing::warn!("onboarding: last_seen_version save: {e:#}");
+                crate::notify::toast(
+                    format!("Couldn't save changelog state: {e}"),
+                    crate::notify::Severity::Warn,
+                );
+            }
         }
     };
     {

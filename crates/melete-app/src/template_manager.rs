@@ -573,6 +573,10 @@ fn finalize_pdf_template(id: Uuid, name: String, bytes: &[u8], page: u32, state:
         crate::template_io::put_page_template(&s.backend, &s.templates, &template, &[asset])
     {
         tracing::error!("persist pdf template {}: {:#}", id, e);
+        crate::notify::toast(
+            format!("Failed to save imported PDF template: {e}"),
+            crate::notify::Severity::Error,
+        );
     }
 }
 

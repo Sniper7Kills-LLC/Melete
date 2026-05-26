@@ -22,6 +22,7 @@ mod input;
 #[cfg(feature = "remote")]
 mod notebook_sync;
 mod notebook_template_creator;
+mod notify;
 mod onboarding;
 mod pdf_export;
 #[cfg(feature = "remote")]
