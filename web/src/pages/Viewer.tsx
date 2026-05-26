@@ -83,6 +83,137 @@ export function Viewer() {
     return () => ro.disconnect();
   }, [ready, pageIndex]);
 
+  // Pan + zoom gestures (#36). Wheel for trackpad/mouse, two-finger
+  // pointer events for touchscreen/trackpad pinch. Mirrors the
+  // desktop `attach_pan_zoom` behaviour: anchor zoom at the cursor,
+  // apply pan + zoom each frame from the gesture's running delta.
+  useEffect(() => {
+    if (!ready) return;
+    const c = canvasRef.current;
+    if (!c) return;
+
+    // Cursor-anchored re-render helper. Re-renders the current page
+    // so the wasm viewer's pan/zoom state shows up.
+    function rerenderCurrent() {
+      const parent = c?.parentElement;
+      if (!c || !parent) return;
+      const rect = parent.getBoundingClientRect();
+      const w = Math.max(200, Math.floor(rect.width));
+      const h = Math.max(200, Math.floor(rect.height));
+      viewer.renderPage(pageIndex, w, h);
+    }
+
+    function canvasPoint(ev: { clientX: number; clientY: number }): [number, number] {
+      const r = c!.getBoundingClientRect();
+      // Scale CSS pixels → backing-store pixels (devicePixelRatio
+      // already baked into c.width).
+      const sx = (ev.clientX - r.left) * (c!.width / r.width);
+      const sy = (ev.clientY - r.top) * (c!.height / r.height);
+      return [sx, sy];
+    }
+
+    function onWheel(ev: WheelEvent) {
+      ev.preventDefault();
+      // Per-notch factor matches the desktop default (1.1× per click).
+      // deltaMode === DOM_DELTA_LINE on Firefox needs the same sign
+      // handling as DOM_DELTA_PIXEL on Chrome.
+      const factor = ev.deltaY > 0 ? 1 / 1.1 : 1.1;
+      const [sx, sy] = canvasPoint(ev);
+      viewer.zoomAt(sx, sy, factor);
+      rerenderCurrent();
+    }
+
+    // Pinch + pan via PointerEvent. Maintain at most two active
+    // pointers; on each move recompute the center + distance and
+    // apply (1) pan from center delta and (2) zoom from distance
+    // ratio. One-finger drags pan only.
+    type TrackedPointer = { x: number; y: number };
+    const active = new Map<number, TrackedPointer>();
+    let lastCenter: [number, number] | null = null;
+    let lastDistance: number | null = null;
+
+    function recomputeCentre(): [number, number, number] {
+      const pts = Array.from(active.values()).slice(0, 2);
+      const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+      const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+      const dist =
+        pts.length === 2
+          ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y)
+          : 0;
+      return [cx, cy, dist];
+    }
+
+    function onPointerDown(ev: PointerEvent) {
+      // Only handle touch + pen — leaves mouse drags (toolbar usage,
+      // selection in the wrapping page) to the browser defaults.
+      if (ev.pointerType === "mouse") return;
+      c!.setPointerCapture(ev.pointerId);
+      active.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      const [cx, cy, dist] = recomputeCentre();
+      lastCenter = [cx, cy];
+      lastDistance = active.size === 2 ? dist : null;
+    }
+
+    function onPointerMove(ev: PointerEvent) {
+      if (ev.pointerType === "mouse") return;
+      if (!active.has(ev.pointerId)) return;
+      active.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+      const [cx, cy, dist] = recomputeCentre();
+
+      if (lastCenter) {
+        // Pan delta in client (CSS) pixels → backing-store pixels.
+        const r = c!.getBoundingClientRect();
+        const sxRatio = c!.width / r.width;
+        const syRatio = c!.height / r.height;
+        const dx = (cx - lastCenter[0]) * sxRatio;
+        const dy = (cy - lastCenter[1]) * syRatio;
+        if (dx !== 0 || dy !== 0) viewer.pan(dx, dy);
+      }
+
+      if (active.size === 2 && lastDistance && dist > 0) {
+        const factor = dist / lastDistance;
+        if (factor > 0 && Number.isFinite(factor) && factor !== 1) {
+          // Anchor at the midpoint of the two fingers in canvas
+          // backing coords.
+          const anchor = canvasPoint({ clientX: cx, clientY: cy });
+          viewer.zoomAt(anchor[0], anchor[1], factor);
+        }
+      }
+
+      lastCenter = [cx, cy];
+      lastDistance = active.size === 2 ? dist : null;
+      rerenderCurrent();
+    }
+
+    function onPointerUp(ev: PointerEvent) {
+      if (ev.pointerType === "mouse") return;
+      active.delete(ev.pointerId);
+      c!.releasePointerCapture(ev.pointerId);
+      if (active.size === 0) {
+        lastCenter = null;
+        lastDistance = null;
+      } else {
+        const [cx, cy, dist] = recomputeCentre();
+        lastCenter = [cx, cy];
+        lastDistance = active.size === 2 ? dist : null;
+      }
+    }
+
+    c.addEventListener("wheel", onWheel, { passive: false });
+    c.addEventListener("pointerdown", onPointerDown);
+    c.addEventListener("pointermove", onPointerMove);
+    c.addEventListener("pointerup", onPointerUp);
+    c.addEventListener("pointercancel", onPointerUp);
+
+    return () => {
+      c.removeEventListener("wheel", onWheel);
+      c.removeEventListener("pointerdown", onPointerDown);
+      c.removeEventListener("pointermove", onPointerMove);
+      c.removeEventListener("pointerup", onPointerUp);
+      c.removeEventListener("pointercancel", onPointerUp);
+    };
+  }, [ready, pageIndex]);
+
   function panBy(dx: number, dy: number) {
     viewer.pan(dx, dy);
   }

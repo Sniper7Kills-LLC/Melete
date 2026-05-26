@@ -1,7 +1,12 @@
 [package]
 name = "melete-widgets"
-version = "0.1.0"
-edition = "2021"
+description = "Vello scene-builder for Melete template widgets (web-importable)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
 
 [dependencies]
 melete-core = { path = "../melete-core" }

@@ -25,6 +25,19 @@ default-members = [
 ]
 resolver = "2"
 
+# Shared metadata every workspace crate inherits via
+# `package = { ... workspace = true }`. Each crate keeps its own
+# `name` (must be unique on crates.io) and may override individual
+# fields. Fields that gate publishability live here so a future
+# `cargo publish` doesn't fail per-crate (#33).
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/Sniper7Kills-LLC/Melete"
+authors = ["Sniper7Kills LLC"]
+homepage = "https://melete.app"
+
 [workspace.dependencies]
 gtk4 = { version = "0.9", features = ["v4_12"] }
 libadwaita = { version = "0.7", features = ["v1_4"] }

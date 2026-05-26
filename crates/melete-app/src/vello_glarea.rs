@@ -80,6 +80,10 @@ pub fn build(state: SharedState) -> Option<GLArea> {
             // are stale. Drop them and reload the loader each realize.
             *gl_state_cell_realize.borrow_mut() = None;
             *gl_cell.borrow_mut() = None;
+            // SAFETY: load_gl_context dlopen's libEGL and resolves
+            // eglGetProcAddress for the calling thread; the returned
+            // glow::Context owns its loader closure and is never
+            // shared across threads (GL state is GTK-main-thread-only).
             match unsafe { load_gl_context() } {
                 Ok(gl) => *gl_cell.borrow_mut() = Some(gl),
                 Err(e) => tracing::error!("failed to load GL via libEGL: {e}"),
@@ -175,6 +179,11 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                     tracing::error!("GL init: {e}");
                     return glib::Propagation::Stop;
                 }
+                // SAFETY: all glow calls are GL FFI that require a
+                // current GL context. The GLArea contract guarantees
+                // its context is current for the duration of this
+                // signal handler; viewport/clear/blend are pure state
+                // mutation against the current context.
                 unsafe {
                     gl.viewport(0, 0, phys_w as i32, phys_h as i32);
                     gl.clear_color(0.0, 0.0, 0.0, 0.0);
@@ -203,6 +212,33 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 }
                 return glib::Propagation::Stop;
             }
+
+            // Page-change fade-in (#33). Driven by a timestamp
+            // `set_current_page` stamps on every swap; ramp opacity
+            // 0 → 1 over PAGE_FADE_MS. If the first paint after the
+            // page swap is delayed past the fade window, restart the
+            // clock from now so the user still sees a fade.
+            // Updated here under a brief mutable borrow before the
+            // bulk read-only snapshot below.
+            const PAGE_FADE_MS: f32 = 180.0;
+            let fade_alpha: f32 = {
+                let mut s = state.borrow_mut();
+                match s.page_transition_started_at {
+                    Some(start) => {
+                        let elapsed = start.elapsed().as_secs_f32() * 1000.0;
+                        if elapsed > PAGE_FADE_MS * 2.0 {
+                            s.page_transition_started_at = Some(std::time::Instant::now());
+                            0.0
+                        } else if elapsed >= PAGE_FADE_MS {
+                            s.page_transition_started_at = None;
+                            1.0
+                        } else {
+                            elapsed / PAGE_FADE_MS
+                        }
+                    }
+                    None => 1.0,
+                }
+            };
 
             let (
                 transform,
@@ -245,17 +281,6 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                         b.layers.first().map(|l| l.tip.clone()),
                     ),
                     None => (None, None),
-                };
-                // Page-change fade-in: ramp opacity from 0 → 1 over
-                // PAGE_FADE_MS after `set_current_page` stamps a new
-                // transition_started_at.
-                const PAGE_FADE_MS: f32 = 180.0;
-                let fade_alpha = match s.page_transition_started_at {
-                    Some(start) => {
-                        let elapsed = start.elapsed().as_secs_f32() * 1000.0;
-                        (elapsed / PAGE_FADE_MS).clamp(0.0, 1.0)
-                    }
-                    None => 1.0,
                 };
                 let overlays = melete_canvas::vello_renderer::OverlayState {
                     selection_bbox,
@@ -358,6 +383,9 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 return glib::Propagation::Stop;
             }
 
+            // SAFETY: same as above — GL state mutation under a GLArea
+            // signal handler. `gl_state_cell` borrow is scoped to this
+            // block; the texture handle inside is owned by us.
             unsafe {
                 gl.viewport(0, 0, phys_w as i32, phys_h as i32);
                 gl.clear_color(0.0, 0.0, 0.0, 0.0);
@@ -476,6 +504,10 @@ fn ensure_gl_state(
 ) -> Result<(), String> {
     if let Some(gs) = cell.as_mut() {
         if gs.tex_w != w || gs.tex_h != h {
+            // SAFETY: GL texture resize. The texture handle is owned
+            // by `gs` and bound on the GLArea's current context. Null
+            // pixel pointer in tex_image_2d means "allocate but don't
+            // upload", documented behavior.
             unsafe {
                 gl.bind_texture(glow::TEXTURE_2D, Some(gs.texture));
                 gl.tex_image_2d(
@@ -496,6 +528,10 @@ fn ensure_gl_state(
         return Ok(());
     }
 
+    // SAFETY: GL resource allocation against the current GLArea
+    // context. Each `create_*` is a fresh handle owned by the new
+    // GlState; on early-return / panic the handles leak but the
+    // GLArea outlives the cell, so we'd reuse them on next call.
     unsafe {
         let program = compile_program(gl)?;
         let vao = gl
@@ -572,6 +608,12 @@ fn ensure_gl_state(
     Ok(())
 }
 
+/// # Safety
+///
+/// Caller must invoke on the GTK main thread with the GLArea's GL
+/// context current. Spawns shader + program GL handles owned by the
+/// returned program; on error the partial handles are deleted before
+/// return.
 unsafe fn compile_program(gl: &glow::Context) -> Result<glow::Program, String> {
     // GTK4 GLArea on Mesa/Wayland gives a GLES 3 context, not desktop GL.
     // Use GLSL ES 300 — same `in`/`out`/`texture()` syntax as 3.30 core, but
@@ -614,6 +656,11 @@ void main() {
     Ok(program)
 }
 
+/// # Safety
+///
+/// Caller must invoke with a current GL context. Returned shader
+/// handle is owned by the caller; cleanup is the caller's
+/// responsibility (compile_program detaches + deletes on success).
 unsafe fn compile_shader(gl: &glow::Context, kind: u32, src: &str) -> Result<glow::Shader, String> {
     let shader = gl
         .create_shader(kind)
@@ -826,9 +873,18 @@ fn bg_fingerprint<H: std::hash::Hasher>(bg: &melete_canvas::BackgroundConfig, h:
 
 fn bytemuck_slice(verts: &[f32]) -> &[u8] {
     let len = std::mem::size_of_val(verts);
+    // SAFETY: reinterpreting a &[f32] as &[u8]. Pointer is non-null
+    // and aligned for f32 (and therefore for u8); `len` is the
+    // byte-equivalent of the source length; lifetime is borrowed
+    // from the input so the returned slice can't outlive `verts`.
     unsafe { std::slice::from_raw_parts(verts.as_ptr() as *const u8, len) }
 }
 
+/// # Safety
+///
+/// Dlopen + dlsym FFI. Caller must invoke on the GTK main thread
+/// where libEGL is already loaded by GTK. The returned glow::Context
+/// is not Send/Sync and must stay on the GTK main thread.
 unsafe fn load_gl_context() -> Result<glow::Context, String> {
     // GTK4 on Wayland uses EGL. eglGetProcAddress is a real exported function
     // (libepoxy's epoxy_eglGetProcAddress is a dispatch-table data symbol, not
