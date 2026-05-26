@@ -17,14 +17,23 @@ finish-args:
   # Flatpak portal still mediates filesystem access.
   - --share=network
 
+# GNOME 47 SDK doesn't ship Rust — the release.yml workflow builds
+# melete-app on the host runner (`linux-bin` job) and downloads it as
+# an artefact alongside this manifest before invoking flatpak-builder.
+# The manifest just bundles the pre-built binary + .desktop + icon.
+# Avoids adding a Rust SDK extension (~1 GB) for a build that already
+# happened upstream in the matrix.
 modules:
   - name: melete-app
     buildsystem: simple
     build-commands:
-      - cargo build --release -p melete-app
-      - install -Dm755 target/release/melete-app /app/bin/melete-app
-      - install -Dm644 resources/app.melete.Melete.desktop /app/share/applications/app.melete.Melete.desktop
-      - install -Dm644 resources/icons/app.melete.Melete.svg /app/share/icons/hicolor/scalable/apps/app.melete.Melete.svg
+      - install -Dm755 melete-app /app/bin/melete-app
+      - install -Dm644 app.melete.Melete.desktop /app/share/applications/app.melete.Melete.desktop
+      - install -Dm644 app.melete.Melete.svg /app/share/icons/hicolor/scalable/apps/app.melete.Melete.svg
     sources:
-      - type: dir
-        path: ..
+      - type: file
+        path: ../target/release/melete-app
+      - type: file
+        path: ../resources/app.melete.Melete.desktop
+      - type: file
+        path: ../resources/icons/app.melete.Melete.svg

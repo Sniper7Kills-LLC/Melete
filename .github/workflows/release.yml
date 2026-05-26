@@ -143,11 +143,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install runtime libs the AppImage will bundle
+      - name: Install runtime libs the AppImage bundles + dev .pc files linuxdeploy-plugin-gtk reads
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libgtk-4-1 libadwaita-1-0 libpoppler-glib8 \
+            libgtk-4-1 libgtk-4-dev libadwaita-1-0 libadwaita-1-dev \
+            libpoppler-glib8 libpoppler-glib-dev \
             libegl1 libgles2 libvulkan1 libdbus-1-3 \
             libgdk-pixbuf-2.0-0 librsvg2-common \
             adwaita-icon-theme hicolor-icon-theme \
@@ -213,7 +214,10 @@ jobs:
           cp resources/app.melete.Melete.desktop "${STAGE}/"
           cp resources/icons/app.melete.Melete.svg "${STAGE}/"
           tar -czf "packaging/arch/melete-${VERSION}.tar.gz" -C "${STAGE}" .
-          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" packaging/arch/PKGBUILD
+          # Arch's `pkgver` rejects hyphens. Translate semver/pre-release
+          # markers to underscores: `0.1.0-rc1` → `0.1.0_rc1`.
+          ARCH_PKGVER="${VERSION//-/_}"
+          sed -i "s/^pkgver=.*/pkgver=${ARCH_PKGVER}/" packaging/arch/PKGBUILD
 
       - name: makepkg
         working-directory: packaging/arch
@@ -237,6 +241,7 @@ jobs:
 
   linux-flatpak:
     name: linux Flatpak
+    needs: linux-bin
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -253,6 +258,14 @@ jobs:
             flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak --user install -y --noninteractive flathub \
             org.gnome.Platform//47 org.gnome.Sdk//47
+
+      - name: Download release binary
+        uses: actions/download-artifact@v4
+        with:
+          name: melete-linux-x86_64-binary
+          path: target/release/
+
+      - run: chmod +x target/release/melete-app
 
       - name: Build .flatpak bundle
         env:
