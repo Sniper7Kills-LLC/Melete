@@ -1,0 +1,80 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly.
+title: "[bug] "
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the behaviour you saw.
+      placeholder: I clicked X and Y appeared instead of Z.
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: I expected Z to appear because…
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered list, as terse as possible.
+      placeholder: |
+        1. Open notebook X
+        2. Click hamburger → Y
+        3. Observe Z
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where did this happen?
+      multiple: false
+      options:
+        - Desktop (native GTK app)
+        - Web SPA (melete.app)
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Desktop = "Help → About" or `melete-app --version`. Web = the git sha at the bottom of the landing page.
+      placeholder: 0.0.1 / commit abc1234
+    validations:
+      required: false
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: OS + version + which package format (deb / rpm / AppImage / Flatpak / Arch / DMG / portable zip).
+      placeholder: Arch Linux, AppImage / macOS 14.4, DMG / Windows 11, portable zip
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Anything from `melete-app` stderr or browser devtools console. Wrap in triple backticks.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: searched
+    attributes:
+      label: Did you search existing issues first?
+      options:
+        - label: I searched the issue tracker and this isn't a duplicate.
+          required: true

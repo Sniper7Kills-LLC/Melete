@@ -1,0 +1,15 @@
+# Issue chooser landing config.
+#
+# `blank_issues_enabled: false` forces every new issue through one of
+# the templates above — keeps the tracker clean. `contact_links` adds
+# external destinations that aren't actually issues (the in-app
+# feedback form on the web portal, security disclosures, etc.).
+
+blank_issues_enabled: false
+contact_links:
+  - name: Send feedback through the app
+    url: https://melete.app/feedback
+    about: For anything you'd rather not file as a public issue — bug reports, suggestions, questions. Goes straight to the maintainer.
+  - name: Question or general discussion
+    url: https://github.com/Sniper7Kills-LLC/Melete/discussions
+    about: For open-ended questions, ideas, or "is this the right way to do X?" conversations.

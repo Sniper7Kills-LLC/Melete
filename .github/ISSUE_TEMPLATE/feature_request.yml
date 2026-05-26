@@ -1,0 +1,46 @@
+name: Feature request
+description: Something Melete should do but does not.
+title: "[feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the user pain — what you're trying to accomplish today and why the current behaviour gets in the way. Skip if you're requesting a clearly-additive feature.
+      placeholder: Today I have to do A then B then C every time I want to D, which is the whole point of using a journal in the first place.
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+      description: Describe the feature you'd like, as concretely as you can. Sketches, screenshots from other apps, or links to related work all welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Other ways you've tried to solve the problem (in this app or others), and why they fall short.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where would this live?
+      multiple: true
+      options:
+        - Desktop canvas / brush engine
+        - Desktop UI (menus, toolbar, sidebar, dialogs)
+        - Page or notebook template
+        - Web SPA viewer
+        - Web SPA designer / templeter / tooler
+        - Cloud sync / Amplify backend
+        - CLI / config
+        - Other / not sure
+    validations:
+      required: true
