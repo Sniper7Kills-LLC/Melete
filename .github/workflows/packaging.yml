@@ -382,9 +382,9 @@ jobs:
     env:
       # gvsbuild releases publish prebuilt GTK4 + libadwaita tarballs;
       # the workflow downloads and unpacks one to skip the 1 hr+
-      # local build. URL pinned to the version that matches our
-      # workspace's gtk4 v4_12 feature floor.
-      GVSBUILD_VERSION: '2025.7.0'
+      # local build. Pinned to a tag the API actually returns
+      # (verified via api.github.com/repos/wingtk/gvsbuild/releases).
+      GVSBUILD_VERSION: '2026.4.1'
       GVSBUILD_ROOT: 'C:\gvsbuild'
     steps:
       - uses: actions/checkout@v4
@@ -402,10 +402,14 @@ jobs:
       - name: Download + unpack gvsbuild GTK4 prebuilt
         shell: pwsh
         run: |
-          $url = "https://github.com/wingtk/gvsbuild/releases/download/$env:GVSBUILD_VERSION/GTK4_Gvsbuild_$env:GVSBUILD_VERSION`_x64.zip"
+          $asset = "GTK4_Gvsbuild_${env:GVSBUILD_VERSION}_x64.zip"
+          $url = "https://github.com/wingtk/gvsbuild/releases/download/${env:GVSBUILD_VERSION}/${asset}"
+          Write-Host "Fetching $url"
           New-Item -ItemType Directory -Force -Path $env:GVSBUILD_ROOT | Out-Null
           Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\gtk.zip"
           Expand-Archive -Path "$env:RUNNER_TEMP\gtk.zip" -DestinationPath $env:GVSBUILD_ROOT -Force
+          Write-Host "Unpacked into $env:GVSBUILD_ROOT"
+          Get-ChildItem $env:GVSBUILD_ROOT
 
       - name: Set GTK / pkg-config env for the build
         shell: pwsh
