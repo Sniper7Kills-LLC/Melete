@@ -107,3 +107,38 @@ jobs:
 
       - name: typecheck
         run: npm run typecheck
+
+  wasm:
+    # Schema-parity guard for #13: catches regressions in the wasm32
+    # build of `melete-web-shim` + `melete-web-viewer` on every PR so
+    # the Amplify Hosting frontend build doesn't surface the error
+    # late. Both crates re-use the desktop's `melete-core` /
+    # `melete-templates` so a single wasm32 build is enough to
+    # validate the TOML round-trip + viewer compile through.
+    name: wasm32 build (web-shim + web-viewer)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-wasm-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-wasm-${{ runner.os }}-
+
+      - name: cargo build --target wasm32-unknown-unknown
+        run: |
+          cargo build --target wasm32-unknown-unknown \
+            -p melete-web-shim \
+            -p melete-web-viewer

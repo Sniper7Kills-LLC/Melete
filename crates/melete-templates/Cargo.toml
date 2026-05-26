@@ -27,3 +27,7 @@ wasm = []
 
 [dev-dependencies]
 tempfile = "3"
+# `wire_shape_round_trip` test detours every seed TOML through a
+# `serde_json::Value` (the IR shape serde-wasm-bindgen emits) to lock
+# in JSON wire-format stability for the web shim.
+serde_json = { workspace = true }
