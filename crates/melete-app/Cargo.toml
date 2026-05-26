@@ -15,7 +15,12 @@ path = "src/main.rs"
 
 [dependencies]
 melete-core = { path = "../melete-core" }
-melete-canvas = { path = "../melete-canvas" }
+# `default-features = false` so the melete-app features below can opt
+# into melete-canvas's `pdf` / `vello` / `desktop` explicitly.
+# Without this, melete-canvas's default features (pdf + desktop) get
+# pulled in unconditionally — fine on Linux/macOS but breaks the
+# Windows build where Poppler isn't available from gvsbuild.
+melete-canvas = { path = "../melete-canvas", default-features = false }
 melete-storage = { path = "../melete-storage" }
 melete-templates = { path = "../melete-templates" }
 gtk4 = { workspace = true }
@@ -42,9 +47,14 @@ base64 = "0.22"
 rusqlite = { workspace = true }
 
 [features]
-default = ["pdf", "vello", "remote"]
-pdf = ["dep:poppler-rs", "melete-canvas/pdf"]
-vello = ["dep:glow", "dep:libloading", "dep:melete-widgets", "melete-canvas/vello"]
+default = ["pdf", "vello", "remote", "desktop"]
+# `desktop` = gtk4 / cairo / pixbuf code paths (the bulk of the
+# native binary). Always-on for Linux + macOS builds, implied by
+# both `pdf` and `vello` since their canvas-side code lives behind
+# the same gtk4 gating.
+desktop = ["melete-canvas/desktop"]
+pdf = ["dep:poppler-rs", "melete-canvas/pdf", "desktop"]
+vello = ["dep:glow", "dep:libloading", "dep:melete-widgets", "melete-canvas/vello", "desktop"]
 remote = ["melete-storage/remote"]
 
 [package.metadata.cargo-machete]
