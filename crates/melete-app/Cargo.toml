@@ -33,7 +33,7 @@ poppler-rs = { version = "0.24", features = ["v22_7"], optional = true }
 glow = { version = "0.16", optional = true }
 libloading = { version = "0.8", optional = true }
 melete-widgets = { path = "../melete-widgets", optional = true }
-ureq = { version = "2", default-features = false, features = ["tls"] }
+ureq = { version = "3", default-features = false, features = ["tls"] }
 serde_json = { workspace = true }
 roxmltree = "0.20"
 sha2 = "0.10"
