@@ -25,6 +25,17 @@ $RepoRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 Set-Location $RepoRoot
 
 $Version = if ($env:VERSION) { $env:VERSION } else { 'dev' }
+
+# MSI versions are 4-component integers (`a.b.c.d`). cargo-wix maps
+# semver pre-release suffixes only if they're numeric (`-rc.4`); any
+# non-numeric token (`-test`, `-alpha`) makes it bail. Strip whatever
+# follows the first `-` for the MSI version field; the human-readable
+# version stays on the filename + Release page.
+if ($Version -match '^(\d+\.\d+\.\d+)') {
+    $MsiVersion = $Matches[1]
+} else {
+    $MsiVersion = '0.0.0'
+}
 $Dist = Join-Path $RepoRoot 'dist'
 $Stage = Join-Path $Dist 'windows-stage'
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null
@@ -56,10 +67,11 @@ Remove-Item -Force $PortableZip -ErrorAction SilentlyContinue
 & cargo wix `
     --package melete-app `
     --name Melete `
-    --install-version $Version `
+    --install-version $MsiVersion `
     --include "$Stage\bin" `
     --output (Join-Path $Dist "Melete-$Version-x86_64.msi") `
     --nocapture
+if ($LASTEXITCODE -ne 0) { throw "cargo wix failed with exit $LASTEXITCODE" }
 
 Write-Host "[windows] portable zip → $PortableZip"
 Write-Host "[windows] MSI         → $Dist\Melete-$Version-x86_64.msi"
