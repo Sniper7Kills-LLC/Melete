@@ -3,8 +3,8 @@
 //! token when it issued + every refreshed; the desktop trusts its
 //! own token bundle.
 
-use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
 use serde_json::Value;
 
 use super::store::RemoteError;
@@ -53,7 +53,6 @@ pub fn decode_groups(token: &str) -> Result<Vec<String>, RemoteError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::Engine as _;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
     fn encode_jwt(payload: &str) -> String {

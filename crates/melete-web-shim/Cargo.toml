@@ -1,9 +1,13 @@
 [package]
 name = "melete-web-shim"
-version = "0.1.0"
-edition = "2021"
-publish = false
 description = "Pure-data WASM bindings for melete-templates TOML round-trip."
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
 
 [lib]
 # `cdylib` is what wasm-bindgen consumes when targeting wasm32; `rlib`

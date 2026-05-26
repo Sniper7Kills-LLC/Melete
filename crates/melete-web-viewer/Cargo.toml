@@ -1,9 +1,13 @@
 [package]
 name = "melete-web-viewer"
-version = "0.1.0"
-edition = "2021"
-publish = false
 description = "WASM-bindgen viewer wrapping Vello + WebGPU for the Melete web POC."
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+homepage.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]

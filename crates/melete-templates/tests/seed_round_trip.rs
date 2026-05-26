@@ -122,14 +122,27 @@ fn default_style() -> WidgetStyle {
     }
 }
 
-fn text_widget(id: Uuid, text: &str, font_size_mm: f64, x: f64, y: f64, w: f64, h: f64) -> TemplateWidget {
+fn text_widget(
+    id: Uuid,
+    text: &str,
+    font_size_mm: f64,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> TemplateWidget {
     TemplateWidget {
         id,
         kind: WidgetKind::TextBlock {
             text: text.into(),
             font_size_mm,
         },
-        rect: WidgetRect { x, y, width: w, height: h },
+        rect: WidgetRect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
         style: default_style(),
     }
 }
@@ -140,7 +153,12 @@ fn checklist_widget(id: Uuid, items: &[&str], x: f64, y: f64, w: f64, h: f64) ->
         kind: WidgetKind::Checklist {
             items: items.iter().map(|s| s.to_string()).collect(),
         },
-        rect: WidgetRect { x, y, width: w, height: h },
+        rect: WidgetRect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
         style: default_style(),
     }
 }
@@ -666,7 +684,9 @@ fn extract_chore_weekly_home() {
     let t = build_chore_weekly_home();
     let file = template_file_from_page_template(&t);
     let toml_text = serialize_template_toml(&file).expect("serialize");
-    let out = seed_root().join("page_templates").join("chore_weekly_home.toml");
+    let out = seed_root()
+        .join("page_templates")
+        .join("chore_weekly_home.toml");
     std::fs::write(&out, toml_text).expect("write seed file");
     eprintln!("wrote {}", out.display());
 }

@@ -88,7 +88,13 @@ pub trait RemoteTemplateOps {
         -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
     fn list_public_brushes(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
 
-    fn get_page_template(&mut self, id: Uuid) -> Result<(TemplateRow, Vec<AssetMeta>), RemoteError>;
+    // ── browse my own (any visibility — owner-only read via byOwner GSI) ──
+    fn list_my_page_templates(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
+    fn list_my_notebook_templates(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
+    fn list_my_brushes(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError>;
+
+    fn get_page_template(&mut self, id: Uuid)
+        -> Result<(TemplateRow, Vec<AssetMeta>), RemoteError>;
     fn get_notebook_template(&mut self, id: Uuid) -> Result<TemplateRow, RemoteError>;
     fn get_brush(&mut self, id: Uuid) -> Result<BrushRow, RemoteError>;
 
@@ -152,6 +158,39 @@ query ListPublicNotebookTemplates {
 pub(crate) const Q_LIST_BRUSHES_PUBLIC: &str = r#"
 query ListPublicBrushes {
   listBrushesByVisibility(visibility: PUBLIC, sortDirection: DESC) {
+    items {
+      id owner name description visibility
+      forkedFrom forkCount viewCount updatedAtSort
+    }
+  }
+}
+"#;
+
+pub(crate) const Q_LIST_PAGE_TEMPLATES_MINE: &str = r#"
+query ListMyPageTemplates($owner: String!) {
+  listPageTemplatesByOwner(owner: $owner, sortDirection: DESC) {
+    items {
+      id owner name description category visibility
+      forkedFrom forkCount viewCount updatedAtSort
+    }
+  }
+}
+"#;
+
+pub(crate) const Q_LIST_NOTEBOOK_TEMPLATES_MINE: &str = r#"
+query ListMyNotebookTemplates($owner: String!) {
+  listNotebookTemplatesByOwner(owner: $owner, sortDirection: DESC) {
+    items {
+      id owner name description visibility
+      forkedFrom forkCount viewCount updatedAtSort
+    }
+  }
+}
+"#;
+
+pub(crate) const Q_LIST_BRUSHES_MINE: &str = r#"
+query ListMyBrushes($owner: String!) {
+  listBrushesByOwner(owner: $owner, sortDirection: DESC) {
     items {
       id owner name description visibility
       forkedFrom forkCount viewCount updatedAtSort
@@ -395,10 +434,8 @@ impl RemoteTemplateStore {
             None => true,
         };
         if needs_fetch {
-            let login_key = super::identity::login_key(
-                &self.config.auth_region,
-                &self.config.user_pool_id,
-            );
+            let login_key =
+                super::identity::login_key(&self.config.auth_region, &self.config.user_pool_id);
             let identity_id = super::identity::get_identity_id(
                 &self.config.auth_region,
                 &self.config.identity_pool_id,
@@ -461,16 +498,17 @@ impl RemoteTemplateStore {
     /// Pull the caller's `UserEntitlement` row. Used by the desktop
     /// settings UI + sync gate. Returns the free-tier default if no
     /// row exists yet (new user pre-checkout).
-    pub fn fetch_my_entitlement(
-        &mut self,
-    ) -> Result<crate::entitlement::Entitlement, RemoteError> {
+    pub fn fetch_my_entitlement(&mut self) -> Result<crate::entitlement::Entitlement, RemoteError> {
         let sub = self.user_sub()?;
         let v = self.gql(
             super::ENTITLEMENT_QUERY,
             Some("GetMyEntitlement"),
             serde_json::json!({ "id": sub }),
         )?;
-        let row = v.get("getUserEntitlement").cloned().unwrap_or(serde_json::Value::Null);
+        let row = v
+            .get("getUserEntitlement")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
         if row.is_null() {
             return Ok(crate::entitlement::Entitlement::free_default(sub));
         }
@@ -526,7 +564,11 @@ impl RemoteTemplateOps for RemoteTemplateStore {
     fn list_public_notebook_templates(
         &mut self,
     ) -> Result<Vec<RemoteTemplateSummary>, RemoteError> {
-        let v = self.gql(Q_LIST_NOTEBOOK_TEMPLATES_PUBLIC, None, serde_json::json!({}))?;
+        let v = self.gql(
+            Q_LIST_NOTEBOOK_TEMPLATES_PUBLIC,
+            None,
+            serde_json::json!({}),
+        )?;
         let items = v
             .pointer("/listNotebookTemplatesByVisibility/items")
             .and_then(|x| x.as_array())
@@ -538,6 +580,48 @@ impl RemoteTemplateOps for RemoteTemplateStore {
         let v = self.gql(Q_LIST_BRUSHES_PUBLIC, None, serde_json::json!({}))?;
         let items = v
             .pointer("/listBrushesByVisibility/items")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| RemoteError::Malformed("missing items".into()))?;
+        items.iter().map(parse_summary).collect()
+    }
+
+    fn list_my_page_templates(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError> {
+        let sub = self.user_sub()?;
+        let v = self.gql(
+            Q_LIST_PAGE_TEMPLATES_MINE,
+            None,
+            serde_json::json!({ "owner": sub }),
+        )?;
+        let items = v
+            .pointer("/listPageTemplatesByOwner/items")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| RemoteError::Malformed("missing items".into()))?;
+        items.iter().map(parse_summary).collect()
+    }
+
+    fn list_my_notebook_templates(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError> {
+        let sub = self.user_sub()?;
+        let v = self.gql(
+            Q_LIST_NOTEBOOK_TEMPLATES_MINE,
+            None,
+            serde_json::json!({ "owner": sub }),
+        )?;
+        let items = v
+            .pointer("/listNotebookTemplatesByOwner/items")
+            .and_then(|x| x.as_array())
+            .ok_or_else(|| RemoteError::Malformed("missing items".into()))?;
+        items.iter().map(parse_summary).collect()
+    }
+
+    fn list_my_brushes(&mut self) -> Result<Vec<RemoteTemplateSummary>, RemoteError> {
+        let sub = self.user_sub()?;
+        let v = self.gql(
+            Q_LIST_BRUSHES_MINE,
+            None,
+            serde_json::json!({ "owner": sub }),
+        )?;
+        let items = v
+            .pointer("/listBrushesByOwner/items")
             .and_then(|x| x.as_array())
             .ok_or_else(|| RemoteError::Malformed("missing items".into()))?;
         items.iter().map(parse_summary).collect()
@@ -556,7 +640,10 @@ impl RemoteTemplateOps for RemoteTemplateStore {
             .get("getPageTemplate")
             .ok_or_else(|| RemoteError::Malformed("missing getPageTemplate".into()))?;
         if item.is_null() {
-            return Err(RemoteError::Malformed(format!("page template {} not found", id)));
+            return Err(RemoteError::Malformed(format!(
+                "page template {} not found",
+                id
+            )));
         }
         parse_page_template_row_with_assets(item)
     }
@@ -628,7 +715,11 @@ impl RemoteTemplateOps for RemoteTemplateStore {
         // createPageTemplate is generated by Amplify; ignore conflicts
         // (already-published row keeps its existing record). The
         // followup publishPageTemplate flips visibility regardless.
-        let _ = self.gql(M_CREATE_PAGE_TEMPLATE, None, serde_json::json!({ "input": input }));
+        let _ = self.gql(
+            M_CREATE_PAGE_TEMPLATE,
+            None,
+            serde_json::json!({ "input": input }),
+        );
         // 3. publishPageTemplate flips visibility + bumps updatedAtSort.
         let v = self.gql(
             M_PUBLISH_PAGE_TEMPLATE,
@@ -661,7 +752,11 @@ impl RemoteTemplateOps for RemoteTemplateStore {
             "bodyToml": row.body_toml,
             "updatedAtSort": row.updated_at_sort,
         });
-        let _ = self.gql(M_CREATE_NOTEBOOK_TEMPLATE, None, serde_json::json!({ "input": input }));
+        let _ = self.gql(
+            M_CREATE_NOTEBOOK_TEMPLATE,
+            None,
+            serde_json::json!({ "input": input }),
+        );
         let v = self.gql(
             M_PUBLISH_NOTEBOOK_TEMPLATE,
             None,
@@ -816,7 +911,9 @@ pub(crate) fn parse_uuid(s: &str) -> Result<Uuid, RemoteError> {
     Uuid::parse_str(s).map_err(|e| RemoteError::Malformed(format!("uuid {:?}: {}", s, e)))
 }
 
-pub(crate) fn parse_summary(item: &serde_json::Value) -> Result<RemoteTemplateSummary, RemoteError> {
+pub(crate) fn parse_summary(
+    item: &serde_json::Value,
+) -> Result<RemoteTemplateSummary, RemoteError> {
     let id_str = item
         .get("id")
         .and_then(|x| x.as_str())
@@ -1000,10 +1097,7 @@ fn parse_asset_meta_array(arr: &[serde_json::Value]) -> Result<Vec<AssetMeta>, R
                 .and_then(|x| x.as_str())
                 .ok_or_else(|| RemoteError::Malformed("asset missing sha256".into()))?
                 .to_string();
-            let size = v
-                .get("size")
-                .and_then(|x| x.as_u64())
-                .unwrap_or(0);
+            let size = v.get("size").and_then(|x| x.as_u64()).unwrap_or(0);
             Ok(AssetMeta {
                 name,
                 mime,
@@ -1021,7 +1115,11 @@ mod tests {
 
     #[test]
     fn visibility_round_trips() {
-        for v in [Visibility::Private, Visibility::Unlisted, Visibility::Public] {
+        for v in [
+            Visibility::Private,
+            Visibility::Unlisted,
+            Visibility::Public,
+        ] {
             assert_eq!(parse_visibility(v.as_gql()).unwrap(), v);
         }
     }

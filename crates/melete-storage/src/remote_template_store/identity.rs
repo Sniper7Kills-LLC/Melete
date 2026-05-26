@@ -53,10 +53,7 @@ pub fn cognito_identity_host(region: &str) -> String {
 /// Build the `Logins` map key Cognito Identity expects for a User
 /// Pool federation: `cognito-idp.<auth_region>.amazonaws.com/<user_pool_id>`.
 pub fn login_key(auth_region: &str, user_pool_id: &str) -> String {
-    format!(
-        "cognito-idp.{}.amazonaws.com/{}",
-        auth_region, user_pool_id
-    )
+    format!("cognito-idp.{}.amazonaws.com/{}", auth_region, user_pool_id)
 }
 
 pub fn get_id_body(identity_pool_id: &str, login_key: &str, id_token: &str) -> String {

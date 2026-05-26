@@ -390,11 +390,7 @@ impl VelloRenderer {
         })
     }
 
-    fn ensure_image_for_bg(
-        &mut self,
-        asset: &str,
-        resolver: &dyn AssetResolver,
-    ) -> Option<PImage> {
+    fn ensure_image_for_bg(&mut self, asset: &str, resolver: &dyn AssetResolver) -> Option<PImage> {
         if let Some(img) = self.image_cache.get(asset) {
             return Some(img.clone());
         }
@@ -1553,6 +1549,14 @@ fn sample_tangent(samples: &[(f64, f64, f64)], i: usize) -> (f64, f64) {
 /// curves. Each interior point becomes a control point; segments meet at
 /// midpoints, giving a continuous smooth curve. The path's previous endpoint
 /// must already be at the start of `points` (caller's responsibility).
+///
+/// Currently unused — the outline-fill path swapped to
+/// `catmull_rom_polyline` for correct envelope rendering (#24). Kept
+/// available for other smoothing paths that DO want control-point
+/// treatment (e.g. drawing a guided stroke through input samples
+/// where the user expects the curve to glide past samples rather
+/// than pin to them).
+#[allow(dead_code)]
 fn smooth_polyline(path: &mut BezPath, points: &[(f64, f64)]) {
     let n = points.len();
     if n == 0 {
@@ -1571,6 +1575,47 @@ fn smooth_polyline(path: &mut BezPath, points: &[(f64, f64)]) {
             let next_mid = ((p0.0 + p1.0) * 0.5, (p0.1 + p1.1) * 0.5);
             path.quad_to(p0, next_mid);
         }
+    }
+}
+
+/// Append a Catmull-Rom spline (converted to cubic Beziers) that
+/// passes *through* every point in `points`. Used by the outline-fill
+/// path (#24) where each sample is on the true envelope of the
+/// stroke; `smooth_polyline` would treat them as control points and
+/// drift the curve inward at every bend. Caller must have moved the
+/// path to `points[0]` before invoking — segments start from the
+/// current path position.
+fn catmull_rom_polyline(path: &mut BezPath, points: &[(f64, f64)]) {
+    let n = points.len();
+    if n < 2 {
+        return;
+    }
+    if n == 2 {
+        path.line_to(points[1]);
+        return;
+    }
+    for i in 0..n - 1 {
+        // Standard Catmull-Rom → cubic Bezier conversion. The
+        // ghost-endpoint trick (clamp p_minus / p_plus at the ends)
+        // gives a graceful no-overshoot terminus that still passes
+        // through points[0] and points[n-1] exactly.
+        let p_minus = if i == 0 { points[i] } else { points[i - 1] };
+        let p0 = points[i];
+        let p1 = points[i + 1];
+        let p_plus = if i + 2 < n {
+            points[i + 2]
+        } else {
+            points[i + 1]
+        };
+        let c1 = (
+            p0.0 + (p1.0 - p_minus.0) / 6.0,
+            p0.1 + (p1.1 - p_minus.1) / 6.0,
+        );
+        let c2 = (
+            p1.0 - (p_plus.0 - p0.0) / 6.0,
+            p1.1 - (p_plus.1 - p0.1) / 6.0,
+        );
+        path.curve_to(c1, c2, p1);
     }
 }
 
@@ -2031,7 +2076,11 @@ fn emit_outline(
     let mut path = BezPath::new();
     path.move_to(left[0]);
     if smooth_outline {
-        smooth_polyline(&mut path, &left[1..]);
+        // Pass the full `left` slice — `catmull_rom_polyline` draws
+        // segments starting from the path's current position
+        // (= left[0]) and lands exactly on left[last]. The boundary
+        // therefore passes through every offset sample (#24).
+        catmull_rom_polyline(&mut path, &left);
         if let Some(&last_left) = left.last() {
             let first_right = right[right.len() - 1];
             let mid = (
@@ -2041,7 +2090,7 @@ fn emit_outline(
             path.quad_to(last_left, mid);
         }
         let right_rev: Vec<(f64, f64)> = right.iter().rev().copied().collect();
-        smooth_polyline(&mut path, &right_rev);
+        catmull_rom_polyline(&mut path, &right_rev);
     } else {
         for &p in left.iter().skip(1) {
             path.line_to(p);
@@ -2250,5 +2299,107 @@ fn tip_polygon(tip: &TipShape, center: (f64, f64), scale: f64) -> BezPath {
             p.close_path();
             p
         }
+    }
+}
+
+#[cfg(test)]
+mod outline_tests {
+    //! Coverage for the outline-fill envelope formula (#24): the
+    //! interpolated boundary must pass through every offset sample
+    //! at the original positions, not drift inward at bends.
+
+    use super::*;
+
+    fn flatten(path: &BezPath, tolerance: f64) -> Vec<(f64, f64)> {
+        use vello::kurbo::{flatten, PathEl};
+        let mut out = Vec::new();
+        flatten(path.iter(), tolerance, &mut |el| match el {
+            PathEl::MoveTo(p) => out.push((p.x, p.y)),
+            PathEl::LineTo(p) => out.push((p.x, p.y)),
+            _ => {}
+        });
+        out
+    }
+
+    fn nearest_distance(pt: (f64, f64), poly: &[(f64, f64)]) -> f64 {
+        poly.iter()
+            .map(|(x, y)| {
+                let dx = x - pt.0;
+                let dy = y - pt.1;
+                (dx * dx + dy * dy).sqrt()
+            })
+            .fold(f64::INFINITY, f64::min)
+    }
+
+    #[test]
+    fn catmull_rom_endpoints_match_input() {
+        let pts: Vec<(f64, f64)> = vec![(0.0, 0.0), (10.0, 5.0), (20.0, 0.0), (30.0, 5.0)];
+        let mut path = BezPath::new();
+        path.move_to(pts[0]);
+        catmull_rom_polyline(&mut path, &pts);
+        let flat = flatten(&path, 0.01);
+        // First and last must lie on the input endpoints exactly.
+        let first = flat.first().copied().unwrap();
+        let last = flat.last().copied().unwrap();
+        assert!((first.0 - 0.0).abs() < 1e-9 && (first.1 - 0.0).abs() < 1e-9);
+        assert!((last.0 - 30.0).abs() < 1e-6 && (last.1 - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn catmull_rom_passes_through_every_input_point() {
+        // Zigzag — visualizes the drift bug from #24 well. Each
+        // input point must be within sub-pixel distance of the
+        // flattened curve.
+        let pts: Vec<(f64, f64)> = vec![
+            (0.0, 0.0),
+            (10.0, 5.0),
+            (20.0, -3.0),
+            (30.0, 4.0),
+            (40.0, -2.0),
+            (50.0, 0.0),
+        ];
+        let mut path = BezPath::new();
+        path.move_to(pts[0]);
+        catmull_rom_polyline(&mut path, &pts);
+        let flat = flatten(&path, 0.01);
+        for &p in &pts {
+            let d = nearest_distance(p, &flat);
+            assert!(
+                d < 0.05,
+                "input point {p:?} is {d} from flattened curve; envelope drifted (#24)"
+            );
+        }
+    }
+
+    #[test]
+    fn smooth_polyline_does_not_pass_through_interior_points() {
+        // Regression target — proves the pre-fix `smooth_polyline`
+        // treats interior points as control points (drift). Used as
+        // the documented contrast against catmull_rom_polyline so a
+        // future revert is loud.
+        let pts: Vec<(f64, f64)> = vec![(0.0, 0.0), (10.0, 10.0), (20.0, 0.0)];
+        let mut path = BezPath::new();
+        path.move_to(pts[0]);
+        smooth_polyline(&mut path, &pts[1..]);
+        let flat = flatten(&path, 0.01);
+        // The middle input (10, 10) is the control point — the
+        // curve's peak should NOT reach (10, 10).
+        let d_mid = nearest_distance(pts[1], &flat);
+        assert!(
+            d_mid > 0.5,
+            "smooth_polyline unexpectedly passes through the control point {:?} (d={d_mid})",
+            pts[1]
+        );
+    }
+
+    #[test]
+    fn catmull_rom_two_points_falls_back_to_line() {
+        let pts: Vec<(f64, f64)> = vec![(0.0, 0.0), (10.0, 10.0)];
+        let mut path = BezPath::new();
+        path.move_to(pts[0]);
+        catmull_rom_polyline(&mut path, &pts);
+        let flat = flatten(&path, 0.01);
+        let last = flat.last().copied().unwrap();
+        assert!((last.0 - 10.0).abs() < 1e-9 && (last.1 - 10.0).abs() < 1e-9);
     }
 }

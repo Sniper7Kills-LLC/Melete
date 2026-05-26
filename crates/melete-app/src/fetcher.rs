@@ -260,11 +260,7 @@ fn persist_single(state: SharedState, page_id: PageId, widget_id: Uuid, data: Wi
     }
 }
 
-fn persist_full_cache(
-    state: SharedState,
-    page_id: PageId,
-    cache: HashMap<Uuid, WidgetData>,
-) {
+fn persist_full_cache(state: SharedState, page_id: PageId, cache: HashMap<Uuid, WidgetData>) {
     let backend = state.borrow().backend.clone();
     let mut b = backend.borrow_mut();
     let mut page = match b.get_page(page_id) {
@@ -320,10 +316,7 @@ fn agent() -> ureq::Agent {
 
 fn http_get_json(url: &str) -> Result<serde_json::Value, String> {
     let agent = agent();
-    let resp = agent
-        .get(url)
-        .call()
-        .map_err(|e| format!("http {}", e))?;
+    let resp = agent.get(url).call().map_err(|e| format!("http {}", e))?;
     let body = resp
         .into_string()
         .map_err(|e| format!("decode body: {}", e))?;
@@ -332,21 +325,13 @@ fn http_get_json(url: &str) -> Result<serde_json::Value, String> {
 
 fn http_get_text(url: &str) -> Result<String, String> {
     let agent = agent();
-    let resp = agent
-        .get(url)
-        .call()
-        .map_err(|e| format!("http {}", e))?;
+    let resp = agent.get(url).call().map_err(|e| format!("http {}", e))?;
     resp.into_string().map_err(|e| format!("decode: {}", e))
 }
 
 // ---- Weather (Open-Meteo) -------------------------------------------------
 
-fn fetch_weather(
-    lat: f64,
-    lon: f64,
-    label: &str,
-    days: u32,
-) -> Result<WidgetPayload, String> {
+fn fetch_weather(lat: f64, lon: f64, label: &str, days: u32) -> Result<WidgetPayload, String> {
     let url = format!(
         "https://api.open-meteo.com/v1/forecast?latitude={:.4}&longitude={:.4}\
          &current=temperature_2m,weather_code\
@@ -476,10 +461,7 @@ fn fetch_quote(source: &str) -> Result<WidgetPayload, String> {
 
 // ---- Bible verse (bible-api.com) ------------------------------------------
 
-fn fetch_bible_verse(
-    reference: &str,
-    translation: &str,
-) -> Result<WidgetPayload, String> {
+fn fetch_bible_verse(reference: &str, translation: &str) -> Result<WidgetPayload, String> {
     let endpoint_ref = if reference.eq_ignore_ascii_case("random") {
         "?random=verse".to_string()
     } else {
@@ -572,14 +554,8 @@ fn compute_moon_phase(date: NaiveDate) -> WidgetPayload {
     if r > 9 {
         r -= 19;
     }
-    let r_b = (r * 11) % 30
-        + date.month() as i32
-        + date.day() as i32;
-    let r_b = if date.month() < 3 {
-        r_b + 2
-    } else {
-        r_b
-    };
+    let r_b = (r * 11) % 30 + date.month() as i32 + date.day() as i32;
+    let r_b = if date.month() < 3 { r_b + 2 } else { r_b };
     let r_b = r_b - if date.year() < 2000 { 4 } else { 8 };
     let phase_day = ((r_b % 30) + 30) % 30;
     // Map phase_day ∈ [0,29] → label + emoji + illumination percent.
@@ -622,10 +598,7 @@ fn fetch_on_this_day(
         .ok_or("no events")?;
     let mut events = Vec::new();
     for e in arr.iter().take(max_events.max(1) as usize) {
-        let year = e
-            .get("year")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(0) as i32;
+        let year = e.get("year").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
         let text = e
             .get("text")
             .and_then(|v| v.as_str())
@@ -770,10 +743,7 @@ fn fetch_astronomy(lat: f64, lon: f64, date: NaiveDate) -> Result<WidgetPayload,
         .and_then(|v| v.as_f64())
         .unwrap_or(0.0);
     let lines = vec![
-        format!(
-            "Daylight {:.1}h",
-            day / 3600.0
-        ),
+        format!("Daylight {:.1}h", day / 3600.0),
         format!("Sunshine {:.1}h", sun / 3600.0),
     ];
     Ok(WidgetPayload::Astronomy { lines })

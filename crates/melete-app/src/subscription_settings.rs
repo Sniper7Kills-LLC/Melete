@@ -23,10 +23,7 @@ use libadwaita::prelude::*;
 use melete_storage::entitlement::Entitlement;
 use melete_storage::remote_template_store::store::{RemoteError, RemoteTemplateStore};
 
-pub fn populate_subscription_group(
-    parent: &ApplicationWindow,
-    group: &adw::PreferencesGroup,
-) {
+pub fn populate_subscription_group(parent: &ApplicationWindow, group: &adw::PreferencesGroup) {
     while let Some(row) = first_row(group) {
         group.remove(&row);
     }
@@ -51,11 +48,7 @@ pub fn populate_subscription_group(
                 Ok(ent) => add_signed_in_rows(parent, group, &ent),
                 Err(e) => {
                     tracing::warn!("fetch_my_entitlement: {e}");
-                    add_static_row(
-                        group,
-                        "Could not load subscription",
-                        Some(&format!("{e}")),
-                    );
+                    add_static_row(group, "Could not load subscription", Some(&format!("{e}")));
                 }
             }
         }
@@ -82,7 +75,7 @@ fn add_static_row(group: &adw::PreferencesGroup, title: &str, subtitle: Option<&
 }
 
 fn add_signed_in_rows(
-    parent: &ApplicationWindow,
+    _parent: &ApplicationWindow,
     group: &adw::PreferencesGroup,
     ent: &Entitlement,
 ) {
@@ -153,17 +146,15 @@ fn status_display(status: &str) -> String {
 /// the same `http://localhost:3000` value baked into the sandbox
 /// Lambda env so dev flows stay consistent.
 fn billing_url(path: &str) -> String {
-    let base = std::env::var("MELETE_WEB_URL")
-        .unwrap_or_else(|_| "http://localhost:3000".to_string());
+    let base =
+        std::env::var("MELETE_WEB_URL").unwrap_or_else(|_| "http://localhost:3000".to_string());
     format!("{}{}", base.trim_end_matches('/'), path)
 }
 
 fn open_url(url: &str) {
-    if let Err(e) = gtk4::gio::AppInfo::launch_default_for_uri(
-        url,
-        None::<&gtk4::gio::AppLaunchContext>,
-    ) {
+    if let Err(e) =
+        gtk4::gio::AppInfo::launch_default_for_uri(url, None::<&gtk4::gio::AppLaunchContext>)
+    {
         tracing::warn!("launch_default_for_uri({url}): {e}");
     }
 }
-

@@ -797,28 +797,28 @@ pub fn build_editor_view(
             let btn = b.clone();
             let title_hint = format!(
                 "notebook template \"{}\"",
-                if template.name.is_empty() { "untitled" } else { template.name.as_str() }
+                if template.name.is_empty() {
+                    "untitled"
+                } else {
+                    template.name.as_str()
+                }
             );
-            crate::remote_browser::pick_visibility(
-                &parent_for_publish,
-                &title_hint,
-                move |vis| {
-                    btn.set_sensitive(false);
-                    btn.set_label("Publishing…");
-                    match crate::remote_browser::publish_local_notebook_template(
-                        &template,
-                        state.clone(),
-                        vis,
-                    ) {
-                        Ok(()) => btn.set_label("Published ✓"),
-                        Err(e) => {
-                            tracing::warn!("publish notebook template: {e}");
-                            btn.set_label("Publish failed");
-                            btn.set_sensitive(true);
-                        }
+            crate::remote_browser::pick_visibility(&parent_for_publish, &title_hint, move |vis| {
+                btn.set_sensitive(false);
+                btn.set_label("Publishing…");
+                match crate::remote_browser::publish_local_notebook_template(
+                    &template,
+                    state.clone(),
+                    vis,
+                ) {
+                    Ok(()) => btn.set_label("Published ✓"),
+                    Err(e) => {
+                        tracing::warn!("publish notebook template: {e}");
+                        btn.set_label("Publish failed");
+                        btn.set_sensitive(true);
                     }
-                },
-            );
+                }
+            });
         });
     }
 
@@ -2015,7 +2015,11 @@ fn build_missing_templates_banner(state: SharedState, missing: &[TemplateId]) ->
             text_clone.set_label(&format!(
                 "Downloaded {ok} template{}{}. Re-open the preview to render them.",
                 if ok == 1 { "" } else { "s" },
-                if fail > 0 { format!(" ({fail} failed)") } else { String::new() },
+                if fail > 0 {
+                    format!(" ({fail} failed)")
+                } else {
+                    String::new()
+                },
             ));
             b.set_label("Done");
         });
@@ -2080,7 +2084,10 @@ mod tests {
         let opts = &es.template.entry_options;
         assert_eq!(opts.get("year_start:0"), Some(&flags(true, false)));
         // index 1 was removed
-        assert!(!opts.contains_key("year_start:1") || opts.get("year_start:1") == Some(&flags(true, true)));
+        assert!(
+            !opts.contains_key("year_start:1")
+                || opts.get("year_start:1") == Some(&flags(true, true))
+        );
         // index 2 shifted to 1
         assert_eq!(opts.get("year_start:1"), Some(&flags(true, true)));
         // index 2 should no longer exist

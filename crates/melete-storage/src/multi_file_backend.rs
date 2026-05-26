@@ -764,10 +764,7 @@ impl StrokeStore for MultiFileSqliteBackend {
         })
     }
 
-    fn list_deleted_strokes(
-        &mut self,
-        notebook_id: NotebookId,
-    ) -> Result<Vec<(Uuid, String)>> {
+    fn list_deleted_strokes(&mut self, notebook_id: NotebookId) -> Result<Vec<(Uuid, String)>> {
         self.with_conn(notebook_id, stroke_store::list_deleted)
     }
 
@@ -1002,14 +999,24 @@ mod tests {
                 timestamp_ms: 1,
             }],
             pen: PenSettings {
-                color: Color { r: 0, g: 0, b: 0, a: 255 },
+                color: Color {
+                    r: 0,
+                    g: 0,
+                    b: 0,
+                    a: 255,
+                },
                 base_width: 1.0,
                 opacity: 1.0,
                 blend_mode: BlendMode::Normal,
                 brush_style: ToolStyle::Pen,
             },
             zoom_at_creation: 1.0,
-            bounding_box: Rect { x: 0.0, y: 0.0, width: 1.0, height: 1.0 },
+            bounding_box: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
             brush_recipe: None,
         };
         be.insert_stroke(&stroke, page.id).unwrap();

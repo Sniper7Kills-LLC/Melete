@@ -83,6 +83,17 @@ pub fn tool_is_drawing(tool: Tool) -> bool {
     )
 }
 
+/// Per-stroke snapshot captured at the start of a selection-resize
+/// gesture. Stored on `CanvasState::selection_resize_snapshot` so
+/// every frame of the drag can recompute from the original geometry
+/// instead of compounding floating-point error frame-to-frame.
+#[derive(Clone, Debug)]
+pub struct SelectionResizeSnapshot {
+    pub id: Uuid,
+    pub points: Vec<melete_core::StrokePoint>,
+    pub bbox: Rect,
+}
+
 pub struct CanvasState {
     pub transform: ViewportTransform,
     pub strokes: Vec<Stroke>,
@@ -111,8 +122,7 @@ pub struct CanvasState {
     pub current_page_overrides: std::collections::HashMap<uuid::Uuid, melete_core::WidgetOverride>,
     /// Cached fetch payloads loaded from `Page.widget_data`. Read by the
     /// Vello widget renderer; written by the app-layer fetcher.
-    pub current_page_widget_data:
-        std::collections::HashMap<uuid::Uuid, melete_core::WidgetData>,
+    pub current_page_widget_data: std::collections::HashMap<uuid::Uuid, melete_core::WidgetData>,
     /// Installed by the planner navigation strip; called from `load_page`
     /// when the user clicks a Day-addressed planner page so prev/next walk
     /// from that date instead of from "today".
@@ -130,6 +140,13 @@ pub struct CanvasState {
     pub selection_resize_bbox_orig: Option<melete_core::Rect>,
     pub selection_resize_cumulative: (f64, f64),
     pub selection_resize_anchor: (f64, f64),
+    /// Original stroke points + bboxes captured at the moment a
+    /// resize handle is grabbed. Each frame's scale is computed from
+    /// the *total* mouse delta against these snapshots, so the
+    /// gesture is linear in the user's drag distance — the previous
+    /// frame-by-frame in-place mutation accumulated floating-point
+    /// drift and was non-linear under back-and-forth dragging (#21).
+    pub selection_resize_snapshot: Option<Vec<SelectionResizeSnapshot>>,
     /// Wall-clock instant when the current page was switched in. The
     /// canvas reads this to fade the new page surface in over a few
     /// frames (audit §9). `None` once the fade is complete or no page
@@ -284,6 +301,7 @@ pub fn new_shared_state(
         selection_resize_bbox_orig: None,
         selection_resize_cumulative: (1.0, 1.0),
         selection_resize_anchor: (0.0, 0.0),
+        selection_resize_snapshot: None,
         page_transition_started_at: None,
         thumbnail_cache: HashMap::new(),
         stroke_clipboard: Vec::new(),
@@ -524,6 +542,7 @@ pub fn set_current_page(state: &SharedState, page_id: PageId) {
     s.selection_resize_bbox_orig = None;
     s.selection_resize_cumulative = (1.0, 1.0);
     s.selection_resize_anchor = (0.0, 0.0);
+    s.selection_resize_snapshot = None;
 }
 
 /// Apply a template to current canvas state (or clear back to defaults if None).
@@ -647,4 +666,5 @@ pub fn clear_selection(state: &SharedState) {
     s.selection_resize_bbox_orig = None;
     s.selection_resize_cumulative = (1.0, 1.0);
     s.selection_resize_anchor = (0.0, 0.0);
+    s.selection_resize_snapshot = None;
 }

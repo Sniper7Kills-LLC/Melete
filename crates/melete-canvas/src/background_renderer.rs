@@ -7,9 +7,9 @@ use melete_core::Rect;
 
 pub use melete_core::AssetResolver;
 
-use crate::grid_renderer::GridSettings;
 #[cfg(feature = "desktop")]
 use crate::grid_renderer::draw_grid;
+use crate::grid_renderer::GridSettings;
 #[cfg(feature = "desktop")]
 use crate::viewport_transform::ViewportTransform;
 

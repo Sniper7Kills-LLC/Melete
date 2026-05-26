@@ -563,47 +563,62 @@ Melete/
 
 ## Data Models
 
-### Notebook
-- id, name, created_at
-- kind: Standard | Planner { notebook_template_id, creation_date }
-- assigned_page_templates: Vec<TemplateId>
+The canonical struct definitions live in `crates/melete-core/src/` —
+this section is a navigation map rather than a field-level mirror,
+since the hand-maintained version drifted from the code as the
+project grew (#32). Generate the current shapes with:
 
-### Section
-- id, notebook_id, name, position (for ordering)
-- allowed_templates: Option<Vec<TemplateId>> (None = inherit from notebook)
+```
+cargo doc -p melete-core --no-deps --open
+```
 
-### Page
-- id, section_id, position (for ordering)
-- template_id: Option<TemplateId>
-- planner_address: Option<PlannerPageAddress> (for auto-generated pages)
-- created_at, modified_at
+**Shapes at a glance:**
 
-### Stroke
-- id, page_id
-- points: binary packed (x, y, pressure, tilt_x, tilt_y, timestamp)
-- pen_settings: color, width, opacity, blend_mode
-- zoom_at_creation: f64
-- bounding_box: Rect
+- **`Notebook`** (`notebook.rs`) — top-level container. Carries an
+  ordered list of section IDs, an assigned page-template set, and a
+  `NotebookKind` enum that distinguishes standard freeform notebooks
+  from planners (planners hang a `NotebookTemplate` reference + a
+  creation date that drives auto-generated period pages).
 
-### PageTemplate
-- id, name, description
-- background: Blank | Dots | Lines | Grid | Image(path) | PDF(path, page)
-- size: (width_mm, height_mm) — physical dimensions, default 215.9 × 279.4 (US Letter)
-- tiling: None | Repeat (grids tile infinitely with hierarchical subdivision)
-- default_viewport: FitPage (page fills screen on open)
+- **`Section`** (`notebook.rs`) — grouping inside a notebook.
+  Supports nested parent-child sections and an optional per-section
+  override of the notebook's allowed page-template set.
 
-### NotebookTemplate (Planner)
-- id, name, description
-- year_start: Vec<TemplateId>
-- before_quarter: Vec<TemplateId>
-- before_month: Vec<TemplateId>
-- before_week: Vec<TemplateId>
-- daily_slots: Vec<DailySlot>
+- **`Page`** (`page.rs`) — single canvas. Owns a name, an optional
+  bound `PageTemplate` reference, a `planner_address` for auto-
+  generated pages, and per-instance `WidgetOverride` /
+  `WidgetData` maps so a planner page can carry its own checklist
+  ticks / calendar markers without mutating the underlying
+  template.
 
-### DailySlot
-- days: Vec<DayOfWeek> (e.g., [Mon] or [Sat, Sun])
-- templates: Vec<TemplateId> (pages for that slot)
-- Note: Both Sat and Sun navigate to same page when grouped
+- **`Stroke`** (`stroke.rs`) — one drawn mark. Holds a `Vec<StrokePoint>`
+  (`x, y, pressure, tilt_x, tilt_y, timestamp_ms`), a `PenSettings`
+  block (color / base_width / opacity / blend mode / brush style),
+  `zoom_at_creation`, a precomputed `Rect` bounding box, and an
+  optional composable `Brush` recipe captured at creation (`None`
+  falls back to the per-style default).
+
+- **`PageTemplate`** (`template.rs`) — physical-unit (mm) layout.
+  Carries a `BackgroundType` (blank / dots / lines / grid / image /
+  pdf), a `size_mm: (f64, f64)` (default US Letter), tiling mode,
+  default viewport, optional category, and a `widgets:
+  Vec<TemplateWidget>` list (calendars, checklists, text blocks,
+  …) that paint between the background and the user's strokes.
+
+- **`NotebookTemplate`** (`template.rs`) — planner structure.
+  Period-section vectors (year-start, before-quarter, before-month,
+  before-week, daily slots), per-period grouping rules, and the
+  title-format strings (`{date} / {weekday} / {month_name}` etc.)
+  the runtime expands when materialising a planner page.
+
+- **`Brush`** (`brush.rs`) — composable layered pen model: an
+  ordered `Vec<BrushLayer>` of `Geometry` × `WidthMode` × `TipShape`
+  × `ColorMod` × `BlendMode`, plus a `CursorShape` and optional
+  `default_color`. The renderer lowers a `Brush` to Vello scene
+  calls in `vello_renderer::draw_brush_into_scene`. Built-in
+  ToolStyle brushes (Pen / Pencil / Highlighter / Paintbrush /
+  SprayCan / Calligraphy) are produced by
+  `melete_canvas::built_in_brushes::legacy_brush_for(...)`.
 
 ---
 

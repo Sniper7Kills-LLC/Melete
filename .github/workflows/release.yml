@@ -43,7 +43,8 @@ permissions:
 
 jobs:
   build-linux-x86_64:
-    runs-on: ubuntu-22.04
+    # Needs gtk4 4.12+ for the v4_12 feature; ubuntu-22.04 ships 4.6.9.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -52,7 +53,7 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Install GTK4 / libadwaita / GL deps
+      - name: Install GTK4 / libadwaita / GL / dbus deps
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -62,7 +63,8 @@ jobs:
             libegl1-mesa-dev \
             libgles2-mesa-dev \
             libvulkan-dev \
-            libpoppler-glib-dev
+            libpoppler-glib-dev \
+            libdbus-1-dev
 
       - name: Cache cargo
         uses: actions/cache@v4

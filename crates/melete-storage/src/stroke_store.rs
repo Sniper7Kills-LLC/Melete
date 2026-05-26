@@ -91,10 +91,17 @@ pub fn delete_stroke(conn: &Connection, id: uuid::Uuid) -> Result<()> {
         // Either the stroke never existed or was already deleted.
         // Treat both as already-in-target-state — callers do
         // best-effort sync follow-up regardless.
-        tracing::debug!("STROKE_MOD sqlite soft-delete: id={} NOT FOUND (already deleted or absent)", id);
+        tracing::debug!(
+            "STROKE_MOD sqlite soft-delete: id={} NOT FOUND (already deleted or absent)",
+            id
+        );
         return Err(StorageError::NotFound);
     }
-    tracing::debug!("STROKE_MOD sqlite soft-delete OK: id={} deleted_at={}", id, now);
+    tracing::debug!(
+        "STROKE_MOD sqlite soft-delete OK: id={} deleted_at={}",
+        id,
+        now
+    );
     // Drop from rtree so spatial queries don't return stale geometry.
     let _ = conn.execute(
         "DELETE FROM strokes_rtree WHERE id = (SELECT rowid FROM strokes WHERE id = ?1)",

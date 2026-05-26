@@ -1,0 +1,109 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  rust:
+    name: rust (fmt / clippy / build / test)
+    # ubuntu-22.04 ships gtk4 4.6.9 via apt, but the workspace
+    # `gtk4` dep pins `features = ["v4_12"]` — gdk4-sys's build
+    # script then rejects pkg-config's older version. ubuntu-24.04
+    # ships gtk4 4.14, which satisfies both the v4_12 ABI and the
+    # poppler-glib / libadwaita 0.7 floors.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install GTK4 / libadwaita / GL / dbus deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            libgles2-mesa-dev \
+            libvulkan-dev \
+            libpoppler-glib-dev \
+            libdbus-1-dev
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-ci-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            cargo-ci-${{ runner.os }}-
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --features remote,vello -- -D warnings
+
+      - name: cargo build
+        run: cargo build --workspace --features remote,vello
+
+      - name: cargo test
+        run: cargo test --workspace --features remote,vello
+
+  amplify-ts:
+    name: amplify backend (tsc)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: npm ci
+        run: npm ci
+
+      - name: typecheck (amplify backend)
+        run: npm run typecheck
+
+  web:
+    name: web (tsc)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: typecheck
+        run: npm run typecheck

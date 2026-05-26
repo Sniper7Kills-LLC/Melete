@@ -17,10 +17,8 @@ use std::collections::HashSet;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 use melete_core::{NotebookId, PageId, Section, Stroke};
+use melete_storage::remote_notebook_store::{NotebookSyncError, RemoteNotebookStore, SyncReport};
 pub use melete_storage::remote_notebook_store::{NotebookVisibility, SyncProgress};
-use melete_storage::remote_notebook_store::{
-    NotebookSyncError, RemoteNotebookStore, SyncReport,
-};
 
 /// Result of [`pull_and_merge_notebook`]. Reports how many remote
 /// rows were absent locally and got inserted.
@@ -335,9 +333,7 @@ pub struct PullJob {
 pub struct PullJobState {
     pub phase: String,
     pub strokes_pulled: usize,
-    pub finished: Option<
-        Result<Vec<melete_storage::remote_notebook_store::PulledStroke>, String>,
-    >,
+    pub finished: Option<Result<Vec<melete_storage::remote_notebook_store::PulledStroke>, String>>,
 }
 
 pub fn spawn_pull(notebook_id: NotebookId) -> PullJob {
@@ -443,45 +439,42 @@ pub fn request_metadata_resync(state: &SharedState, notebook_id: NotebookId) {
         }
     });
     let state = state.clone();
-    let id = gtk4::glib::timeout_add_local(
-        std::time::Duration::from_millis(800),
-        move || {
-            PENDING_RESYNC.with(|map| {
-                map.borrow_mut().remove(&notebook_id);
-            });
-            // Look up visibility silently — defaults to PRIVATE if
-            // somehow gone. Visibility shouldn't change here, just
-            // mirrors the existing remote.
-            let visibility = match fetch_remote_visibility(notebook_id) {
-                Ok(Some(v)) => v,
-                Ok(None) => NotebookVisibility::Private,
-                Err(e) => {
-                    tracing::warn!(
-                        "notebook_sync: visibility lookup failed during resync of {:?}: {}",
-                        notebook_id,
-                        e
-                    );
-                    return gtk4::glib::ControlFlow::Break;
-                }
-            };
-            match spawn_sync(&state, notebook_id, visibility, false) {
-                Ok(_) => {
-                    tracing::debug!(
-                        "notebook_sync: debounced metadata resync started for {:?}",
-                        notebook_id
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "notebook_sync: debounced resync spawn failed for {:?}: {}",
-                        notebook_id,
-                        e
-                    );
-                }
+    let id = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(800), move || {
+        PENDING_RESYNC.with(|map| {
+            map.borrow_mut().remove(&notebook_id);
+        });
+        // Look up visibility silently — defaults to PRIVATE if
+        // somehow gone. Visibility shouldn't change here, just
+        // mirrors the existing remote.
+        let visibility = match fetch_remote_visibility(notebook_id) {
+            Ok(Some(v)) => v,
+            Ok(None) => NotebookVisibility::Private,
+            Err(e) => {
+                tracing::warn!(
+                    "notebook_sync: visibility lookup failed during resync of {:?}: {}",
+                    notebook_id,
+                    e
+                );
+                return gtk4::glib::ControlFlow::Break;
             }
-            gtk4::glib::ControlFlow::Break
-        },
-    );
+        };
+        match spawn_sync(&state, notebook_id, visibility, false) {
+            Ok(_) => {
+                tracing::debug!(
+                    "notebook_sync: debounced metadata resync started for {:?}",
+                    notebook_id
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "notebook_sync: debounced resync spawn failed for {:?}: {}",
+                    notebook_id,
+                    e
+                );
+            }
+        }
+        gtk4::glib::ControlFlow::Break
+    });
     PENDING_RESYNC.with(|map| {
         map.borrow_mut().insert(notebook_id, id);
     });
@@ -778,8 +771,7 @@ fn purge_local_strokes(notebook_id: NotebookId, ids: &[uuid::Uuid]) {
     if ids.is_empty() {
         return;
     }
-    let base = match dirs::data_dir().or_else(|| dirs::home_dir().map(|h| h.join(".local/share")))
-    {
+    let base = match dirs::data_dir().or_else(|| dirs::home_dir().map(|h| h.join(".local/share"))) {
         Some(b) => b,
         None => return,
     };
@@ -868,10 +860,8 @@ fn worker_loop() {
             }
             // Acquire per-stroke locks for every id in the batch
             // (sorted to avoid deadlock between concurrent workers).
-            let mut all_ids: Vec<uuid::Uuid> = batch
-                .iter()
-                .flat_map(|(_, ev)| ids_touched(ev))
-                .collect();
+            let mut all_ids: Vec<uuid::Uuid> =
+                batch.iter().flat_map(|(_, ev)| ids_touched(ev)).collect();
             all_ids.sort();
             all_ids.dedup();
             let locks: Vec<_> = all_ids.into_iter().map(lock_for).collect();
@@ -907,7 +897,9 @@ fn worker_loop() {
                                 continue;
                             }
                         };
-                        entry.0.push((stroke.id, *page_id, body, enqueued_at.clone()));
+                        entry
+                            .0
+                            .push((stroke.id, *page_id, body, enqueued_at.clone()));
                     }
                     PublishEvent::Updated { stroke, .. } => {
                         // Updates need a notebook_id + page_id, which
@@ -1044,16 +1036,17 @@ fn worker_loop() {
                                 p.limit,
                                 p.resets_at,
                             );
-                            let mut budget = melete_storage::entitlement::SyncBudget::default();
-                            budget.disabled_until = p
-                                .resets_at
-                                .as_deref()
-                                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                                .map(|d| d.with_timezone(&chrono::Utc));
-                            budget.reason_code = Some(p.code.clone());
-                            budget.limit = p.limit;
-                            budget.current = p.current;
-                            budget.upgrade_url = p.upgrade_url.clone();
+                            let budget = melete_storage::entitlement::SyncBudget {
+                                disabled_until: p
+                                    .resets_at
+                                    .as_deref()
+                                    .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                                    .map(|d| d.with_timezone(&chrono::Utc)),
+                                reason_code: Some(p.code.clone()),
+                                limit: p.limit,
+                                current: p.current,
+                                upgrade_url: p.upgrade_url.clone(),
+                            };
                             budget.save_to_default();
                             quota_blocked = true;
                             // Drop the in-flight items entirely — no
@@ -1121,7 +1114,11 @@ fn enqueue(ev: PublishEvent) {
         PublishEvent::Created { stroke, .. } => format!("create id={}", stroke.id),
         PublishEvent::Updated { stroke, .. } => format!("update id={}", stroke.id),
         PublishEvent::Deleted { stroke_id, .. } => format!("delete id={}", stroke_id),
-        PublishEvent::Replaced { old_id, new_strokes, .. } => {
+        PublishEvent::Replaced {
+            old_id,
+            new_strokes,
+            ..
+        } => {
             format!("replace old={} children={}", old_id, new_strokes.len())
         }
     };
@@ -1161,7 +1158,10 @@ pub fn in_flight() -> usize {
 /// the network.
 pub fn on_local_stroke_created(state: &SharedState, page_id: PageId, stroke: &Stroke) {
     let Some(notebook_id) = resolve_notebook(state, page_id) else {
-        tracing::debug!("notebook_sync: create hook skipped — no notebook for {:?}", page_id);
+        tracing::debug!(
+            "notebook_sync: create hook skipped — no notebook for {:?}",
+            page_id
+        );
         return;
     };
     if !is_enabled(notebook_id) {
@@ -1172,7 +1172,11 @@ pub fn on_local_stroke_created(state: &SharedState, page_id: PageId, stroke: &St
         );
         return;
     }
-    tracing::debug!("notebook_sync: enqueue create {} for {:?}", stroke.id, notebook_id);
+    tracing::debug!(
+        "notebook_sync: enqueue create {} for {:?}",
+        stroke.id,
+        notebook_id
+    );
     enqueue(PublishEvent::Created {
         notebook_id,
         page_id,
@@ -1184,7 +1188,10 @@ pub fn on_local_stroke_created(state: &SharedState, page_id: PageId, stroke: &St
 /// Hook for stroke deletions (eraser, lasso delete, undo of an add).
 pub fn on_local_stroke_deleted(state: &SharedState, page_id: PageId, stroke_id: uuid::Uuid) {
     let Some(notebook_id) = resolve_notebook(state, page_id) else {
-        tracing::debug!("notebook_sync: delete hook skipped — no notebook for {:?}", page_id);
+        tracing::debug!(
+            "notebook_sync: delete hook skipped — no notebook for {:?}",
+            page_id
+        );
         return;
     };
     if !is_enabled(notebook_id) {
@@ -1195,7 +1202,11 @@ pub fn on_local_stroke_deleted(state: &SharedState, page_id: PageId, stroke_id: 
         );
         return;
     }
-    tracing::debug!("notebook_sync: enqueue delete {} for {:?}", stroke_id, notebook_id);
+    tracing::debug!(
+        "notebook_sync: enqueue delete {} for {:?}",
+        stroke_id,
+        notebook_id
+    );
     enqueue(PublishEvent::Deleted {
         notebook_id,
         stroke_id,
@@ -1213,7 +1224,11 @@ pub fn on_local_stroke_updated(state: &SharedState, page_id: PageId, stroke: &St
     if !is_enabled(notebook_id) {
         return;
     }
-    tracing::debug!("notebook_sync: enqueue update {} for {:?}", stroke.id, notebook_id);
+    tracing::debug!(
+        "notebook_sync: enqueue update {} for {:?}",
+        stroke.id,
+        notebook_id
+    );
     enqueue(PublishEvent::Updated {
         stroke: stroke.clone(),
         enqueued_at: chrono::Utc::now().to_rfc3339(),

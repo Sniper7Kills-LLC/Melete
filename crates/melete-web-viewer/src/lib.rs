@@ -39,9 +39,7 @@ mod bundle;
 
 use std::collections::HashMap;
 
-use melete_canvas::{
-    viewport_transform::ViewportTransform, BackgroundConfig, GridSettings,
-};
+use melete_canvas::{viewport_transform::ViewportTransform, BackgroundConfig, GridSettings};
 use melete_core::{
     BackgroundType, BlendMode, PageTemplate, Point, Rect, Stroke, TemplateId, TilingMode, Viewport,
 };
@@ -49,9 +47,9 @@ use melete_widgets::{WidgetRenderContext, WidgetRenderer};
 
 use vello::kurbo::{Affine, BezPath, Cap, Join, Rect as KRect, Shape, Stroke as KStroke};
 use vello::peniko::{Brush, Color as PColor, Fill};
-use vello::{AaConfig, RenderParams, Renderer, Scene};
 #[cfg(target_arch = "wasm32")]
 use vello::RendererOptions;
+use vello::{AaConfig, RenderParams, Renderer, Scene};
 
 use uuid::Uuid;
 use wasm_bindgen::prelude::*;
@@ -227,8 +225,8 @@ impl Viewer {
     pub fn load_notebook(&mut self, bytes: &[u8]) -> Result<(), JsValue> {
         let text = std::str::from_utf8(bytes)
             .map_err(|e| js_err(format!("notebook bytes are not UTF-8: {e}")))?;
-        let bundle: NotebookBundle = serde_json::from_str(text)
-            .map_err(|e| js_err(format!("notebook JSON parse: {e}")))?;
+        let bundle: NotebookBundle =
+            serde_json::from_str(text).map_err(|e| js_err(format!("notebook JSON parse: {e}")))?;
 
         self.strokes_by_page.clear();
         self.template_by_page.clear();
@@ -360,9 +358,7 @@ impl Viewer {
         let frame = match state.surface.get_current_texture() {
             Ok(f) => f,
             Err(e) => {
-                web_sys::console::warn_1(
-                    &format!("get_current_texture: {e:?}").into(),
-                );
+                web_sys::console::warn_1(&format!("get_current_texture: {e:?}").into());
                 return;
             }
         };
@@ -530,10 +526,24 @@ fn draw_background_pattern(
             // POC: no image / pdf backgrounds (asset URLs aren't wired).
         }
         BackgroundConfig::Dots { spacing, tiling } => {
-            draw_dots(scene, transform, world_to_screen, page_rect, *spacing, *tiling);
+            draw_dots(
+                scene,
+                transform,
+                world_to_screen,
+                page_rect,
+                *spacing,
+                *tiling,
+            );
         }
         BackgroundConfig::Lines { spacing, tiling } => {
-            draw_lines(scene, transform, world_to_screen, page_rect, *spacing, *tiling);
+            draw_lines(
+                scene,
+                transform,
+                world_to_screen,
+                page_rect,
+                *spacing,
+                *tiling,
+            );
         }
         BackgroundConfig::Grid(g) => {
             draw_grid(scene, transform, world_to_screen, g);

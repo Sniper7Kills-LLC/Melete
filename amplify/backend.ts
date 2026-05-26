@@ -21,6 +21,9 @@ import { stripePortal } from './functions/stripe-portal/resource';
 import { adminStatsStream } from './functions/admin-stats-stream/resource';
 import { adminSearchUsers } from './functions/admin-search-users/resource';
 import { adminMutate } from './functions/admin-mutate/resource';
+import { adminTopUsersAggregator } from './functions/admin-top-users-aggregator/resource';
+import { Rule, Schedule } from 'aws-cdk-lib/aws-events';
+import { LambdaFunction as LambdaFunctionTarget } from 'aws-cdk-lib/aws-events-targets';
 
 export const backend = defineBackend({
   auth,
@@ -34,6 +37,7 @@ export const backend = defineBackend({
   adminStatsStream,
   adminSearchUsers,
   adminMutate,
+  adminTopUsersAggregator,
 });
 
 // Deep-link target for Stripe Checkout success/cancel + Portal return.
@@ -366,3 +370,56 @@ adminMutateFn.addToRolePolicy(
     resources: [userPool.userPoolArn],
   }),
 );
+
+// Top-users aggregator (#65). Scans UserEntitlement + UserDailyUsage
+// + Notebook, ranks top 100 per metric, writes AdminTopUsers. Cognito
+// ListUsers used to enrich top rows with email. EventBridge fires the
+// Lambda nightly at 02:00 UTC — chosen to dodge interactive load
+// during typical user hours across US + EU.
+const adminTopUsersTable = backend.data.resources.tables['AdminTopUsers'];
+const aggregatorFn = backend.adminTopUsersAggregator.resources
+  .lambda as LambdaFunction;
+aggregatorFn.addEnvironment(
+  'USER_ENTITLEMENT_TABLE_NAME',
+  userEntitlementTable.tableName,
+);
+aggregatorFn.addEnvironment(
+  'USER_DAILY_USAGE_TABLE_NAME',
+  userDailyUsageTable.tableName,
+);
+aggregatorFn.addEnvironment('NOTEBOOK_TABLE_NAME', notebookTable.tableName);
+aggregatorFn.addEnvironment(
+  'ADMIN_TOP_USERS_TABLE_NAME',
+  adminTopUsersTable.tableName,
+);
+aggregatorFn.addEnvironment('USER_POOL_ID', userPool.userPoolId);
+aggregatorFn.addToRolePolicy(
+  new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['dynamodb:Scan'],
+    resources: [
+      userEntitlementTable.tableArn,
+      userDailyUsageTable.tableArn,
+      notebookTable.tableArn,
+    ],
+  }),
+);
+aggregatorFn.addToRolePolicy(
+  new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['dynamodb:PutItem'],
+    resources: [adminTopUsersTable.tableArn],
+  }),
+);
+aggregatorFn.addToRolePolicy(
+  new PolicyStatement({
+    effect: Effect.ALLOW,
+    actions: ['cognito-idp:ListUsers'],
+    resources: [userPool.userPoolArn],
+  }),
+);
+
+new Rule(aggregatorFn.stack, 'AdminTopUsersNightlySchedule', {
+  schedule: Schedule.cron({ minute: '0', hour: '2' }),
+  targets: [new LambdaFunctionTarget(aggregatorFn)],
+});

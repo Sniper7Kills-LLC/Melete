@@ -1,0 +1,210 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Melete releases pipeline plumbing (#66). One-time setup for the
+  release.yml GitHub workflow:
+    - Private S3 bucket (versioned, encrypted) for tagged binaries +
+      latest.json manifest.
+    - CloudFront distribution that serves the bucket publicly via OAC,
+      backed by an ACM cert in us-east-1.
+    - Route53 record pointing the configured hostname at the
+      distribution (only if HostedZoneId is supplied; otherwise the
+      operator wires DNS manually).
+    - GitHub OIDC provider (re-used if already present) + IAM role
+      scoped to tag pushes on this repo, with PutObject /
+      CreateInvalidation perms.
+  Outputs surface the role ARN, bucket name, and public URL that
+  release.yml expects as repo secrets.
+
+Parameters:
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: >
+      Optional Route53 hosted zone ID for the parent domain (e.g.
+      melete.app). If empty, no DNS record is created — the operator
+      points the hostname at the CloudFront domain manually.
+  ReleasesHostname:
+    Type: String
+    Default: releases.melete.app
+    Description: Public hostname that fronts the bucket via CloudFront.
+  AcmCertificateArn:
+    Type: String
+    Description: >
+      ACM cert ARN for ReleasesHostname. MUST be in us-east-1 (CloudFront
+      requirement). The operator provisions this once before deploying
+      the stack.
+  GitHubRepo:
+    Type: String
+    Default: Sniper7Kills-LLC/Melete
+    Description: GitHub <owner>/<repo> permitted to assume the release role.
+  GitHubTagFilter:
+    Type: String
+    Default: refs/tags/v*
+    Description: Sub claim filter restricting role assumption to v* tag pushes.
+  ExistingGitHubOidcProviderArn:
+    Type: String
+    Default: ''
+    Description: >
+      If your AWS account already has the GitHub OIDC provider
+      (token.actions.githubusercontent.com), pass its ARN here. Leaving
+      this blank creates a new provider — fails if one already exists.
+
+Conditions:
+  CreateOidcProvider: !Equals [!Ref ExistingGitHubOidcProviderArn, '']
+  CreateRoute53Record: !Not [!Equals [!Ref HostedZoneId, '']]
+
+Resources:
+  ReleasesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'melete-releases-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  ReleasesOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub 'melete-releases-oac-${AWS::AccountId}'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ReleasesDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Aliases:
+          - !Ref ReleasesHostname
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Origins:
+          - Id: ReleasesBucketOrigin
+            DomainName: !GetAtt ReleasesBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt ReleasesOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: ReleasesBucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # AWS Managed CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+  # Bucket policy that permits the distribution to read objects via OAC.
+  ReleasesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ReleasesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${ReleasesBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${ReleasesDistribution}'
+
+  ReleasesDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: CreateRoute53Record
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref ReleasesHostname
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ReleasesDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront's fixed hosted zone
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidcProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  ReleaseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'melete-release-${AWS::AccountId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOidcProvider
+                - !Ref GitHubOidcProvider
+                - !Ref ExistingGitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${GitHubRepo}:ref:${GitHubTagFilter}'
+      Policies:
+        - PolicyName: ReleasesBucketWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:GetObject
+                Resource: !Sub '${ReleasesBucket.Arn}/*'
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ReleasesBucket.Arn
+        - PolicyName: ReleasesCloudFrontInvalidate
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudfront:CreateInvalidation
+                Resource: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${ReleasesDistribution}'
+
+Outputs:
+  ReleaseRoleArn:
+    Description: Set as repo secret AWS_RELEASE_ROLE_ARN
+    Value: !GetAtt ReleaseRole.Arn
+  ReleasesBucketName:
+    Description: Set as repo secret RELEASES_BUCKET
+    Value: !Ref ReleasesBucket
+  ReleasesPublicUrl:
+    Description: Set as repo secret RELEASES_PUBLIC_URL
+    Value: !Sub 'https://${ReleasesHostname}'
+  ReleasesCloudFrontDomain:
+    Description: >
+      The CloudFront distribution domain. Point ReleasesHostname at
+      this if you did not pass a HostedZoneId so the stack could
+      provision the DNS record automatically.
+    Value: !GetAtt ReleasesDistribution.DomainName

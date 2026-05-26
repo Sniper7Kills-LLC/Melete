@@ -353,10 +353,7 @@ fn collect_bookmark_entries(ctx: &SidebarCtx) -> Vec<(Page, String)> {
 
 /// Sidebar Bookmarks panel: vertical Expander whose expansion state persists
 /// across refreshes via `ctx.bookmarks_expanded`.
-fn build_bookmarks_sidebar_panel(
-    ctx: &SidebarCtx,
-    entries: &[(Page, String)],
-) -> Option<GtkBox> {
+fn build_bookmarks_sidebar_panel(ctx: &SidebarCtx, entries: &[(Page, String)]) -> Option<GtkBox> {
     if entries.is_empty() {
         return None;
     }

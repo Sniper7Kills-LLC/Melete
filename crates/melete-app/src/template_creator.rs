@@ -9,12 +9,8 @@ use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, ColorDialog, ColorDialogButton, DrawingArea, Entry,
     Label, MenuButton, Orientation, Paned, Popover, ScrolledWindow, SpinButton, Switch,
 };
-use melete_canvas::{
-    draw_widgets_with_context, ViewportTransform, WidgetRenderContext,
-};
-use melete_core::{
-    Color, PageTemplate, Rect, TemplateWidget, WidgetKind, WidgetRect, WidgetStyle,
-};
+use melete_canvas::{draw_widgets_with_context, ViewportTransform, WidgetRenderContext};
+use melete_core::{Color, PageTemplate, Rect, TemplateWidget, WidgetKind, WidgetRect, WidgetStyle};
 use uuid::Uuid;
 
 use crate::state::SharedState;
@@ -432,28 +428,28 @@ pub fn build_editor_view(
             let btn = b.clone();
             let title_hint = format!(
                 "page template \"{}\"",
-                if template.name.is_empty() { "untitled" } else { template.name.as_str() }
+                if template.name.is_empty() {
+                    "untitled"
+                } else {
+                    template.name.as_str()
+                }
             );
-            crate::remote_browser::pick_visibility(
-                &parent_for_publish,
-                &title_hint,
-                move |vis| {
-                    btn.set_sensitive(false);
-                    btn.set_label("Publishing…");
-                    match crate::remote_browser::publish_local_page_template(
-                        &template,
-                        state.clone(),
-                        vis,
-                    ) {
-                        Ok(()) => btn.set_label("Published ✓"),
-                        Err(e) => {
-                            tracing::warn!("publish page template: {e}");
-                            btn.set_label("Publish failed");
-                            btn.set_sensitive(true);
-                        }
+            crate::remote_browser::pick_visibility(&parent_for_publish, &title_hint, move |vis| {
+                btn.set_sensitive(false);
+                btn.set_label("Publishing…");
+                match crate::remote_browser::publish_local_page_template(
+                    &template,
+                    state.clone(),
+                    vis,
+                ) {
+                    Ok(()) => btn.set_label("Published ✓"),
+                    Err(e) => {
+                        tracing::warn!("publish page template: {e}");
+                        btn.set_label("Publish failed");
+                        btn.set_sensitive(true);
                     }
-                },
-            );
+                }
+            });
         });
     }
 
@@ -469,7 +465,9 @@ pub fn build_editor_view(
     #[cfg(not(feature = "vello"))]
     {
         preview_btn.set_sensitive(false);
-        preview_btn.set_tooltip_text(Some("Preview requires the Vello GPU backend (built in by default)."));
+        preview_btn.set_tooltip_text(Some(
+            "Preview requires the Vello GPU backend (built in by default).",
+        ));
     }
     root.append(&action_row);
 
@@ -1958,11 +1956,19 @@ fn refresh_props_panel(vbox: &Rc<GtkBox>, cs: &Rc<RefCell<CreatorState>>, area: 
             location_label,
             days,
         } => {
-            fetch_label_entry(vbox, cs, area, idx, "Location label", &location_label, |k, v| {
-                if let WidgetKind::Weather { location_label, .. } = k {
-                    *location_label = v;
-                }
-            });
+            fetch_label_entry(
+                vbox,
+                cs,
+                area,
+                idx,
+                "Location label",
+                &location_label,
+                |k, v| {
+                    if let WidgetKind::Weather { location_label, .. } = k {
+                        *location_label = v;
+                    }
+                },
+            );
             fetch_lat_lon(vbox, cs, area, idx, lat, lon, |k| {
                 if let WidgetKind::Weather { lat, lon, .. } = k {
                     Some((lat, lon))
@@ -1970,11 +1976,21 @@ fn refresh_props_panel(vbox: &Rc<GtkBox>, cs: &Rc<RefCell<CreatorState>>, area: 
                     None
                 }
             });
-            fetch_u32_spin(vbox, cs, area, idx, "Forecast days", days, 1.0, 7.0, |k, v| {
-                if let WidgetKind::Weather { days, .. } = k {
-                    *days = v;
-                }
-            });
+            fetch_u32_spin(
+                vbox,
+                cs,
+                area,
+                idx,
+                "Forecast days",
+                days,
+                1.0,
+                7.0,
+                |k, v| {
+                    if let WidgetKind::Weather { days, .. } = k {
+                        *days = v;
+                    }
+                },
+            );
         }
         WidgetKind::Quote { source } => {
             #[allow(deprecated)]
@@ -2000,7 +2016,10 @@ fn refresh_props_panel(vbox: &Rc<GtkBox>, cs: &Rc<RefCell<CreatorState>>, area: 
             #[allow(deprecated)]
             combo.connect_changed(move |c| {
                 #[allow(deprecated)]
-                let new_src = c.active_id().map(|s| s.to_string()).unwrap_or_else(|| "zen".into());
+                let new_src = c
+                    .active_id()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "zen".into());
                 let before = snapshot_widget(&cs2.borrow(), idx);
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     if let WidgetKind::Quote { source } = &mut w.kind {
@@ -2057,7 +2076,10 @@ fn refresh_props_panel(vbox: &Rc<GtkBox>, cs: &Rc<RefCell<CreatorState>>, area: 
             #[allow(deprecated)]
             combo.connect_changed(move |c| {
                 #[allow(deprecated)]
-                let new_t = c.active_id().map(|s| s.to_string()).unwrap_or_else(|| "kjv".into());
+                let new_t = c
+                    .active_id()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "kjv".into());
                 let before = snapshot_widget(&cs2.borrow(), idx);
                 if let Some(w) = cs2.borrow_mut().template.widgets.get_mut(idx) {
                     if let WidgetKind::BibleVerse { translation, .. } = &mut w.kind {
@@ -2112,11 +2134,19 @@ fn refresh_props_panel(vbox: &Rc<GtkBox>, cs: &Rc<RefCell<CreatorState>>, area: 
             );
         }
         WidgetKind::WordOfDay { lang } => {
-            fetch_label_entry(vbox, cs, area, idx, "Wiktionary lang code", &lang, |k, v| {
-                if let WidgetKind::WordOfDay { lang } = k {
-                    *lang = v;
-                }
-            });
+            fetch_label_entry(
+                vbox,
+                cs,
+                area,
+                idx,
+                "Wiktionary lang code",
+                &lang,
+                |k, v| {
+                    if let WidgetKind::WordOfDay { lang } = k {
+                        *lang = v;
+                    }
+                },
+            );
         }
         WidgetKind::RssHeadline { url, count } => {
             fetch_label_entry(vbox, cs, area, idx, "Feed URL", &url, |k, v| {
@@ -2124,11 +2154,21 @@ fn refresh_props_panel(vbox: &Rc<GtkBox>, cs: &Rc<RefCell<CreatorState>>, area: 
                     *url = v;
                 }
             });
-            fetch_u32_spin(vbox, cs, area, idx, "Headline count", count, 1.0, 30.0, |k, v| {
-                if let WidgetKind::RssHeadline { count, .. } = k {
-                    *count = v;
-                }
-            });
+            fetch_u32_spin(
+                vbox,
+                cs,
+                area,
+                idx,
+                "Headline count",
+                count,
+                1.0,
+                30.0,
+                |k, v| {
+                    if let WidgetKind::RssHeadline { count, .. } = k {
+                        *count = v;
+                    }
+                },
+            );
         }
         WidgetKind::Astronomy { lat, lon } => {
             fetch_lat_lon(vbox, cs, area, idx, lat, lon, |k| {
@@ -2473,9 +2513,7 @@ fn default_kind_for(tool: PlaceTool) -> WidgetKind {
             lang: "en".into(),
             max_events: 5,
         },
-        PlaceTool::WordOfDay => WidgetKind::WordOfDay {
-            lang: "en".into(),
-        },
+        PlaceTool::WordOfDay => WidgetKind::WordOfDay { lang: "en".into() },
         PlaceTool::RssHeadline => WidgetKind::RssHeadline {
             url: "https://hnrss.org/frontpage".into(),
             count: 5,

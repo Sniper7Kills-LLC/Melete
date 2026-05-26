@@ -18,10 +18,10 @@ use melete_storage::remote_template_store::store::{RemoteTemplateOps, RemoteTemp
 #[test]
 #[ignore]
 fn smoke_sign_in_then_list_public() {
-    let username = std::env::var("MELETE_TEST_USERNAME")
-        .expect("set MELETE_TEST_USERNAME for smoke test");
-    let password = std::env::var("MELETE_TEST_PASSWORD")
-        .expect("set MELETE_TEST_PASSWORD for smoke test");
+    let username =
+        std::env::var("MELETE_TEST_USERNAME").expect("set MELETE_TEST_USERNAME for smoke test");
+    let password =
+        std::env::var("MELETE_TEST_PASSWORD").expect("set MELETE_TEST_PASSWORD for smoke test");
 
     let mut s = RemoteTemplateStore::connect().expect("connect");
     s.sign_in(&username, &password).expect("sign_in");

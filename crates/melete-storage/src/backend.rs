@@ -87,8 +87,7 @@ pub trait StrokeStore {
     /// IDs (and the time they were soft-deleted) for every stroke
     /// the user has erased locally that the cloud sync hasn't yet
     /// purged. Drives the cloud-delete pipeline.
-    fn list_deleted_strokes(&mut self, notebook_id: NotebookId)
-        -> Result<Vec<(Uuid, String)>>;
+    fn list_deleted_strokes(&mut self, notebook_id: NotebookId) -> Result<Vec<(Uuid, String)>>;
     /// Hard-remove a soft-deleted stroke. Sync calls this once the
     /// cloud has confirmed the corresponding row is gone (or was
     /// never there).

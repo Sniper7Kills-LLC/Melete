@@ -23,7 +23,7 @@ pub const NOTEBOOK_TEMPLATE_EDITOR_NAME: &str = "notebook_template_editor";
 const TOOL_EDITOR_NAME: &str = "tool_editor";
 
 pub struct AppWindow {
-    pub root: GtkBox,
+    pub root: adw::ToastOverlay,
     pub canvas: DrawingArea,
     stack: Stack,
     home_container: GtkBox,
@@ -40,7 +40,21 @@ pub struct AppWindow {
     parent: ApplicationWindow,
     current_notebook: Rc<RefCell<Option<NotebookId>>>,
     current_sidebar: Rc<RefCell<Option<GtkBox>>>,
-    previous_view: Rc<RefCell<Option<NotebookId>>>,
+    previous_view: Rc<RefCell<PreviousView>>,
+}
+
+/// Where the user should land when they back out of a full-screen
+/// sub-editor (page-template editor, tool editor, notebook-template
+/// editor). Resolved at the moment the sub-editor opens by reading
+/// the currently-visible stack child, so nested opens (e.g. notebook-
+/// template editor → page-template chip → page-template editor) wind
+/// back to the right parent instead of collapsing through to home.
+#[derive(Clone, Copy, Debug, Default)]
+enum PreviousView {
+    #[default]
+    Home,
+    Notebook(NotebookId),
+    NotebookTemplateEditor,
 }
 
 pub type SharedWindow = Rc<RefCell<AppWindow>>;
@@ -240,8 +254,17 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
 
     parent.set_titlebar(Some(&header));
 
-    let root = GtkBox::builder().orientation(Orientation::Vertical).build();
-    root.append(&stack);
+    let root_box = GtkBox::builder().orientation(Orientation::Vertical).build();
+    root_box.append(&stack);
+
+    // Wrap the main content in a ToastOverlay so the global
+    // `notify::toast(...)` helper has a surface to render transient
+    // banners on (#28). Registered once below — every call site that
+    // surfaces an error to the user goes through `notify`.
+    let toast_overlay = adw::ToastOverlay::new();
+    toast_overlay.set_child(Some(&root_box));
+    crate::notify::register_overlay(toast_overlay.clone());
+    let root = toast_overlay;
 
     let win = Rc::new(RefCell::new(AppWindow {
         root,
@@ -261,7 +284,7 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
         parent: parent.clone(),
         current_notebook,
         current_sidebar: Rc::new(RefCell::new(None)),
-        previous_view: Rc::new(RefCell::new(None)),
+        previous_view: Rc::new(RefCell::new(PreviousView::default())),
     }));
 
     {
@@ -300,11 +323,15 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
                 show_notebook_template_editor(&win_for_nb, Some(t))
             }),
             brush: Rc::new(move |b: melete_core::Brush| show_tool_editor(&win_for_brush, Some(b))),
-            preview_page: Rc::new(move |t: PageTemplate| show_template_preview(&win_for_page_pv, t)),
+            preview_page: Rc::new(move |t: PageTemplate| {
+                show_template_preview(&win_for_page_pv, t)
+            }),
             preview_notebook: Rc::new(move |t: NotebookTemplate| {
                 show_notebook_template_preview(&win_for_nb_pv, t)
             }),
-            preview_brush: Rc::new(move |b: melete_core::Brush| show_tool_preview(&win_for_brush_pv, b)),
+            preview_brush: Rc::new(move |b: melete_core::Brush| {
+                show_tool_preview(&win_for_brush_pv, b)
+            }),
         });
     }
 
@@ -405,18 +432,39 @@ fn open_account_popover(
 
     let signed_in = crate::sign_in_modal::is_signed_in();
 
-    // Header: email when signed-in, "Not signed in" + Sign in CTA otherwise.
+    // Header: avatar + email when signed-in, "Not signed in" + Sign in CTA otherwise.
     if signed_in {
-        let email_lbl = Label::builder()
-            .label(
-                crate::sign_in_modal::current_email()
-                    .map(|e| format!("Signed in as {}", e))
-                    .unwrap_or_else(|| "Signed in".to_string()),
-            )
+        let email = crate::sign_in_modal::current_email();
+
+        let header_row = GtkBox::builder()
+            .orientation(Orientation::Horizontal)
+            .spacing(8)
+            .build();
+
+        // Initials avatar — libadwaita derives initials from the text.
+        let avatar = adw::Avatar::new(40, email.as_deref(), true);
+        header_row.append(&avatar);
+
+        let info_col = GtkBox::builder()
+            .orientation(Orientation::Vertical)
+            .spacing(0)
+            .hexpand(true)
+            .build();
+        let signed_in_lbl = Label::builder()
+            .label("Signed in")
             .halign(Align::Start)
             .build();
-        email_lbl.add_css_class("dim-label");
-        vbox.append(&email_lbl);
+        signed_in_lbl.add_css_class("caption");
+        signed_in_lbl.add_css_class("dim-label");
+        info_col.append(&signed_in_lbl);
+        let email_lbl = Label::builder()
+            .label(email.clone().unwrap_or_default())
+            .halign(Align::Start)
+            .ellipsize(gtk4::pango::EllipsizeMode::End)
+            .build();
+        info_col.append(&email_lbl);
+        header_row.append(&info_col);
+        vbox.append(&header_row);
 
         // Live usage block. Single sync fetch on popover open — same
         // pattern as remote_browser. Two HTTPS roundtrips, runs at
@@ -424,8 +472,18 @@ fn open_account_popover(
         if let Some(usage_widget) = build_usage_block() {
             vbox.append(&usage_widget);
         }
+
+        // Published counts (one byOwner GSI call per kind). Renders as
+        // a single horizontal row of three small badges so the popover
+        // stays compact.
+        if let Some(published_widget) = build_published_block() {
+            vbox.append(&published_widget);
+        }
     } else {
-        let header_lbl = Label::builder().label("Not signed in").halign(Align::Start).build();
+        let header_lbl = Label::builder()
+            .label("Not signed in")
+            .halign(Align::Start)
+            .build();
         header_lbl.add_css_class("dim-label");
         vbox.append(&header_lbl);
 
@@ -463,11 +521,32 @@ fn open_account_popover(
     gated_lbl.add_css_class("dim-label");
     vbox.append(&gated_lbl);
 
-    let unlock_tip = if signed_in { "Coming soon" } else { "Sign in to use" };
+    let unlock_tip = if signed_in {
+        "Coming soon"
+    } else {
+        "Sign in to use"
+    };
 
-    vbox.append(&build_gated_row("Live sync threads", "network-transmit-receive-symbolic", unlock_tip));
-    vbox.append(&build_gated_row("Plan & usage", "emblem-default-symbolic", unlock_tip));
-    vbox.append(&build_gated_row("Published items", "view-list-symbolic", unlock_tip));
+    vbox.append(&build_gated_row(
+        "Live sync threads",
+        "network-transmit-receive-symbolic",
+        unlock_tip,
+    ));
+    vbox.append(&build_gated_row(
+        "Plan & usage",
+        "emblem-default-symbolic",
+        unlock_tip,
+    ));
+    if !signed_in {
+        // Once signed in, real counts are surfaced inline above by
+        // `build_published_block`; the gated placeholder would just
+        // duplicate the same word.
+        vbox.append(&build_gated_row(
+            "Published items",
+            "view-list-symbolic",
+            unlock_tip,
+        ));
+    }
 
     vbox.append(&Separator::new(Orientation::Horizontal));
 
@@ -592,21 +671,99 @@ fn build_usage_block() -> Option<gtk4::Widget> {
         .orientation(Orientation::Horizontal)
         .spacing(8)
         .build();
-    let label = Label::builder().label("Usage").halign(Align::Start).hexpand(true).build();
+    let label = Label::builder()
+        .label("Usage")
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
     label.add_css_class("caption-heading");
     label.add_css_class("dim-label");
-    let tier_badge = Label::builder()
-        .label(ent.tier.to_uppercase())
-        .build();
+    let tier_badge = Label::builder().label(ent.tier.to_uppercase()).build();
     tier_badge.add_css_class("caption");
     head.append(&label);
     head.append(&tier_badge);
     outer.append(&head);
 
-    outer.append(&build_usage_meter("Notebooks", notebooks_used, ent.notebook_cap));
-    outer.append(&build_usage_meter("Strokes today", strokes_today, ent.daily_write_cap));
+    outer.append(&build_usage_meter(
+        "Notebooks",
+        notebooks_used,
+        ent.notebook_cap,
+    ));
+    outer.append(&build_usage_meter(
+        "Strokes today",
+        strokes_today,
+        ent.daily_write_cap,
+    ));
 
     Some(outer.upcast())
+}
+
+#[cfg(feature = "remote")]
+fn build_published_block() -> Option<gtk4::Widget> {
+    use melete_storage::remote_template_store::store::{RemoteTemplateOps, RemoteTemplateStore};
+
+    let mut store = RemoteTemplateStore::connect().ok()?;
+    if !store.is_signed_in() {
+        return None;
+    }
+    let pt = store.list_my_page_templates().map(|v| v.len()).unwrap_or(0);
+    let nt = store
+        .list_my_notebook_templates()
+        .map(|v| v.len())
+        .unwrap_or(0);
+    let br = store.list_my_brushes().map(|v| v.len()).unwrap_or(0);
+
+    let outer = GtkBox::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(4)
+        .margin_top(4)
+        .margin_bottom(4)
+        .build();
+
+    let head = Label::builder()
+        .label("Your published items")
+        .halign(Align::Start)
+        .build();
+    head.add_css_class("caption-heading");
+    head.add_css_class("dim-label");
+    outer.append(&head);
+
+    let row = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .build();
+    row.append(&build_published_badge(
+        "view-list-symbolic",
+        "Page templates",
+        pt,
+    ));
+    row.append(&build_published_badge(
+        "x-office-document-symbolic",
+        "Notebook templates",
+        nt,
+    ));
+    row.append(&build_published_badge(
+        "applications-graphics-symbolic",
+        "Brushes",
+        br,
+    ));
+    outer.append(&row);
+
+    Some(outer.upcast())
+}
+
+#[cfg(feature = "remote")]
+fn build_published_badge(icon_name: &str, tooltip: &str, count: usize) -> gtk4::Widget {
+    let cell = GtkBox::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(4)
+        .tooltip_text(tooltip)
+        .build();
+    cell.append(&Image::from_icon_name(icon_name));
+    let val = Label::builder().label(count.to_string()).build();
+    val.add_css_class("caption");
+    cell.append(&val);
+    cell.upcast()
 }
 
 #[cfg(feature = "remote")]
@@ -619,9 +776,15 @@ fn build_usage_meter(label: &str, used: u64, cap: u64) -> gtk4::Widget {
         .orientation(Orientation::Horizontal)
         .spacing(8)
         .build();
-    let name = Label::builder().label(label).halign(Align::Start).hexpand(true).build();
+    let name = Label::builder()
+        .label(label)
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
     name.add_css_class("caption");
-    let val = Label::builder().label(format!("{} / {}", used, cap)).build();
+    let val = Label::builder()
+        .label(format!("{} / {}", used, cap))
+        .build();
     val.add_css_class("caption");
     val.add_css_class("dim-label");
     head.append(&name);
@@ -647,7 +810,11 @@ fn build_gated_row(label: &str, icon_name: &str, tooltip: &str) -> Button {
         .spacing(8)
         .build();
     row.append(&Image::from_icon_name(icon_name));
-    let lbl = Label::builder().label(label).halign(Align::Start).hexpand(true).build();
+    let lbl = Label::builder()
+        .label(label)
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
     row.append(&lbl);
 
     let btn = Button::builder().child(&row).build();
@@ -664,7 +831,11 @@ fn refresh_account_chip(btn: &Button) {
     if let Some(email) = crate::sign_in_modal::current_email() {
         // Show the local-part of the email; the @domain rarely changes
         // and chews header width on a Framework 12 screen.
-        let label = email.split('@').next().unwrap_or(email.as_str()).to_string();
+        let label = email
+            .split('@')
+            .next()
+            .unwrap_or(email.as_str())
+            .to_string();
         btn.set_label(&format!("● {}", label));
         btn.set_tooltip_text(Some(&format!("Signed in as {} — click to manage", email)));
     } else {
@@ -730,16 +901,13 @@ fn build_menu_button(
         let export_btn = export_btn.clone();
         let export_nb_btn = export_nb_btn.clone();
         let sep = file_separator.clone();
-        gtk4::glib::timeout_add_local(
-            std::time::Duration::from_millis(250),
-            move || {
-                let has_nb = current_notebook.borrow().is_some();
-                export_btn.set_visible(has_nb);
-                export_nb_btn.set_visible(has_nb);
-                sep.set_visible(has_nb);
-                gtk4::glib::ControlFlow::Continue
-            },
-        );
+        gtk4::glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
+            let has_nb = current_notebook.borrow().is_some();
+            export_btn.set_visible(has_nb);
+            export_nb_btn.set_visible(has_nb);
+            sep.set_visible(has_nb);
+            gtk4::glib::ControlFlow::Continue
+        });
     }
 
     // ── Library (manage local artifacts) ─────────────────────────────
@@ -906,6 +1074,52 @@ pub fn show_home(win: &SharedWindow) {
     *w.current_notebook.borrow_mut() = None;
     *w.current_sidebar.borrow_mut() = None;
     w.title_label.set_text("Melete");
+}
+
+/// Read which top-level view is currently displayed so sub-editors
+/// can return to it after Back / Save. Done by name-matching against
+/// the stack's visible child so a nested chip-open from inside the
+/// notebook-template editor correctly winds back to that editor
+/// instead of falling through to home (#23).
+fn current_previous_view(win: &SharedWindow) -> PreviousView {
+    let w = win.borrow();
+    let name = w
+        .stack
+        .visible_child_name()
+        .map(|n| n.to_string())
+        .unwrap_or_default();
+    match name.as_str() {
+        NOTEBOOK_TEMPLATE_EDITOR_NAME => PreviousView::NotebookTemplateEditor,
+        NOTEBOOK_NAME => match *w.current_notebook.borrow() {
+            Some(id) => PreviousView::Notebook(id),
+            None => PreviousView::Home,
+        },
+        _ => PreviousView::Home,
+    }
+}
+
+/// Dispatch back to the captured view. Used by every sub-editor's
+/// `on_done` so the same Back / Save path covers nested editor opens.
+/// For `NotebookTemplateEditor` we re-show the stack page in place
+/// rather than rebuilding the editor — the editor's existing widget
+/// tree (and the user's in-progress notebook-template state) stays in
+/// the container while the page-template chip is open, so a stack
+/// switch is enough.
+fn restore_previous_view(win: &SharedWindow) {
+    let prev = *win.borrow().previous_view.borrow();
+    match prev {
+        PreviousView::Home => show_home(win),
+        PreviousView::Notebook(id) => show_notebook(win, id),
+        PreviousView::NotebookTemplateEditor => {
+            let w = win.borrow();
+            w.stack
+                .set_visible_child_name(NOTEBOOK_TEMPLATE_EDITOR_NAME);
+            w.title_label.set_text("Notebook Template Editor");
+            w.back_btn.set_visible(false);
+            w.sidebar_toggle_btn.set_visible(false);
+            w.notebook_settings_btn.set_visible(false);
+        }
+    }
 }
 
 pub fn show_notebook(win: &SharedWindow, notebook_id: NotebookId) {
@@ -1086,19 +1300,14 @@ fn show_template_editor_inner(win: &SharedWindow, edit: Option<PageTemplate>, re
     }
 
     // Remember where we came from so Back/Save can return to it.
-    let return_notebook = *win.borrow().current_notebook.borrow();
-    *win.borrow().previous_view.borrow_mut() = return_notebook;
+    *win.borrow().previous_view.borrow_mut() = current_previous_view(win);
 
     let state = win.borrow().state.clone();
     let parent = win.borrow().parent.clone();
 
     let win_for_done = win.clone();
     let on_done: Rc<dyn Fn()> = Rc::new(move || {
-        let prev = *win_for_done.borrow().previous_view.borrow();
-        match prev {
-            Some(nb_id) => show_notebook(&win_for_done, nb_id),
-            None => show_home(&win_for_done),
-        }
+        restore_previous_view(&win_for_done);
     });
 
     let view = crate::template_creator::build_editor_view(
@@ -1111,8 +1320,11 @@ fn show_template_editor_inner(win: &SharedWindow, edit: Option<PageTemplate>, re
     container.append(&view);
 
     let w = win.borrow();
-    w.title_label
-        .set_text(if read_only { "Template Preview" } else { "Template Editor" });
+    w.title_label.set_text(if read_only {
+        "Template Preview"
+    } else {
+        "Template Editor"
+    });
     w.back_btn.set_visible(false);
     w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
@@ -1143,27 +1355,26 @@ fn show_tool_editor_inner(
     }
 
     // Remember where we came from so Done/Cancel can return.
-    let return_notebook = *win.borrow().current_notebook.borrow();
-    *win.borrow().previous_view.borrow_mut() = return_notebook;
+    *win.borrow().previous_view.borrow_mut() = current_previous_view(win);
 
     let state = win.borrow().state.clone();
     let parent = win.borrow().parent.clone();
 
     let win_for_done = win.clone();
     let on_done: Rc<dyn Fn()> = Rc::new(move || {
-        let prev = *win_for_done.borrow().previous_view.borrow();
-        match prev {
-            Some(nb_id) => show_notebook(&win_for_done, nb_id),
-            None => show_home(&win_for_done),
-        }
+        restore_previous_view(&win_for_done);
     });
 
-    let view = crate::tool_editor::build_editor_view(&parent, state, seed_brush, on_done, read_only);
+    let view =
+        crate::tool_editor::build_editor_view(&parent, state, seed_brush, on_done, read_only);
     container.append(&view);
 
     let w = win.borrow();
-    w.title_label
-        .set_text(if read_only { "Tool Preview" } else { "Tool Editor" });
+    w.title_label.set_text(if read_only {
+        "Tool Preview"
+    } else {
+        "Tool Editor"
+    });
     w.back_btn.set_visible(false);
     w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
@@ -1193,19 +1404,14 @@ fn show_notebook_template_editor_inner(
     }
 
     // Remember where we came from.
-    let return_notebook = *win.borrow().current_notebook.borrow();
-    *win.borrow().previous_view.borrow_mut() = return_notebook;
+    *win.borrow().previous_view.borrow_mut() = current_previous_view(win);
 
     let state = win.borrow().state.clone();
     let parent = win.borrow().parent.clone();
 
     let win_for_done = win.clone();
     let on_done: Rc<dyn Fn()> = Rc::new(move || {
-        let prev = *win_for_done.borrow().previous_view.borrow();
-        match prev {
-            Some(nb_id) => show_notebook(&win_for_done, nb_id),
-            None => show_home(&win_for_done),
-        }
+        restore_previous_view(&win_for_done);
     });
 
     let win_for_chip = win.clone();
@@ -1422,7 +1628,6 @@ fn build_cheatsheet_button() -> MenuButton {
         .build()
 }
 
-
 #[cfg(feature = "remote")]
 pub(crate) fn ask_visibility_then(
     parent: &ApplicationWindow,
@@ -1445,23 +1650,19 @@ pub(crate) fn ask_visibility_then(
         .modal(true)
         .build();
     let parent = parent.clone();
-    dialog.choose(
-        Some(&parent),
-        gtk4::gio::Cancellable::NONE,
-        move |res| {
-            let idx = match res {
-                Ok(i) => i,
-                Err(_) => return,
-            };
-            let visibility = match idx {
-                0 => NotebookVisibility::Private,
-                1 => NotebookVisibility::Unlisted,
-                2 => NotebookVisibility::Public,
-                _ => return,
-            };
-            on_pick(visibility);
-        },
-    );
+    dialog.choose(Some(&parent), gtk4::gio::Cancellable::NONE, move |res| {
+        let idx = match res {
+            Ok(i) => i,
+            Err(_) => return,
+        };
+        let visibility = match idx {
+            0 => NotebookVisibility::Private,
+            1 => NotebookVisibility::Unlisted,
+            2 => NotebookVisibility::Public,
+            _ => return,
+        };
+        on_pick(visibility);
+    });
 }
 
 /// Push the notebook to the cloud, prompting for visibility only on
@@ -1496,7 +1697,11 @@ pub(crate) fn sync_with_smart_visibility(
             );
         }
         Err(e) => {
-            tracing::error!("notebook_sync: fetch_remote_visibility failed for {:?}: {:#}", nb_id, e);
+            tracing::error!(
+                "notebook_sync: fetch_remote_visibility failed for {:?}: {:#}",
+                nb_id,
+                e
+            );
             let dialog = gtk4::AlertDialog::builder()
                 .message("Cloud lookup failed")
                 .detail(format!("{:#}", e))
@@ -1554,10 +1759,7 @@ fn run_sync(
         .halign(Align::Start)
         .label("Connecting…")
         .build();
-    let counter_label = Label::builder()
-        .halign(Align::Start)
-        .label("")
-        .build();
+    let counter_label = Label::builder().halign(Align::Start).label("").build();
     counter_label.add_css_class("dim-label");
     let bar = gtk4::ProgressBar::new();
     bar.set_show_text(false);
@@ -1708,17 +1910,11 @@ fn spawn_pull_with_progress(
         match outcome {
             Some(Ok(strokes)) => {
                 if strokes.is_empty() {
-                    tracing::debug!(
-                        "notebook_sync: no cloud strokes for {:?}",
-                        notebook_id
-                    );
+                    tracing::debug!("notebook_sync: no cloud strokes for {:?}", notebook_id);
                     return gtk4::glib::ControlFlow::Break;
                 }
-                let report = crate::notebook_sync::apply_pulled_strokes(
-                    &state,
-                    notebook_id,
-                    strokes,
-                );
+                let report =
+                    crate::notebook_sync::apply_pulled_strokes(&state, notebook_id, strokes);
                 tracing::info!(
                     "notebook_sync: pulled {} stroke(s) from cloud for {:?} (skipped {} duplicates)",
                     report.strokes_inserted,
@@ -1733,11 +1929,7 @@ fn spawn_pull_with_progress(
                 }
             }
             Some(Err(e)) => {
-                tracing::warn!(
-                    "notebook_sync: pull failed for {:?}: {}",
-                    notebook_id,
-                    e
-                );
+                tracing::warn!("notebook_sync: pull failed for {:?}: {}", notebook_id, e);
             }
             None => {}
         }
