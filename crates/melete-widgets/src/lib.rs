@@ -2182,3 +2182,208 @@ fn draw_text_runs_inner(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Pure-helper coverage for #31. The scene-building paths require a
+    //! real Vello `Scene` + GPU adapter; the small calendar / colour /
+    //! style helpers below are deterministic and cheap to exercise here.
+    use super::*;
+
+    #[test]
+    fn days_in_month_handles_leap_year_february() {
+        assert_eq!(days_in_month(2024, 2), 29);
+        assert_eq!(days_in_month(2025, 2), 28);
+        assert_eq!(days_in_month(2000, 2), 29); // century divisible by 400
+        assert_eq!(days_in_month(1900, 2), 28); // century not divisible by 400
+    }
+
+    #[test]
+    fn days_in_month_handles_thirty_one_day_months() {
+        for m in [1, 3, 5, 7, 8, 10, 12] {
+            assert_eq!(days_in_month(2026, m), 31, "month {m} should have 31 days");
+        }
+    }
+
+    #[test]
+    fn days_in_month_handles_thirty_day_months() {
+        for m in [4, 6, 9, 11] {
+            assert_eq!(days_in_month(2026, m), 30, "month {m} should have 30 days");
+        }
+    }
+
+    #[test]
+    fn days_in_month_handles_year_boundary() {
+        // December 2026 -> next month is January 2027.
+        assert_eq!(days_in_month(2026, 12), 31);
+    }
+
+    #[test]
+    fn days_in_month_returns_fallback_for_invalid_month() {
+        assert_eq!(days_in_month(2026, 13), 30);
+        assert_eq!(days_in_month(2026, 0), 30);
+    }
+
+    #[test]
+    fn month_name_returns_english_names() {
+        assert_eq!(month_name(1), "January");
+        assert_eq!(month_name(7), "July");
+        assert_eq!(month_name(12), "December");
+    }
+
+    #[test]
+    fn month_name_returns_empty_for_invalid() {
+        assert_eq!(month_name(0), "");
+        assert_eq!(month_name(13), "");
+        assert_eq!(month_name(99), "");
+    }
+
+    #[test]
+    fn weather_glyph_covers_all_ranges() {
+        assert_eq!(weather_glyph(0), "\u{2600}"); // sun
+        assert_eq!(weather_glyph(3), "\u{2601}"); // cloud
+        assert_eq!(weather_glyph(48), "\u{1F32B}"); // fog (boundary)
+        assert_eq!(weather_glyph(53), "\u{1F327}"); // drizzle midpoint
+        assert_eq!(weather_glyph(63), "\u{1F327}"); // rain midpoint
+        assert_eq!(weather_glyph(73), "\u{2744}"); // snow midpoint
+        assert_eq!(weather_glyph(99), "\u{26C8}"); // thunder + hail (boundary)
+        assert_eq!(weather_glyph(200), "?"); // unknown
+    }
+
+    #[test]
+    fn weather_summary_covers_all_ranges() {
+        assert_eq!(weather_summary(0), "Clear");
+        assert_eq!(weather_summary(2), "Partly cloudy");
+        assert_eq!(weather_summary(3), "Overcast");
+        assert_eq!(weather_summary(45), "Fog");
+        assert_eq!(weather_summary(57), "Drizzle");
+        assert_eq!(weather_summary(67), "Rain");
+        assert_eq!(weather_summary(77), "Snow");
+        assert_eq!(weather_summary(82), "Showers");
+        assert_eq!(weather_summary(95), "Thunderstorm");
+        assert_eq!(weather_summary(96), "Thunder + hail");
+        assert_eq!(weather_summary(200), "Unknown");
+    }
+
+    #[test]
+    fn brighten_for_dark_lightens_dark_colors() {
+        let dark = Color {
+            r: 20,
+            g: 20,
+            b: 20,
+            a: 255,
+        };
+        let out = brighten_for_dark(dark);
+        // Below luminance threshold -> swap to near-white.
+        assert_eq!(out.r, 234);
+        assert_eq!(out.g, 234);
+        assert_eq!(out.b, 240);
+        assert_eq!(out.a, 255, "alpha preserved");
+    }
+
+    #[test]
+    fn brighten_for_dark_preserves_light_colors() {
+        // Amber: luminance well above 140 (0.587 * 200 = ~117 from green
+        // alone, plus reds → ~158). Should pass through untouched.
+        let amber = Color {
+            r: 200,
+            g: 200,
+            b: 30,
+            a: 255,
+        };
+        let out = brighten_for_dark(amber);
+        assert_eq!(out, amber);
+    }
+
+    #[test]
+    fn brighten_for_dark_preserves_alpha_on_swap() {
+        let dim = Color {
+            r: 10,
+            g: 10,
+            b: 10,
+            a: 128,
+        };
+        let out = brighten_for_dark(dim);
+        assert_eq!(out.a, 128);
+    }
+
+    #[test]
+    fn effective_style_is_identity_in_light_mode() {
+        let style = WidgetStyle {
+            stroke_color: Color {
+                r: 10,
+                g: 10,
+                b: 10,
+                a: 255,
+            },
+            fill_color: Some(Color {
+                r: 240,
+                g: 240,
+                b: 240,
+                a: 255,
+            }),
+            stroke_width_mm: 0.5,
+        };
+        let out = effective_style(&style, false);
+        assert_eq!(out.stroke_color, style.stroke_color);
+        assert_eq!(out.fill_color, style.fill_color);
+        assert_eq!(out.stroke_width_mm, style.stroke_width_mm);
+    }
+
+    #[test]
+    fn effective_style_brightens_in_dark_mode() {
+        let style = WidgetStyle {
+            stroke_color: Color {
+                r: 5,
+                g: 5,
+                b: 5,
+                a: 255,
+            },
+            fill_color: Some(Color {
+                r: 20,
+                g: 20,
+                b: 20,
+                a: 255,
+            }),
+            stroke_width_mm: 0.5,
+        };
+        let out = effective_style(&style, true);
+        assert_eq!(
+            out.stroke_color,
+            Color {
+                r: 234,
+                g: 234,
+                b: 240,
+                a: 255,
+            },
+            "dark stroke should brighten"
+        );
+        assert_eq!(
+            out.fill_color.unwrap(),
+            Color {
+                r: 234,
+                g: 234,
+                b: 240,
+                a: 255,
+            },
+            "dark fill should brighten"
+        );
+        assert_eq!(out.stroke_width_mm, 0.5, "stroke width preserved");
+    }
+
+    #[test]
+    fn effective_style_preserves_none_fill_in_dark_mode() {
+        let style = WidgetStyle {
+            stroke_color: Color {
+                r: 5,
+                g: 5,
+                b: 5,
+                a: 255,
+            },
+            fill_color: None,
+            stroke_width_mm: 0.3,
+        };
+        let out = effective_style(&style, true);
+        assert!(out.fill_color.is_none());
+    }
+}
