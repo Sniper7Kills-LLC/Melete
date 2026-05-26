@@ -18,8 +18,8 @@ use std::rc::Rc;
 use glow::HasContext;
 use gtk4::prelude::*;
 use gtk4::{glib, GLArea};
-use melete_canvas::vello_renderer::VelloRenderer;
 use libloading::{Library, Symbol};
+use melete_canvas::vello_renderer::VelloRenderer;
 
 use crate::state::SharedState;
 
@@ -304,12 +304,7 @@ pub fn build(state: SharedState) -> Option<GLArea> {
                 }
             }
 
-            let widget_key = widget_cache_key(
-                &widgets,
-                &widget_ctx,
-                page_rect,
-                overlays.dark_mode,
-            );
+            let widget_key = widget_cache_key(&widgets, &widget_ctx, page_rect, overlays.dark_mode);
             let widgets_cache_inner = widgets_cache.clone();
             let widgets_cell_inner = widgets_cell.clone();
 

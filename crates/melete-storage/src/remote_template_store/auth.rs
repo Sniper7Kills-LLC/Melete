@@ -217,7 +217,6 @@ fn keyring_clear() -> Result<(), AuthError> {
     }
 }
 
-
 #[cfg(unix)]
 fn set_mode_0600(path: &std::path::Path) -> Result<(), AuthError> {
     use std::os::unix::fs::PermissionsExt;
@@ -316,11 +315,7 @@ mod net {
         format!("https://{}/", cognito_idp_host(region))
     }
 
-    fn post_cognito(
-        region: &str,
-        target: &str,
-        body: String,
-    ) -> Result<(u16, String), AuthError> {
+    fn post_cognito(region: &str, target: &str, body: String) -> Result<(u16, String), AuthError> {
         let client = reqwest::blocking::Client::builder()
             .build()
             .map_err(|e| AuthError::Transport(e.to_string()))?;
@@ -380,8 +375,7 @@ mod net {
                 message: text,
             });
         }
-        let tokens =
-            parse_initiate_auth_response(&text, now_secs(), Some(&current.refresh_token))?;
+        let tokens = parse_initiate_auth_response(&text, now_secs(), Some(&current.refresh_token))?;
         save_tokens(&tokens)?;
         Ok(tokens)
     }
@@ -479,7 +473,10 @@ mod tests {
 
     #[test]
     fn cognito_idp_host_format() {
-        assert_eq!(cognito_idp_host("us-west-2"), "cognito-idp.us-west-2.amazonaws.com");
+        assert_eq!(
+            cognito_idp_host("us-west-2"),
+            "cognito-idp.us-west-2.amazonaws.com"
+        );
     }
 
     fn fixture_tokens() -> Tokens {

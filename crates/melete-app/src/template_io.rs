@@ -144,9 +144,7 @@ pub fn delete_notebook_template(
     if let Err(e) = backend.borrow_mut().delete_notebook_template(id) {
         tracing::warn!("delete_notebook_template {}: {:#}", id, e);
     }
-    nb_reg
-        .borrow_mut()
-        .remove(melete_core::TemplateId(id));
+    nb_reg.borrow_mut().remove(melete_core::TemplateId(id));
 }
 
 /// Persist a page template (plus optional inline asset bytes) to the
@@ -175,9 +173,7 @@ pub fn delete_page_template(
     if let Err(e) = backend.borrow_mut().delete_page_template(id) {
         tracing::warn!("delete_page_template {}: {:#}", id, e);
     }
-    page_reg
-        .borrow_mut()
-        .remove(melete_core::TemplateId(id));
+    page_reg.borrow_mut().remove(melete_core::TemplateId(id));
 }
 
 /// Build an `AssetBytes` from raw bytes + filename hint, computing

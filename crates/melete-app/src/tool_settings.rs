@@ -92,7 +92,9 @@ pub fn default_active_preset_map() -> std::collections::HashMap<String, String> 
 /// Stable string key for each settable tool. Tools without settings
 /// (Eraser, Selection) return `None` and are not surfaced in the UI.
 pub fn tool_key(tool: Tool) -> Option<&'static str> {
-    SETTABLE.iter().find_map(|(t, k)| (*t == tool).then_some(*k))
+    SETTABLE
+        .iter()
+        .find_map(|(t, k)| (*t == tool).then_some(*k))
 }
 
 pub fn settable_tools() -> Vec<Tool> {

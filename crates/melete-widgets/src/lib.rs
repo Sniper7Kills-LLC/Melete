@@ -521,14 +521,7 @@ impl WidgetRenderer {
                     _ => (*rings, *interval_m, *sweep_deg, *sector_deg),
                 };
                 self.draw_range_arcs(
-                    scene,
-                    transform,
-                    r,
-                    style,
-                    rings,
-                    interval_m,
-                    sweep_deg,
-                    sector_deg,
+                    scene, transform, r, style, rings, interval_m, sweep_deg, sector_deg,
                 );
             }
 
@@ -1360,8 +1353,13 @@ impl WidgetRenderer {
         location_label: &str,
         data: Option<&WidgetData>,
     ) {
-        let (body_top, body_h) =
-            self.draw_fetch_frame(scene, transform, r, style, &format!("Weather — {}", location_label));
+        let (body_top, body_h) = self.draw_fetch_frame(
+            scene,
+            transform,
+            r,
+            style,
+            &format!("Weather — {}", location_label),
+        );
         match data.map(|d| &d.payload) {
             Some(WidgetPayload::Weather {
                 current_c,
@@ -1370,7 +1368,12 @@ impl WidgetRenderer {
                 ..
             }) => {
                 let glyph = weather_glyph(*current_code);
-                let header = format!("{} {}  {:.0}°C", glyph, weather_summary(*current_code), current_c);
+                let header = format!(
+                    "{} {}  {:.0}°C",
+                    glyph,
+                    weather_summary(*current_code),
+                    current_c
+                );
                 let header_fs = (body_h * 0.32).clamp(3.5, 7.0) as f32;
                 draw_text_runs(
                     scene,
@@ -1418,7 +1421,15 @@ impl WidgetRenderer {
             Some(WidgetPayload::Error { message }) => {
                 self.draw_loading(scene, transform, r, style, body_top, body_h, message);
             }
-            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading weather…"),
+            _ => self.draw_loading(
+                scene,
+                transform,
+                r,
+                style,
+                body_top,
+                body_h,
+                "Loading weather…",
+            ),
         }
     }
 
@@ -1430,7 +1441,8 @@ impl WidgetRenderer {
         style: &WidgetStyle,
         data: Option<&WidgetData>,
     ) {
-        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, "Quote of the day");
+        let (body_top, body_h) =
+            self.draw_fetch_frame(scene, transform, r, style, "Quote of the day");
         match data.map(|d| &d.payload) {
             Some(WidgetPayload::Quote { text, author }) => {
                 let body_fs = (body_h * 0.18).clamp(3.0, 5.5) as f32;
@@ -1465,7 +1477,15 @@ impl WidgetRenderer {
             Some(WidgetPayload::Error { message }) => {
                 self.draw_loading(scene, transform, r, style, body_top, body_h, message);
             }
-            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading quote…"),
+            _ => self.draw_loading(
+                scene,
+                transform,
+                r,
+                style,
+                body_top,
+                body_h,
+                "Loading quote…",
+            ),
         }
     }
 
@@ -1522,7 +1542,15 @@ impl WidgetRenderer {
             Some(WidgetPayload::Error { message }) => {
                 self.draw_loading(scene, transform, r, style, body_top, body_h, message);
             }
-            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading verse…"),
+            _ => self.draw_loading(
+                scene,
+                transform,
+                r,
+                style,
+                body_top,
+                body_h,
+                "Loading verse…",
+            ),
         }
     }
 
@@ -1545,7 +1573,16 @@ impl WidgetRenderer {
                     "\u{2600} {}\n\u{1F319} {}\nDaylight {}",
                     sunrise_local, sunset_local, daylight_hms
                 );
-                self.draw_fetch_body_text(scene, transform, r, style, body_top, body_h, &lines, body_h * 0.22);
+                self.draw_fetch_body_text(
+                    scene,
+                    transform,
+                    r,
+                    style,
+                    body_top,
+                    body_h,
+                    &lines,
+                    body_h * 0.22,
+                );
             }
             Some(WidgetPayload::Error { message }) => {
                 self.draw_loading(scene, transform, r, style, body_top, body_h, message);
@@ -1601,7 +1638,15 @@ impl WidgetRenderer {
             Some(WidgetPayload::Error { message }) => {
                 self.draw_loading(scene, transform, r, style, body_top, body_h, message);
             }
-            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Computing moon…"),
+            _ => self.draw_loading(
+                scene,
+                transform,
+                r,
+                style,
+                body_top,
+                body_h,
+                "Computing moon…",
+            ),
         }
     }
 
@@ -1639,7 +1684,15 @@ impl WidgetRenderer {
             Some(WidgetPayload::Error { message }) => {
                 self.draw_loading(scene, transform, r, style, body_top, body_h, message);
             }
-            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading history…"),
+            _ => self.draw_loading(
+                scene,
+                transform,
+                r,
+                style,
+                body_top,
+                body_h,
+                "Loading history…",
+            ),
         }
     }
 
@@ -1651,7 +1704,8 @@ impl WidgetRenderer {
         style: &WidgetStyle,
         data: Option<&WidgetData>,
     ) {
-        let (body_top, body_h) = self.draw_fetch_frame(scene, transform, r, style, "Word of the day");
+        let (body_top, body_h) =
+            self.draw_fetch_frame(scene, transform, r, style, "Word of the day");
         match data.map(|d| &d.payload) {
             Some(WidgetPayload::WordOfDay { word, definition }) => {
                 let word_fs = (body_h * 0.30).clamp(4.0, 8.0) as f32;
@@ -1686,7 +1740,15 @@ impl WidgetRenderer {
             Some(WidgetPayload::Error { message }) => {
                 self.draw_loading(scene, transform, r, style, body_top, body_h, message);
             }
-            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading word…"),
+            _ => self.draw_loading(
+                scene,
+                transform,
+                r,
+                style,
+                body_top,
+                body_h,
+                "Loading word…",
+            ),
         }
     }
 
@@ -1731,7 +1793,15 @@ impl WidgetRenderer {
             Some(WidgetPayload::Error { message }) => {
                 self.draw_loading(scene, transform, r, style, body_top, body_h, message);
             }
-            _ => self.draw_loading(scene, transform, r, style, body_top, body_h, "Loading feed…"),
+            _ => self.draw_loading(
+                scene,
+                transform,
+                r,
+                style,
+                body_top,
+                body_h,
+                "Loading feed…",
+            ),
         }
     }
 

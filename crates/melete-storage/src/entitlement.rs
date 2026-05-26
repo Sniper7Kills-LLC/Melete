@@ -332,9 +332,7 @@ query GetMyEntitlement($id: ID!) {
         pub fn fetch(&self, id_token: &str, sub: &str) -> Result<Entitlement, GraphQlError> {
             {
                 let state = self.state.lock().expect("entitlement state mutex");
-                if let (Some(ent), Some(at)) =
-                    (state.entitlement.as_ref(), state.fetched_at)
-                {
+                if let (Some(ent), Some(at)) = (state.entitlement.as_ref(), state.fetched_at) {
                     if at.elapsed() < CACHE_TTL {
                         return Ok(ent.clone());
                     }

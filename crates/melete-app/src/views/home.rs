@@ -359,10 +359,7 @@ fn attach_card_context_menu(btn: &Button, nb: &Notebook, ctx: &CardCtx) {
                 ctx.state.clone(),
                 id,
                 Box::new(move || {
-                    refresh_list(
-                        &ctx_for_save.list_box,
-                        &ctx_for_save,
-                    );
+                    refresh_list(&ctx_for_save.list_box, &ctx_for_save);
                 }),
             );
         });

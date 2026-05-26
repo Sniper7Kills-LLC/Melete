@@ -6,8 +6,8 @@ use gtk4::{
     ApplicationWindow, Box as GtkBox, Button, CheckButton, ColorDialog, ColorDialogButton,
     DrawingArea, Entry, Label, Orientation, ScrolledWindow, Separator, SpinButton, Window,
 };
-use melete_core::{NotebookId, PageTemplate, SectionId, TemplateId};
 use libadwaita as adw;
+use melete_core::{NotebookId, PageTemplate, SectionId, TemplateId};
 // {Notebook,Section}Store methods reached via dyn NotebookBackend.
 
 use crate::config::PenPreset;
@@ -269,20 +269,17 @@ fn add_notebook_cloud_sync_section(
         let push_btn = push_btn.clone();
         let visibility_btn = visibility_btn.clone();
         let live_check = live_check.clone();
-        gtk4::glib::timeout_add_local(
-            std::time::Duration::from_millis(500),
-            move || {
-                let on = crate::sign_in_modal::is_signed_in();
-                push_btn.set_sensitive(on);
-                visibility_btn.set_sensitive(on);
-                live_check.set_sensitive(on);
-                let actual = crate::notebook_sync::is_enabled(notebook_id);
-                if live_check.is_active() != actual {
-                    live_check.set_active(actual);
-                }
-                gtk4::glib::ControlFlow::Continue
-            },
-        );
+        gtk4::glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
+            let on = crate::sign_in_modal::is_signed_in();
+            push_btn.set_sensitive(on);
+            visibility_btn.set_sensitive(on);
+            live_check.set_sensitive(on);
+            let actual = crate::notebook_sync::is_enabled(notebook_id);
+            if live_check.is_active() != actual {
+                live_check.set_active(actual);
+            }
+            gtk4::glib::ControlFlow::Continue
+        });
     }
 }
 
@@ -745,10 +742,7 @@ pub fn open_account_settings(parent: &ApplicationWindow, state: SharedState) {
         .title("Subscription")
         .description("Tier + caps for cloud sync. Manage billing in Stripe.")
         .build();
-    crate::subscription_settings::populate_subscription_group(
-        parent,
-        &subscription_group,
-    );
+    crate::subscription_settings::populate_subscription_group(parent, &subscription_group);
 
     page.add(&account_group);
     page.add(&subscription_group);
@@ -1174,4 +1168,3 @@ fn open_preset_editor(
     ed_win.set_child(Some(&body));
     ed_win.present();
 }
-

@@ -221,7 +221,6 @@ mod tests {
     use super::{BrushFile, BrushFileMeta};
     use melete_core::brush::{Brush, Geometry, TipShape, WidthMode};
 
-
     /// Round-trip a one-layer Brush through the BrushFile TOML wrapper
     /// to catch any serde derives going missing on the underlying enum
     /// types — we deserialize from a tagged-enum TOML form.

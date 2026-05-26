@@ -19,9 +19,9 @@ mod fetcher;
 mod first_run;
 mod history;
 mod input;
-mod notebook_template_creator;
 #[cfg(feature = "remote")]
 mod notebook_sync;
+mod notebook_template_creator;
 mod onboarding;
 mod pdf_export;
 #[cfg(feature = "remote")]
@@ -56,9 +56,9 @@ use anyhow::{Context, Result};
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, CssProvider};
-use melete_storage::{NotebookBackend, MultiFileSqliteBackend};
-use melete_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use libadwaita as adw;
+use melete_storage::{MultiFileSqliteBackend, NotebookBackend};
+use melete_templates::{NotebookTemplateRegistry, TemplateRegistry};
 use tracing_subscriber::EnvFilter;
 
 const APP_ID: &str = "dev.s7k.melete";
@@ -582,8 +582,7 @@ fn migrate_legacy_paths() -> Result<()> {
         let old = base.join("journal");
         let new = base.join("melete");
         if old.is_dir() && !new.exists() {
-            std::fs::rename(&old, &new)
-                .with_context(|| format!("rename {:?} → {:?}", old, new))?;
+            std::fs::rename(&old, &new).with_context(|| format!("rename {:?} → {:?}", old, new))?;
             tracing::info!("migrated legacy path {:?} → {:?}", old, new);
         }
     }

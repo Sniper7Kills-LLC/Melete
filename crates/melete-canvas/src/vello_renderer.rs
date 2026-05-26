@@ -390,11 +390,7 @@ impl VelloRenderer {
         })
     }
 
-    fn ensure_image_for_bg(
-        &mut self,
-        asset: &str,
-        resolver: &dyn AssetResolver,
-    ) -> Option<PImage> {
+    fn ensure_image_for_bg(&mut self, asset: &str, resolver: &dyn AssetResolver) -> Option<PImage> {
         if let Some(img) = self.image_cache.get(asset) {
             return Some(img.clone());
         }

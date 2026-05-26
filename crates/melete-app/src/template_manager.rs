@@ -519,8 +519,7 @@ fn import_pdf(
     close_manager: Rc<dyn Fn()>,
 ) -> anyhow::Result<()> {
     let id = Uuid::new_v4();
-    let bytes = std::fs::read(src)
-        .with_context(|| format!("read {}", src.display()))?;
+    let bytes = std::fs::read(src).with_context(|| format!("read {}", src.display()))?;
     let bytes = Rc::new(bytes);
 
     let n_pages = pdf_page_count_from_bytes(&bytes);
@@ -551,13 +550,7 @@ fn import_pdf(
     Ok(())
 }
 
-fn finalize_pdf_template(
-    id: Uuid,
-    name: String,
-    bytes: &[u8],
-    page: u32,
-    state: SharedState,
-) {
+fn finalize_pdf_template(id: Uuid, name: String, bytes: &[u8], page: u32, state: SharedState) {
     let asset_name = format!("{}.pdf", id);
     let template = PageTemplate {
         id: melete_core::TemplateId(id),
@@ -573,18 +566,12 @@ fn finalize_pdf_template(
         widgets: Vec::new(),
         category: "Imported".into(),
     };
-    let asset = crate::template_io::asset_bytes_from_file(
-        asset_name,
-        "application/pdf",
-        bytes.to_vec(),
-    );
+    let asset =
+        crate::template_io::asset_bytes_from_file(asset_name, "application/pdf", bytes.to_vec());
     let s = state.borrow();
-    if let Err(e) = crate::template_io::put_page_template(
-        &s.backend,
-        &s.templates,
-        &template,
-        &[asset],
-    ) {
+    if let Err(e) =
+        crate::template_io::put_page_template(&s.backend, &s.templates, &template, &[asset])
+    {
         tracing::error!("persist pdf template {}: {:#}", id, e);
     }
 }

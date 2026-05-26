@@ -116,22 +116,18 @@ pub fn build_editor_view(
             let state = state_for_publish.clone();
             let btn = b.clone();
             let title_hint = format!("brush \"{}\"", brush.name);
-            crate::remote_browser::pick_visibility(
-                &parent_for_publish,
-                &title_hint,
-                move |vis| {
-                    btn.set_sensitive(false);
-                    btn.set_label("Publishing…");
-                    match crate::remote_browser::publish_local_brush(&brush, state.clone(), vis) {
-                        Ok(()) => btn.set_label("Published ✓"),
-                        Err(e) => {
-                            tracing::warn!("publish brush: {e}");
-                            btn.set_label("Publish failed");
-                            btn.set_sensitive(true);
-                        }
+            crate::remote_browser::pick_visibility(&parent_for_publish, &title_hint, move |vis| {
+                btn.set_sensitive(false);
+                btn.set_label("Publishing…");
+                match crate::remote_browser::publish_local_brush(&brush, state.clone(), vis) {
+                    Ok(()) => btn.set_label("Published ✓"),
+                    Err(e) => {
+                        tracing::warn!("publish brush: {e}");
+                        btn.set_label("Publish failed");
+                        btn.set_sensitive(true);
                     }
-                },
-            );
+                }
+            });
         });
     }
 

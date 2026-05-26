@@ -1,9 +1,9 @@
 use melete_core::Color;
 
 #[cfg(feature = "desktop")]
-use gtk4::cairo;
-#[cfg(feature = "desktop")]
 use crate::viewport_transform::ViewportTransform;
+#[cfg(feature = "desktop")]
+use gtk4::cairo;
 
 #[derive(Debug, Clone, Copy)]
 pub struct GridSettings {

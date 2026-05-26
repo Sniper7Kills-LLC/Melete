@@ -301,7 +301,10 @@ impl RemoteNotebookStore {
         &mut self,
         id: NotebookId,
     ) -> Result<Option<NotebookVisibility>, NotebookSyncError> {
-        let v = self.gql(Q_GET_NOTEBOOK, serde_json::json!({ "id": id.0.to_string() }))?;
+        let v = self.gql(
+            Q_GET_NOTEBOOK,
+            serde_json::json!({ "id": id.0.to_string() }),
+        )?;
         let item = v.get("getNotebook");
         let Some(item) = item else { return Ok(None) };
         if item.is_null() {
@@ -310,9 +313,7 @@ impl RemoteNotebookStore {
         let vis = item
             .get("visibility")
             .and_then(|x| x.as_str())
-            .ok_or_else(|| {
-                NotebookSyncError::Encode("getNotebook missing visibility".into())
-            })?;
+            .ok_or_else(|| NotebookSyncError::Encode("getNotebook missing visibility".into()))?;
         Ok(Some(match vis {
             "PRIVATE" => NotebookVisibility::Private,
             "UNLISTED" => NotebookVisibility::Unlisted,
@@ -486,10 +487,7 @@ impl RemoteNotebookStore {
                 Some(rv) => {
                     let r_name = rv.get("name").and_then(|x| x.as_str()).unwrap_or("");
                     let r_pos = rv.get("position").and_then(|x| x.as_i64()).unwrap_or(-1);
-                    let r_section = rv
-                        .get("sectionId")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or("");
+                    let r_section = rv.get("sectionId").and_then(|x| x.as_str()).unwrap_or("");
                     let r_template = rv
                         .get("templateId")
                         .and_then(|x| x.as_str())
@@ -554,7 +552,11 @@ impl RemoteNotebookStore {
 
         let net_new_strokes: usize = strokes_per_page
             .iter()
-            .map(|(_, ss)| ss.iter().filter(|s| !remote_stroke_ids.contains(&s.id)).count())
+            .map(|(_, ss)| {
+                ss.iter()
+                    .filter(|s| !remote_stroke_ids.contains(&s.id))
+                    .count()
+            })
             .sum();
         on_progress(SyncProgress::Phase {
             label: format!(
@@ -750,10 +752,7 @@ impl RemoteNotebookStore {
                 .iter()
                 .filter(|id| !local_page_ids.contains(*id))
             {
-                let _ = self.gql(
-                    M_DELETE_PAGE,
-                    serde_json::json!({ "input": { "id": id } }),
-                );
+                let _ = self.gql(M_DELETE_PAGE, serde_json::json!({ "input": { "id": id } }));
             }
             for id in remote_secs
                 .iter()
@@ -886,7 +885,10 @@ impl RemoteNotebookStore {
                 NotebookSyncError::Encode("missing upsertStrokesBatch".into())
             })?;
         let upserted = item.get("upserted").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-        let unprocessed = item.get("unprocessed").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+        let unprocessed = item
+            .get("unprocessed")
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0) as usize;
         let failed_ids: Vec<Uuid> = item
             .get("failedIds")
             .and_then(|x| x.as_array())
@@ -927,10 +929,7 @@ impl RemoteNotebookStore {
     /// (move / scale / partial-erase replacement / lasso split).
     /// Sends only `id` + `strokeJson`; other fields stay as-is on
     /// the remote row.
-    pub fn publish_stroke_update(
-        &mut self,
-        stroke: &Stroke,
-    ) -> Result<(), NotebookSyncError> {
+    pub fn publish_stroke_update(&mut self, stroke: &Stroke) -> Result<(), NotebookSyncError> {
         let body_json = serde_json::to_string(stroke)
             .map_err(|e| NotebookSyncError::Encode(format!("stroke: {e}")))?;
         let input = serde_json::json!({
@@ -951,7 +950,10 @@ impl RemoteNotebookStore {
     ) -> Result<Option<PulledNotebook>, NotebookSyncError> {
         // Header first — bail out cheap if the notebook isn't
         // synced anywhere yet.
-        let v = self.gql(Q_GET_NOTEBOOK, serde_json::json!({ "id": id.0.to_string() }))?;
+        let v = self.gql(
+            Q_GET_NOTEBOOK,
+            serde_json::json!({ "id": id.0.to_string() }),
+        )?;
         let item = v.get("getNotebook");
         let Some(item) = item else { return Ok(None) };
         if item.is_null() {
@@ -980,7 +982,10 @@ impl RemoteNotebookStore {
                 .ok_or_else(|| NotebookSyncError::Encode("missing strokes items".into()))?;
             for it in items {
                 let id_s = it.get("id").and_then(|x| x.as_str()).unwrap_or_default();
-                let page_id = it.get("pageId").and_then(|x| x.as_str()).unwrap_or_default();
+                let page_id = it
+                    .get("pageId")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or_default();
                 // Skip tombstones — `deletedAtIso` set means the row
                 // is soft-deleted in cloud + payload may be empty.
                 if it.get("deletedAtIso").and_then(|x| x.as_str()).is_some() {

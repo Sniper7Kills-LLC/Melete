@@ -145,10 +145,7 @@ impl Kind {
 /// The tab label updates with the current row count; the refresh fn
 /// is exposed in case the caller wants to invoke it externally
 /// (currently only the in-tab Refresh button uses it).
-fn build_tab(
-    state: SharedState,
-    kind: Kind,
-) -> (GtkBox, Label, std::rc::Rc<dyn Fn()>) {
+fn build_tab(state: SharedState, kind: Kind) -> (GtkBox, Label, std::rc::Rc<dyn Fn()>) {
     let body = GtkBox::builder()
         .orientation(Orientation::Vertical)
         .spacing(8)
@@ -304,10 +301,8 @@ fn build_tab(
                         options.extend(cats.iter().cloned());
                         let strs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
                         category_dropdown.set_model(Some(&StringList::new(&strs)));
-                        let new_idx = options
-                            .iter()
-                            .position(|c| c == &prev_label)
-                            .unwrap_or(0) as u32;
+                        let new_idx =
+                            options.iter().position(|c| c == &prev_label).unwrap_or(0) as u32;
                         category_dropdown.set_selected(new_idx);
                     }
                 }
@@ -546,10 +541,9 @@ fn open_preview_only(kind: Kind, id: uuid::Uuid) -> Result<(), RemoteError> {
         }
         Kind::NotebookTemplate => {
             let row = s.get_notebook_template(id)?;
-            let template =
-                crate::template_io::notebook_template_from_row(&row).map_err(|e| {
-                    RemoteError::Malformed(format!("parse preview notebook template: {e:#}"))
-                })?;
+            let template = crate::template_io::notebook_template_from_row(&row).map_err(|e| {
+                RemoteError::Malformed(format!("parse preview notebook template: {e:#}"))
+            })?;
             with_openers(|openers| match openers {
                 Some(o) => (o.preview_notebook)(template),
                 None => tracing::warn!("notebook template preview opener not registered"),
@@ -557,9 +551,8 @@ fn open_preview_only(kind: Kind, id: uuid::Uuid) -> Result<(), RemoteError> {
         }
         Kind::Brush => {
             let row = s.get_brush(id)?;
-            let brush: melete_core::Brush = toml::from_str(&row.body_toml).map_err(|e| {
-                RemoteError::Malformed(format!("parse preview brush body: {e}"))
-            })?;
+            let brush: melete_core::Brush = toml::from_str(&row.body_toml)
+                .map_err(|e| RemoteError::Malformed(format!("parse preview brush body: {e}")))?;
             with_openers(|openers| match openers {
                 Some(o) => (o.preview_brush)(brush),
                 None => tracing::warn!("brush preview opener not registered"),
@@ -583,11 +576,7 @@ pub fn download_page_template_into_local(
 /// Read-only download — fetches the upstream entry as-is and inserts
 /// into the local registry under the original id. The user gets a
 /// usable copy but isn't the owner and can't republish over it.
-fn download_into_local(
-    kind: Kind,
-    id: uuid::Uuid,
-    state: SharedState,
-) -> Result<(), RemoteError> {
+fn download_into_local(kind: Kind, id: uuid::Uuid, state: SharedState) -> Result<(), RemoteError> {
     let mut s = RemoteTemplateStore::connect()?;
     match kind {
         Kind::PageTemplate => {
@@ -602,19 +591,14 @@ fn download_into_local(
                 &template,
                 &[],
             )
-            .map_err(|e| {
-                RemoteError::Malformed(format!("save downloaded page template: {e:#}"))
-            })?;
+            .map_err(|e| RemoteError::Malformed(format!("save downloaded page template: {e:#}")))?;
         }
         Kind::NotebookTemplate => {
             let row = s.get_notebook_template(id)?;
             let s_state = state.borrow();
-            let template =
-                crate::template_io::notebook_template_from_row(&row).map_err(|e| {
-                    RemoteError::Malformed(format!(
-                        "parse downloaded notebook template: {e:#}"
-                    ))
-                })?;
+            let template = crate::template_io::notebook_template_from_row(&row).map_err(|e| {
+                RemoteError::Malformed(format!("parse downloaded notebook template: {e:#}"))
+            })?;
             let _ = crate::template_io::put_notebook_template(
                 &s_state.backend,
                 &s_state.notebook_templates,
@@ -624,9 +608,8 @@ fn download_into_local(
         Kind::Brush => {
             let row = s.get_brush(id)?;
             let s_state = state.borrow();
-            put_brush_into_local(&s_state, &row).map_err(|e| {
-                RemoteError::Malformed(format!("save downloaded brush: {e:#}"))
-            })?;
+            put_brush_into_local(&s_state, &row)
+                .map_err(|e| RemoteError::Malformed(format!("save downloaded brush: {e:#}")))?;
         }
     }
     Ok(())
@@ -653,9 +636,7 @@ fn edit_into_local(kind: Kind, id: uuid::Uuid, state: SharedState) -> Result<(),
                     &template,
                     &[],
                 )
-                .map_err(|e| {
-                    RemoteError::Malformed(format!("save forked page template: {e:#}"))
-                })?;
+                .map_err(|e| RemoteError::Malformed(format!("save forked page template: {e:#}")))?;
             }
             with_openers(|openers| {
                 if let Some(o) = openers {
@@ -690,9 +671,8 @@ fn edit_into_local(kind: Kind, id: uuid::Uuid, state: SharedState) -> Result<(),
             let row = s.fork_brush(id)?;
             {
                 let s_state = state.borrow();
-                put_brush_into_local(&s_state, &row).map_err(|e| {
-                    RemoteError::Malformed(format!("save forked brush: {e:#}"))
-                })?;
+                put_brush_into_local(&s_state, &row)
+                    .map_err(|e| RemoteError::Malformed(format!("save forked brush: {e:#}")))?;
             }
             // Reconstruct a Brush from BrushRow.body_toml so the
             // editor opens on the cloned shape.

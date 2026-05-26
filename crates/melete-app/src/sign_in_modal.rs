@@ -99,7 +99,8 @@ pub fn open(parent: &ApplicationWindow, on_close: Box<dyn FnOnce(bool)>) {
 
     // Single-shot callback so Cancel, X, and successful sign-in all
     // converge on exactly one invocation.
-    let on_close: Rc<RefCell<Option<Box<dyn FnOnce(bool)>>>> = Rc::new(RefCell::new(Some(on_close)));
+    let on_close: Rc<RefCell<Option<Box<dyn FnOnce(bool)>>>> =
+        Rc::new(RefCell::new(Some(on_close)));
     let fire = {
         let on_close = on_close.clone();
         move |signed_in: bool| {
@@ -152,8 +153,8 @@ pub fn open(parent: &ApplicationWindow, on_close: Box<dyn FnOnce(bool)>) {
             // over a healthy connection; the user is intentionally
             // waiting on it. If this becomes a UX issue, hoist into a
             // worker thread + glib::idle_add.
-            let result = RemoteTemplateStore::connect()
-                .and_then(|mut s| s.sign_in(&username, &password));
+            let result =
+                RemoteTemplateStore::connect().and_then(|mut s| s.sign_in(&username, &password));
             *in_flight.borrow_mut() = false;
             signin_btn.set_sensitive(true);
             match result {
@@ -189,7 +190,9 @@ pub fn current_email() -> Option<String> {
     if !store.is_signed_in() {
         return None;
     }
-    let tokens = melete_storage::remote_template_store::auth::load_tokens().ok().flatten()?;
+    let tokens = melete_storage::remote_template_store::auth::load_tokens()
+        .ok()
+        .flatten()?;
     decode_jwt_email(&tokens.id_token)
 }
 
@@ -200,5 +203,7 @@ fn decode_jwt_email(jwt: &str) -> Option<String> {
         .decode(payload_b64)
         .ok()?;
     let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    v.get("email").and_then(|x| x.as_str()).map(|s| s.to_string())
+    v.get("email")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string())
 }

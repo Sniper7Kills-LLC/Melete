@@ -137,11 +137,7 @@ mod tests {
 
     #[test]
     fn body_serializes_with_operation_name() {
-        let b = body(
-            "query Foo { foo }",
-            Some("Foo"),
-            json!({ "id": "abc" }),
-        );
+        let b = body("query Foo { foo }", Some("Foo"), json!({ "id": "abc" }));
         let v: Value = serde_json::from_str(&b).unwrap();
         assert_eq!(v["query"], "query Foo { foo }");
         assert_eq!(v["operationName"], "Foo");
@@ -174,7 +170,10 @@ mod tests {
     #[test]
     fn parse_response_no_data_no_errors_is_no_data() {
         let raw = r#"{}"#;
-        assert!(matches!(parse_response(raw).unwrap_err(), GraphQlError::NoData));
+        assert!(matches!(
+            parse_response(raw).unwrap_err(),
+            GraphQlError::NoData
+        ));
     }
 
     #[test]

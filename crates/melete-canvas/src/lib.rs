@@ -19,9 +19,9 @@ pub mod widget_renderer;
 #[cfg(feature = "vello")]
 pub mod vello_renderer;
 
-pub use background_renderer::{scale_background, BackgroundConfig};
 #[cfg(feature = "desktop")]
 pub use background_renderer::draw_page_bounds_outline;
+pub use background_renderer::{scale_background, BackgroundConfig};
 pub use grid_renderer::GridSettings;
 #[cfg(feature = "desktop")]
 pub use renderer::{

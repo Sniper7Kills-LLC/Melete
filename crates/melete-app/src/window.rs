@@ -300,11 +300,15 @@ pub fn build(parent: &ApplicationWindow, state: SharedState) -> SharedWindow {
                 show_notebook_template_editor(&win_for_nb, Some(t))
             }),
             brush: Rc::new(move |b: melete_core::Brush| show_tool_editor(&win_for_brush, Some(b))),
-            preview_page: Rc::new(move |t: PageTemplate| show_template_preview(&win_for_page_pv, t)),
+            preview_page: Rc::new(move |t: PageTemplate| {
+                show_template_preview(&win_for_page_pv, t)
+            }),
             preview_notebook: Rc::new(move |t: NotebookTemplate| {
                 show_notebook_template_preview(&win_for_nb_pv, t)
             }),
-            preview_brush: Rc::new(move |b: melete_core::Brush| show_tool_preview(&win_for_brush_pv, b)),
+            preview_brush: Rc::new(move |b: melete_core::Brush| {
+                show_tool_preview(&win_for_brush_pv, b)
+            }),
         });
     }
 
@@ -425,7 +429,10 @@ fn open_account_popover(
             vbox.append(&usage_widget);
         }
     } else {
-        let header_lbl = Label::builder().label("Not signed in").halign(Align::Start).build();
+        let header_lbl = Label::builder()
+            .label("Not signed in")
+            .halign(Align::Start)
+            .build();
         header_lbl.add_css_class("dim-label");
         vbox.append(&header_lbl);
 
@@ -463,11 +470,27 @@ fn open_account_popover(
     gated_lbl.add_css_class("dim-label");
     vbox.append(&gated_lbl);
 
-    let unlock_tip = if signed_in { "Coming soon" } else { "Sign in to use" };
+    let unlock_tip = if signed_in {
+        "Coming soon"
+    } else {
+        "Sign in to use"
+    };
 
-    vbox.append(&build_gated_row("Live sync threads", "network-transmit-receive-symbolic", unlock_tip));
-    vbox.append(&build_gated_row("Plan & usage", "emblem-default-symbolic", unlock_tip));
-    vbox.append(&build_gated_row("Published items", "view-list-symbolic", unlock_tip));
+    vbox.append(&build_gated_row(
+        "Live sync threads",
+        "network-transmit-receive-symbolic",
+        unlock_tip,
+    ));
+    vbox.append(&build_gated_row(
+        "Plan & usage",
+        "emblem-default-symbolic",
+        unlock_tip,
+    ));
+    vbox.append(&build_gated_row(
+        "Published items",
+        "view-list-symbolic",
+        unlock_tip,
+    ));
 
     vbox.append(&Separator::new(Orientation::Horizontal));
 
@@ -592,19 +615,29 @@ fn build_usage_block() -> Option<gtk4::Widget> {
         .orientation(Orientation::Horizontal)
         .spacing(8)
         .build();
-    let label = Label::builder().label("Usage").halign(Align::Start).hexpand(true).build();
+    let label = Label::builder()
+        .label("Usage")
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
     label.add_css_class("caption-heading");
     label.add_css_class("dim-label");
-    let tier_badge = Label::builder()
-        .label(ent.tier.to_uppercase())
-        .build();
+    let tier_badge = Label::builder().label(ent.tier.to_uppercase()).build();
     tier_badge.add_css_class("caption");
     head.append(&label);
     head.append(&tier_badge);
     outer.append(&head);
 
-    outer.append(&build_usage_meter("Notebooks", notebooks_used, ent.notebook_cap));
-    outer.append(&build_usage_meter("Strokes today", strokes_today, ent.daily_write_cap));
+    outer.append(&build_usage_meter(
+        "Notebooks",
+        notebooks_used,
+        ent.notebook_cap,
+    ));
+    outer.append(&build_usage_meter(
+        "Strokes today",
+        strokes_today,
+        ent.daily_write_cap,
+    ));
 
     Some(outer.upcast())
 }
@@ -619,9 +652,15 @@ fn build_usage_meter(label: &str, used: u64, cap: u64) -> gtk4::Widget {
         .orientation(Orientation::Horizontal)
         .spacing(8)
         .build();
-    let name = Label::builder().label(label).halign(Align::Start).hexpand(true).build();
+    let name = Label::builder()
+        .label(label)
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
     name.add_css_class("caption");
-    let val = Label::builder().label(format!("{} / {}", used, cap)).build();
+    let val = Label::builder()
+        .label(format!("{} / {}", used, cap))
+        .build();
     val.add_css_class("caption");
     val.add_css_class("dim-label");
     head.append(&name);
@@ -647,7 +686,11 @@ fn build_gated_row(label: &str, icon_name: &str, tooltip: &str) -> Button {
         .spacing(8)
         .build();
     row.append(&Image::from_icon_name(icon_name));
-    let lbl = Label::builder().label(label).halign(Align::Start).hexpand(true).build();
+    let lbl = Label::builder()
+        .label(label)
+        .halign(Align::Start)
+        .hexpand(true)
+        .build();
     row.append(&lbl);
 
     let btn = Button::builder().child(&row).build();
@@ -664,7 +707,11 @@ fn refresh_account_chip(btn: &Button) {
     if let Some(email) = crate::sign_in_modal::current_email() {
         // Show the local-part of the email; the @domain rarely changes
         // and chews header width on a Framework 12 screen.
-        let label = email.split('@').next().unwrap_or(email.as_str()).to_string();
+        let label = email
+            .split('@')
+            .next()
+            .unwrap_or(email.as_str())
+            .to_string();
         btn.set_label(&format!("● {}", label));
         btn.set_tooltip_text(Some(&format!("Signed in as {} — click to manage", email)));
     } else {
@@ -730,16 +777,13 @@ fn build_menu_button(
         let export_btn = export_btn.clone();
         let export_nb_btn = export_nb_btn.clone();
         let sep = file_separator.clone();
-        gtk4::glib::timeout_add_local(
-            std::time::Duration::from_millis(250),
-            move || {
-                let has_nb = current_notebook.borrow().is_some();
-                export_btn.set_visible(has_nb);
-                export_nb_btn.set_visible(has_nb);
-                sep.set_visible(has_nb);
-                gtk4::glib::ControlFlow::Continue
-            },
-        );
+        gtk4::glib::timeout_add_local(std::time::Duration::from_millis(250), move || {
+            let has_nb = current_notebook.borrow().is_some();
+            export_btn.set_visible(has_nb);
+            export_nb_btn.set_visible(has_nb);
+            sep.set_visible(has_nb);
+            gtk4::glib::ControlFlow::Continue
+        });
     }
 
     // ── Library (manage local artifacts) ─────────────────────────────
@@ -1111,8 +1155,11 @@ fn show_template_editor_inner(win: &SharedWindow, edit: Option<PageTemplate>, re
     container.append(&view);
 
     let w = win.borrow();
-    w.title_label
-        .set_text(if read_only { "Template Preview" } else { "Template Editor" });
+    w.title_label.set_text(if read_only {
+        "Template Preview"
+    } else {
+        "Template Editor"
+    });
     w.back_btn.set_visible(false);
     w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
@@ -1158,12 +1205,16 @@ fn show_tool_editor_inner(
         }
     });
 
-    let view = crate::tool_editor::build_editor_view(&parent, state, seed_brush, on_done, read_only);
+    let view =
+        crate::tool_editor::build_editor_view(&parent, state, seed_brush, on_done, read_only);
     container.append(&view);
 
     let w = win.borrow();
-    w.title_label
-        .set_text(if read_only { "Tool Preview" } else { "Tool Editor" });
+    w.title_label.set_text(if read_only {
+        "Tool Preview"
+    } else {
+        "Tool Editor"
+    });
     w.back_btn.set_visible(false);
     w.sidebar_toggle_btn.set_visible(false);
     w.notebook_settings_btn.set_visible(false);
@@ -1422,7 +1473,6 @@ fn build_cheatsheet_button() -> MenuButton {
         .build()
 }
 
-
 #[cfg(feature = "remote")]
 pub(crate) fn ask_visibility_then(
     parent: &ApplicationWindow,
@@ -1445,23 +1495,19 @@ pub(crate) fn ask_visibility_then(
         .modal(true)
         .build();
     let parent = parent.clone();
-    dialog.choose(
-        Some(&parent),
-        gtk4::gio::Cancellable::NONE,
-        move |res| {
-            let idx = match res {
-                Ok(i) => i,
-                Err(_) => return,
-            };
-            let visibility = match idx {
-                0 => NotebookVisibility::Private,
-                1 => NotebookVisibility::Unlisted,
-                2 => NotebookVisibility::Public,
-                _ => return,
-            };
-            on_pick(visibility);
-        },
-    );
+    dialog.choose(Some(&parent), gtk4::gio::Cancellable::NONE, move |res| {
+        let idx = match res {
+            Ok(i) => i,
+            Err(_) => return,
+        };
+        let visibility = match idx {
+            0 => NotebookVisibility::Private,
+            1 => NotebookVisibility::Unlisted,
+            2 => NotebookVisibility::Public,
+            _ => return,
+        };
+        on_pick(visibility);
+    });
 }
 
 /// Push the notebook to the cloud, prompting for visibility only on
@@ -1496,7 +1542,11 @@ pub(crate) fn sync_with_smart_visibility(
             );
         }
         Err(e) => {
-            tracing::error!("notebook_sync: fetch_remote_visibility failed for {:?}: {:#}", nb_id, e);
+            tracing::error!(
+                "notebook_sync: fetch_remote_visibility failed for {:?}: {:#}",
+                nb_id,
+                e
+            );
             let dialog = gtk4::AlertDialog::builder()
                 .message("Cloud lookup failed")
                 .detail(format!("{:#}", e))
@@ -1554,10 +1604,7 @@ fn run_sync(
         .halign(Align::Start)
         .label("Connecting…")
         .build();
-    let counter_label = Label::builder()
-        .halign(Align::Start)
-        .label("")
-        .build();
+    let counter_label = Label::builder().halign(Align::Start).label("").build();
     counter_label.add_css_class("dim-label");
     let bar = gtk4::ProgressBar::new();
     bar.set_show_text(false);
@@ -1708,17 +1755,11 @@ fn spawn_pull_with_progress(
         match outcome {
             Some(Ok(strokes)) => {
                 if strokes.is_empty() {
-                    tracing::debug!(
-                        "notebook_sync: no cloud strokes for {:?}",
-                        notebook_id
-                    );
+                    tracing::debug!("notebook_sync: no cloud strokes for {:?}", notebook_id);
                     return gtk4::glib::ControlFlow::Break;
                 }
-                let report = crate::notebook_sync::apply_pulled_strokes(
-                    &state,
-                    notebook_id,
-                    strokes,
-                );
+                let report =
+                    crate::notebook_sync::apply_pulled_strokes(&state, notebook_id, strokes);
                 tracing::info!(
                     "notebook_sync: pulled {} stroke(s) from cloud for {:?} (skipped {} duplicates)",
                     report.strokes_inserted,
@@ -1733,11 +1774,7 @@ fn spawn_pull_with_progress(
                 }
             }
             Some(Err(e)) => {
-                tracing::warn!(
-                    "notebook_sync: pull failed for {:?}: {}",
-                    notebook_id,
-                    e
-                );
+                tracing::warn!("notebook_sync: pull failed for {:?}: {}", notebook_id, e);
             }
             None => {}
         }

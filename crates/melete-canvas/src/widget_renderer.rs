@@ -316,14 +316,7 @@ fn draw_widget(
                 _ => (*rings, *interval_m, *sweep_deg, *sector_deg),
             };
             draw_range_arcs(
-                ctx,
-                transform,
-                r,
-                style,
-                rings,
-                interval_m,
-                sweep_deg,
-                sector_deg,
+                ctx, transform, r, style, rings, interval_m, sweep_deg, sector_deg,
             );
         }
         // Fetch-backed widgets are intentionally rendered as a simple
@@ -334,7 +327,13 @@ fn draw_widget(
         // The active Vello renderer in `journal-widgets` is the one
         // that draws the rich body.
         WidgetKind::Weather { location_label, .. } => {
-            draw_fetch_placeholder(ctx, transform, r, style, &format!("Weather — {}", location_label));
+            draw_fetch_placeholder(
+                ctx,
+                transform,
+                r,
+                style,
+                &format!("Weather — {}", location_label),
+            );
         }
         WidgetKind::Quote { .. } => {
             draw_fetch_placeholder(ctx, transform, r, style, "Quote of the day");

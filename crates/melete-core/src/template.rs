@@ -178,7 +178,6 @@ pub enum WidgetKind {
     // None of these require auth: every endpoint is either a free
     // public API with no key (Open-Meteo, bible-api.com, Wikipedia REST,
     // sunrise-sunset.org, public RSS) or computed locally (moon phase).
-
     /// Open-Meteo forecast for the bound page-date. Caches current
     /// conditions and a few-day strip. `Freshness::UntilDate`.
     Weather {

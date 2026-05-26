@@ -59,7 +59,10 @@ fn hmac_sha256(key: &[u8], msg: &[u8]) -> Vec<u8> {
 }
 
 fn signing_key(secret: &str, date_yyyymmdd: &str, region: &str) -> Vec<u8> {
-    let k_date = hmac_sha256(format!("AWS4{}", secret).as_bytes(), date_yyyymmdd.as_bytes());
+    let k_date = hmac_sha256(
+        format!("AWS4{}", secret).as_bytes(),
+        date_yyyymmdd.as_bytes(),
+    );
     let k_region = hmac_sha256(&k_date, region.as_bytes());
     let k_service = hmac_sha256(&k_region, SERVICE.as_bytes());
     hmac_sha256(&k_service, b"aws4_request")
@@ -125,12 +128,7 @@ pub fn sign(
 
     let canonical_request = format!(
         "{}\n{}\n{}\n{}\n{}\n{}",
-        method,
-        canonical_uri,
-        canonical_query,
-        canonical_headers,
-        signed_headers,
-        body_sha256_hex,
+        method, canonical_uri, canonical_query, canonical_headers, signed_headers, body_sha256_hex,
     );
     let canonical_request_hash = sha256_hex(canonical_request.as_bytes());
 
@@ -357,11 +355,15 @@ mod tests {
         );
         // Spec form: "AWS4-HMAC-SHA256 Credential=<access>/<scope>,SignedHeaders=<list>,Signature=<hex>"
         assert!(
-            signed.authorization.starts_with("AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20240115/us-east-1/s3/aws4_request,"),
+            signed.authorization.starts_with(
+                "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20240115/us-east-1/s3/aws4_request,"
+            ),
             "authz: {}",
             signed.authorization
         );
-        assert!(signed.authorization.contains(",SignedHeaders=host;x-amz-content-sha256;x-amz-date,"));
+        assert!(signed
+            .authorization
+            .contains(",SignedHeaders=host;x-amz-content-sha256;x-amz-date,"));
         assert!(signed.authorization.contains(",Signature="));
     }
 

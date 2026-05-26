@@ -15,9 +15,7 @@ use gtk4::prelude::*;
 use gtk4::{ApplicationWindow, Box as GtkBox, Button, DrawingArea, Label, Orientation, Window};
 use melete_canvas::vello_renderer::{OverlayState, ToolStyleParams, VelloRenderer};
 use melete_canvas::ViewportTransform;
-use melete_core::{
-    PageTemplate, Point, Rect, Viewport, WidgetData, WidgetPayload,
-};
+use melete_core::{PageTemplate, Point, Rect, Viewport, WidgetData, WidgetPayload};
 use melete_widgets::{WidgetRenderContext, WidgetRenderer};
 use uuid::Uuid;
 
@@ -27,7 +25,14 @@ pub fn open_preview(parent: &ApplicationWindow, template: PageTemplate) {
     let win = Window::builder()
         .transient_for(parent)
         .modal(true)
-        .title(format!("Preview — {}", if template.name.is_empty() { "untitled template" } else { template.name.as_str() }))
+        .title(format!(
+            "Preview — {}",
+            if template.name.is_empty() {
+                "untitled template"
+            } else {
+                template.name.as_str()
+            }
+        ))
         .default_width(720)
         .default_height(900)
         .build();
@@ -70,8 +75,7 @@ pub fn open_preview(parent: &ApplicationWindow, template: PageTemplate) {
     let area = DrawingArea::builder().hexpand(true).vexpand(true).build();
     outer.append(&area);
 
-    let widget_data: Rc<RefCell<HashMap<Uuid, WidgetData>>> =
-        Rc::new(RefCell::new(HashMap::new()));
+    let widget_data: Rc<RefCell<HashMap<Uuid, WidgetData>>> = Rc::new(RefCell::new(HashMap::new()));
     let renderer: Rc<RefCell<Option<VelloRenderer>>> = Rc::new(RefCell::new(None));
     let widgets_renderer: Rc<RefCell<WidgetRenderer>> =
         Rc::new(RefCell::new(WidgetRenderer::new()));
@@ -134,15 +138,9 @@ pub fn open_preview(parent: &ApplicationWindow, template: PageTemplate) {
             if to_fetch_count == 0 {
                 status_lbl.set_text("No fetch widgets in this template.");
             } else if n >= to_fetch_count {
-                status_lbl.set_text(&format!(
-                    "Loaded {} / {} widgets.",
-                    n, to_fetch_count
-                ));
+                status_lbl.set_text(&format!("Loaded {} / {} widgets.", n, to_fetch_count));
             } else {
-                status_lbl.set_text(&format!(
-                    "Loading… {} / {} widgets",
-                    n, to_fetch_count
-                ));
+                status_lbl.set_text(&format!("Loading… {} / {} widgets", n, to_fetch_count));
             }
             if updated {
                 area_inner.queue_draw();

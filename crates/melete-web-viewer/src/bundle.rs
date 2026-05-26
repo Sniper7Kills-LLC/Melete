@@ -25,7 +25,10 @@
 
 use std::collections::HashMap;
 
-use melete_core::{BackgroundType, NotebookKind, PageTemplate, Stroke, TemplateId, TilingMode, TemplateWidget, Viewport};
+use melete_core::{
+    BackgroundType, NotebookKind, PageTemplate, Stroke, TemplateId, TemplateWidget, TilingMode,
+    Viewport,
+};
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -217,14 +220,17 @@ impl<'de> Deserialize<'de> for JsonUuid {
         // below covers each.
         let v = serde_json::Value::deserialize(deserializer)?;
         let uuid = match v {
-            serde_json::Value::String(s) => Uuid::parse_str(&s)
-                .map_err(|e| serde::de::Error::custom(format!("uuid: {e}")))?,
+            serde_json::Value::String(s) => {
+                Uuid::parse_str(&s).map_err(|e| serde::de::Error::custom(format!("uuid: {e}")))?
+            }
             serde_json::Value::Object(map) => {
                 if let Some(serde_json::Value::String(s)) = map.get("0") {
                     Uuid::parse_str(s)
                         .map_err(|e| serde::de::Error::custom(format!("uuid: {e}")))?
                 } else {
-                    return Err(serde::de::Error::custom("expected uuid string or {0: uuid}"));
+                    return Err(serde::de::Error::custom(
+                        "expected uuid string or {0: uuid}",
+                    ));
                 }
             }
             other => {
@@ -274,9 +280,7 @@ mod tests {
     /// SPA's `Viewer` page fetches. The bundle deserializer must accept
     /// its exact shape so the WASM viewer can ingest the same bytes
     /// that the TS-only mock viewer used to handle.
-    const SAMPLE_NOTEBOOK_JSON: &str = include_str!(
-        "../../../web/public/sample-notebook.json"
-    );
+    const SAMPLE_NOTEBOOK_JSON: &str = include_str!("../../../web/public/sample-notebook.json");
 
     #[test]
     fn parses_sample_notebook() {

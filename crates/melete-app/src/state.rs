@@ -111,8 +111,7 @@ pub struct CanvasState {
     pub current_page_overrides: std::collections::HashMap<uuid::Uuid, melete_core::WidgetOverride>,
     /// Cached fetch payloads loaded from `Page.widget_data`. Read by the
     /// Vello widget renderer; written by the app-layer fetcher.
-    pub current_page_widget_data:
-        std::collections::HashMap<uuid::Uuid, melete_core::WidgetData>,
+    pub current_page_widget_data: std::collections::HashMap<uuid::Uuid, melete_core::WidgetData>,
     /// Installed by the planner navigation strip; called from `load_page`
     /// when the user clicks a Day-addressed planner page so prev/next walk
     /// from that date instead of from "today".

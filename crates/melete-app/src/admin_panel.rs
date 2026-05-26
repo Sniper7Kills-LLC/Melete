@@ -211,12 +211,7 @@ fn user_search_row(window: &gtk4::Window, u: &UserSummary) -> gtk4::Widget {
             let user_id = u.user_id.clone();
             let window = window.clone();
             grant_pro.connect_clicked(move |_| {
-                prompt_then_mutate(
-                    &window,
-                    "grantTier",
-                    &user_id,
-                    json!({ "tier": "pro" }),
-                );
+                prompt_then_mutate(&window, "grantTier", &user_id, json!({ "tier": "pro" }));
             });
         }
         row.add_suffix(&grant_pro);
@@ -296,10 +291,7 @@ fn prompt_then_mutate(
 
 fn fetch_admin_stats() -> Result<String, RemoteError> {
     let v = graphql(Q_ADMIN_STATS, "AdminStats", json!({}))?;
-    let row = v
-        .pointer("/getAdminStats")
-        .cloned()
-        .unwrap_or(Value::Null);
+    let row = v.pointer("/getAdminStats").cloned().unwrap_or(Value::Null);
     if row.is_null() {
         return Ok("(no stats yet — DDB stream maintainer has not fired)".into());
     }
@@ -314,10 +306,18 @@ fn fetch_admin_stats() -> Result<String, RemoteError> {
         row.get("freeUsers").and_then(|x| x.as_i64()).unwrap_or(0),
         row.get("proUsers").and_then(|x| x.as_i64()).unwrap_or(0),
         row.get("studioUsers").and_then(|x| x.as_i64()).unwrap_or(0),
-        row.get("trialingUsers").and_then(|x| x.as_i64()).unwrap_or(0),
-        row.get("pastDueUsers").and_then(|x| x.as_i64()).unwrap_or(0),
-        row.get("canceledUsers").and_then(|x| x.as_i64()).unwrap_or(0),
-        row.get("totalNotebooks").and_then(|x| x.as_i64()).unwrap_or(0),
+        row.get("trialingUsers")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        row.get("pastDueUsers")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        row.get("canceledUsers")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
+        row.get("totalNotebooks")
+            .and_then(|x| x.as_i64())
+            .unwrap_or(0),
         mrr_cents as f64 / 100.0,
         row.get("lastUpdatedIso")
             .and_then(|x| x.as_str())
@@ -326,7 +326,11 @@ fn fetch_admin_stats() -> Result<String, RemoteError> {
 }
 
 fn search_users(email: &str) -> Result<Vec<UserSummary>, RemoteError> {
-    let v = graphql(M_SEARCH_USERS, "AdminSearchUsers", json!({ "email": email }))?;
+    let v = graphql(
+        M_SEARCH_USERS,
+        "AdminSearchUsers",
+        json!({ "email": email }),
+    )?;
     let items = v
         .pointer("/adminSearchUsers/items")
         .and_then(|x| x.as_array())
@@ -345,10 +349,7 @@ fn search_users(email: &str) -> Result<Vec<UserSummary>, RemoteError> {
                 .and_then(|y| y.as_str())
                 .unwrap_or("")
                 .to_string(),
-            enabled: x
-                .get("enabled")
-                .and_then(|y| y.as_bool())
-                .unwrap_or(false),
+            enabled: x.get("enabled").and_then(|y| y.as_bool()).unwrap_or(false),
             status: x
                 .get("status")
                 .and_then(|y| y.as_str())
@@ -391,6 +392,7 @@ fn graphql(query: &str, op: &str, variables: Value) -> Result<Value, RemoteError
 /// Test mode segment is inserted when `STRIPE_DASHBOARD_TEST=1` env
 /// is set, matching Stripe's URL convention. Built into the admin
 /// panel so admins can right-click a user row → "Open in Stripe".
+#[allow(dead_code)]
 pub mod stripe_links {
     fn base() -> &'static str {
         if std::env::var("STRIPE_DASHBOARD_TEST").as_deref() == Ok("1") {

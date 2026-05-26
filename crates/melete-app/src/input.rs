@@ -162,10 +162,7 @@ fn apply_stylus_tool_override(state: &SharedState, g: &GestureStylus) {
             if has_in_flight {
                 finish_stroke(state);
             }
-            crate::state::set_tool(
-                state,
-                Tool::Eraser(crate::state::EraserMode::Partial),
-            );
+            crate::state::set_tool(state, Tool::Eraser(crate::state::EraserMode::Partial));
         }
     } else if let Some(prev) = s.stylus_button_prev_tool.take() {
         drop(s);
@@ -271,12 +268,7 @@ fn cycle_color_slot(state: &SharedState) {
         return;
     }
     let mut s = state.borrow_mut();
-    let cur = [
-        s.pen.color.r,
-        s.pen.color.g,
-        s.pen.color.b,
-        s.pen.color.a,
-    ];
+    let cur = [s.pen.color.r, s.pen.color.g, s.pen.color.b, s.pen.color.a];
     let idx = cfg
         .color_slots
         .iter()
@@ -689,7 +681,11 @@ fn erase_at(state: &SharedState, sx: f64, sy: f64, area: &gtk4::Widget) {
 
     let mut sqlite_failures = 0usize;
     for stroke in &to_remove {
-        tracing::debug!("STROKE_MOD erase: delete id={} page={:?}", stroke.id, page_id);
+        tracing::debug!(
+            "STROKE_MOD erase: delete id={} page={:?}",
+            stroke.id,
+            page_id
+        );
         if let Err(e) = db.borrow_mut().delete_stroke(stroke.id) {
             sqlite_failures += 1;
             tracing::warn!(
@@ -936,9 +932,7 @@ fn partial_erase_at(state: &SharedState, sx: f64, sy: f64, area: &gtk4::Widget) 
             );
         }
         #[cfg(feature = "remote")]
-        crate::notebook_sync::on_local_stroke_replaced(
-            state, page_id, stroke.id, &children,
-        );
+        crate::notebook_sync::on_local_stroke_replaced(state, page_id, stroke.id, &children);
     }
 
     if did_split {

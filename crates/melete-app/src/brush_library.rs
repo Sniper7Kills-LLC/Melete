@@ -106,10 +106,7 @@ pub fn resolve_id(id: Uuid, user_library: &[Brush]) -> Option<Brush> {
 /// Persist the brush library to the catalog. The given slice is the
 /// new authoritative state — any catalog row whose id isn't in
 /// `brushes` is deleted so deletions performed in memory propagate.
-pub fn save(
-    backend: &Rc<RefCell<dyn NotebookBackend>>,
-    brushes: &[Brush],
-) -> std::io::Result<()> {
+pub fn save(backend: &Rc<RefCell<dyn NotebookBackend>>, brushes: &[Brush]) -> std::io::Result<()> {
     let mut be = backend.borrow_mut();
 
     let existing: HashSet<Uuid> = match be.list_brushes() {

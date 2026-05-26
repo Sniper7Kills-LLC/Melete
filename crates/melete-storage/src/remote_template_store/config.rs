@@ -179,7 +179,10 @@ mod live_tests {
             Ok(o) => {
                 assert!(!o.user_pool_id.is_empty());
                 assert!(!o.data_url.is_empty());
-                eprintln!("embedded outputs OK: user_pool={}, data_url={}", o.user_pool_id, o.data_url);
+                eprintln!(
+                    "embedded outputs OK: user_pool={}, data_url={}",
+                    o.user_pool_id, o.data_url
+                );
             }
             Err(ConfigError::NotConfigured) => eprintln!("(stub) skipped — no live sandbox"),
             Err(e) => panic!("unexpected: {e}"),
