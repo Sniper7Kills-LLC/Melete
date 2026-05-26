@@ -54,11 +54,25 @@ Parameters:
       compute is preview-tier in most regions/accounts — set to
       `false` until you've requested preview access via AWS Support
       (otherwise the stack fails on project creation).
+  HostedZoneId:
+    Type: String
+    Default: ''
+    Description: >
+      Route 53 hosted zone ID for the parent domain. Leave blank
+      to skip CloudFront + ACM provisioning (bucket stays private,
+      no public access — useful for first-deploy smoke tests). When
+      set, the stack provisions an ACM cert + CloudFront distribution
+      fronting the bucket at `${ReleasesHostname}`.
+  ReleasesHostname:
+    Type: String
+    Default: releases.melete.app
+    Description: Public hostname for the releases CDN (only used when HostedZoneId is set).
 
 Conditions:
   HasExplicitBucketName: !Not [!Equals [!Ref ReleasesBucketName, '']]
   HasNotificationEmail:  !Not [!Equals [!Ref NotificationEmail, '']]
   ProvisionMacOS:        !Equals [!Ref EnableMacOS, 'true']
+  ProvisionCDN:          !Not [!Equals [!Ref HostedZoneId, '']]
 
 Resources:
   # ─── Storage ─────────────────────────────────────────────────────
@@ -71,9 +85,9 @@ Resources:
         - !Sub 'melete-releases-${AWS::AccountId}'
       VersioningConfiguration:
         Status: Enabled
+      # Private. CloudFront's OAC reads the objects via the bucket
+      # policy below; nobody else.
       PublicAccessBlockConfiguration:
-        # All access is mediated by CloudFront (or signed URLs while
-        # the CDN is still being provisioned in a separate stack).
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
@@ -85,6 +99,95 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+
+  # ─── CDN (CloudFront + ACM + Route 53) — conditional ─────────────
+  # All four resources live behind the `ProvisionCDN` condition so a
+  # first-deploy smoke test can skip the cert validation + DNS dance
+  # (set HostedZoneId='' to skip). When enabled, the operator must
+  # already control the parent domain in Route 53 — ACM issues the
+  # cert against DNS records the stack creates inside the existing
+  # zone.
+
+  ReleasesCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Condition: ProvisionCDN
+    Properties:
+      DomainName: !Ref ReleasesHostname
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref ReleasesHostname
+          HostedZoneId: !Ref HostedZoneId
+
+  ReleasesOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: ProvisionCDN
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub 'melete-releases-oac-${AWS::AccountId}'
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  ReleasesDistribution:
+    Type: AWS::CloudFront::Distribution
+    Condition: ProvisionCDN
+    DependsOn: ReleasesCertificate
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        Aliases:
+          - !Ref ReleasesHostname
+        ViewerCertificate:
+          AcmCertificateArn: !Ref ReleasesCertificate
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Origins:
+          - Id: ReleasesBucketOrigin
+            DomainName: !GetAtt ReleasesBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt ReleasesOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: ReleasesBucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # AWS Managed CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        DefaultRootObject: index.html
+
+  ReleasesBucketOacPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: ProvisionCDN
+    Properties:
+      Bucket: !Ref ReleasesBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${ReleasesBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${ReleasesDistribution}'
+
+  ReleasesDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Condition: ProvisionCDN
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref ReleasesHostname
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ReleasesDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront's fixed hosted zone
 
   # ─── Notifications ───────────────────────────────────────────────
   BuildStatusTopic:
@@ -305,9 +408,7 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-ReleasesBucket'
   GitHubConnectionArn:
-    Description: >
-      CodeConnections ARN — finish the OAuth handshake via the AWS
-      Console before any CodeBuild project can pull source.
+    Description: CodeConnections ARN supplied at deploy time.
     Value: !Ref GitHubConnectionArn
   BuildStatusTopicArn:
     Description: Subscribe additional endpoints to this SNS topic for build alerts.
@@ -321,3 +422,13 @@ Outputs:
     Value: !Ref MacOSBuild
   ManifestBuildName:
     Value: !Ref ManifestBuild
+  ReleasesPublicUrl:
+    Condition: ProvisionCDN
+    Description: HTTPS URL for downloads.
+    Value: !Sub 'https://${ReleasesHostname}'
+  ReleasesCloudFrontDomain:
+    Condition: ProvisionCDN
+    Description: >
+      The distribution's CloudFront-side hostname. If the DNS A-record
+      ever drops, point the user-facing CNAME here as a recovery path.
+    Value: !GetAtt ReleasesDistribution.DomainName

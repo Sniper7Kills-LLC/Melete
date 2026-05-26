@@ -72,6 +72,11 @@ Should print `"AVAILABLE"`.
 
 ### 2. Deploy the stack
 
+**Smoke-test deploy (no CDN, no DNS):** fastest path to verify the
+build pipeline works. `HostedZoneId=''` skips ACM + CloudFront + the
+Route 53 record. Artefacts live in the private bucket; download via
+signed S3 URLs.
+
 ```
 aws cloudformation deploy \
   --profile melete \
@@ -85,6 +90,31 @@ aws cloudformation deploy \
     NotificationEmail=sniper7kills@gmail.com \
     EnableMacOS=false
 ```
+
+**Full deploy with custom-domain CDN:** add `HostedZoneId` for the
+melete.app Route 53 zone. The stack then provisions an ACM cert
+(DNS-validated inside the zone), a CloudFront distribution fronting
+the bucket via OAC, and an A-alias record at the chosen hostname.
+
+```
+aws cloudformation deploy \
+  --profile melete \
+  --region us-east-1 \
+  --stack-name melete-build \
+  --template-file infra/codebuild/stack.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    GitHubRepo=Sniper7Kills-LLC/Melete \
+    GitHubConnectionArn=<ARN-from-step-1> \
+    NotificationEmail=sniper7kills@gmail.com \
+    EnableMacOS=false \
+    HostedZoneId=Z09642533UM8VLXRHPVSM \
+    ReleasesHostname=releases.melete.app
+```
+
+Cert validation needs the public DNS for the parent zone to be live
+(currently waiting for `clientHold` lift to fully propagate). Stack
+will wait up to ~30 min on ACM if DNS isn't yet visible.
 
 `EnableMacOS=false` for the first deploy — flip to `true` after you
 confirm preview access (otherwise the stack rolls back).
