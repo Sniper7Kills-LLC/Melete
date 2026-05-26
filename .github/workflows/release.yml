@@ -254,10 +254,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install flatpak + flatpak-builder + elfutils (eu-strip)
+      - name: Install flatpak + flatpak-builder + elfutils + SVG loader
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils
+          sudo apt-get install -y --no-install-recommends \
+            flatpak flatpak-builder elfutils \
+            librsvg2-common gdk-pixbuf2.0-bin shared-mime-info
 
       - name: Add Flathub remote + install GNOME 47 runtime
         run: |
