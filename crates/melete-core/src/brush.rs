@@ -319,3 +319,102 @@ pub fn nib_presets() -> Vec<(&'static str, TipShape)> {
         ),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pen::BlendMode;
+
+    fn sample_brush() -> Brush {
+        Brush::one_layer(
+            Uuid::nil(),
+            "Test Pen",
+            Geometry::Smooth { resample_step_mm: 0.5 },
+            WidthMode::Constant { width_mult: 1.0 },
+            TipShape::Round,
+        )
+    }
+
+    #[test]
+    fn one_layer_constructor_populates_defaults() {
+        let b = sample_brush();
+        assert_eq!(b.name, "Test Pen");
+        assert_eq!(b.layers.len(), 1);
+        let layer = &b.layers[0];
+        assert!(layer.enabled);
+        assert_eq!(layer.tip_scale, 1.0);
+        assert_eq!(layer.blend, BlendMode::Normal);
+        assert_eq!(layer.color.alpha_mult, 1.0);
+        assert_eq!(layer.color.hue_shift_deg, 0.0);
+        assert!(matches!(b.cursor, CursorShape::Auto));
+        assert!(b.default_color.is_none());
+    }
+
+    #[test]
+    fn toml_round_trip_preserves_brush() {
+        let b = sample_brush();
+        let toml_str = toml::to_string(&b).expect("encode toml");
+        let back: Brush = toml::from_str(&toml_str).expect("decode toml");
+        assert_eq!(b, back);
+    }
+
+    #[test]
+    fn toml_round_trip_preserves_custom_tip_polygon() {
+        let b = Brush::one_layer(
+            Uuid::nil(),
+            "Arrow Pen",
+            Geometry::Smooth { resample_step_mm: 0.5 },
+            WidthMode::Constant { width_mult: 1.0 },
+            TipShape::Custom {
+                points: vec![(0.0, -1.0), (0.7, 0.4), (-0.7, 0.4)],
+            },
+        );
+        let toml_str = toml::to_string(&b).unwrap();
+        let back: Brush = toml::from_str(&toml_str).unwrap();
+        assert_eq!(b, back);
+    }
+
+    #[test]
+    fn missing_optional_fields_round_trip_via_serde_defaults() {
+        // Minimal hand-rolled TOML — exercises the `#[serde(default)]`
+        // fallbacks on Brush.cursor / Brush.default_color and on every
+        // BrushLayer field annotated with a default fn. Mirrors what an
+        // older bincode-encoded brush deserializes as.
+        let minimal_toml = r#"
+            id = "00000000-0000-0000-0000-000000000000"
+            name = "Minimal"
+
+            [[layers]]
+            geometry = { type = "smooth", resample_step_mm = 0.5 }
+            width = { type = "constant", width_mult = 1.0 }
+            tip = { type = "round" }
+        "#;
+        let b: Brush = toml::from_str(minimal_toml).unwrap();
+        let layer = &b.layers[0];
+        assert!(layer.enabled);
+        assert_eq!(layer.tip_scale, 1.0);
+        assert_eq!(layer.blend, BlendMode::Normal);
+        assert_eq!(layer.color.alpha_mult, 1.0);
+        assert!(matches!(b.cursor, CursorShape::Auto));
+        assert!(b.default_color.is_none());
+    }
+
+    #[test]
+    fn color_mod_default_is_neutral() {
+        let c = ColorMod::default();
+        assert_eq!(c.alpha_mult, 1.0);
+        assert_eq!(c.hue_shift_deg, 0.0);
+    }
+
+    #[test]
+    fn cursor_shape_default_is_auto() {
+        assert!(matches!(CursorShape::default(), CursorShape::Auto));
+    }
+
+    #[test]
+    fn nib_presets_include_round_and_at_least_one_custom() {
+        let presets = nib_presets();
+        assert!(presets.iter().any(|(name, _)| *name == "Round point"));
+        assert!(presets.iter().any(|(_, t)| matches!(t, TipShape::Custom { .. })));
+    }
+}
