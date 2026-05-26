@@ -19,19 +19,6 @@ Parameters:
     Type: String
     Default: Sniper7Kills-LLC/Melete
     Description: GitHub <owner>/<repo>.
-  GitHubConnectionArn:
-    Type: String
-    Description: >
-      Existing AWS CodeConnections (GitHub) ARN. Must be in
-      AVAILABLE state — CodeBuild refuses references to a
-      PENDING_HANDSHAKE connection. Create + finish OAuth before
-      deploying the stack:
-        aws codeconnections create-connection \\
-          --connection-name melete-github \\
-          --provider-type GitHub \\
-          --profile melete --region us-east-1
-      then open the Console → CodeConnections → click through OAuth.
-    AllowedPattern: '^arn:aws:codeconnections:[a-z0-9-]+:[0-9]+:connection/[a-f0-9-]+$'
   ReleasesBucketName:
     Type: String
     Default: ''
@@ -241,16 +228,6 @@ Resources:
                 Resource:
                   - !GetAtt ReleasesBucket.Arn
                   - !Sub '${ReleasesBucket.Arn}/*'
-        - PolicyName: SourceConnection
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: codeconnections:GetConnectionToken
-                Resource: !Ref GitHubConnectionArn
-              - Effect: Allow
-                Action: codeconnections:UseConnection
-                Resource: !Ref GitHubConnectionArn
         - PolicyName: PublishStatusToSns
           PolicyDocument:
             Version: '2012-10-17'
@@ -259,147 +236,296 @@ Resources:
                 Action: sns:Publish
                 Resource: !Ref BuildStatusTopic
 
-  # ─── Linux build project ─────────────────────────────────────────
-  LinuxBuild:
-    Type: AWS::CodeBuild::Project
+  # ─── Bootstrap Lambda + custom resource ──────────────────────────
+  # CloudFormation's `AWS::CodeBuild::Project` resource rejects
+  # CODECONNECTIONS-backed GitHub sources with `OAuthProviderException`
+  # when the deploy principal is a cross-account assumed role
+  # (`OrganizationAccountAccessRole`). Confirmed against
+  # ~/Desktop/EAM/infra/whisper-image-pipeline/README.md which hit
+  # the identical AWS-side interaction. Direct `aws codebuild create-
+  # project` CLI calls from a local-account principal succeed.
+  #
+  # Workaround: a Lambda function (execution role = local-account
+  # principal) creates each CodeBuild project via boto3. Each project
+  # is registered as a `Custom::CodeBuildProject` resource so CFN's
+  # create/update/delete lifecycle still works — Lambda just becomes
+  # the executor.
+
+  BootstrapLambdaRole:
+    Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub 'melete-codebuild-bootstrap-${AWS::AccountId}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ManageCodeBuildProjects
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:CreateProject
+                  - codebuild:UpdateProject
+                  - codebuild:DeleteProject
+                  - codebuild:BatchGetProjects
+                  - codebuild:CreateWebhook
+                  - codebuild:DeleteWebhook
+                  - codebuild:UpdateWebhook
+                Resource: !Sub 'arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/melete-*'
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt CodeBuildServiceRole.Arn
+                Condition:
+                  StringEquals:
+                    iam:PassedToService: codebuild.amazonaws.com
+
+  BootstrapLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: melete-codebuild-bootstrap
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt BootstrapLambdaRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          # CFN custom resource: provisions a CodeBuild project via
+          # boto3.codebuild.create_project / update_project /
+          # delete_project. Bypasses the
+          # CFN-AWS::CodeBuild::Project+CodeConnections quirk that
+          # rejects cross-account-assumed-role deploys.
+
+          import json
+          import os
+          import urllib.request
+          import boto3
+
+          codebuild = boto3.client('codebuild')
+
+          def handle_webhook(event, props, request_type, project):
+              filter_groups = json.loads(props['FilterGroups'])
+              if request_type == 'Create':
+                  codebuild.create_webhook(projectName=project, filterGroups=filter_groups)
+              elif request_type == 'Update':
+                  codebuild.update_webhook(projectName=project, filterGroups=filter_groups, rotateSecret=False)
+              elif request_type == 'Delete':
+                  try:
+                      codebuild.delete_webhook(projectName=project)
+                  except codebuild.exceptions.ResourceNotFoundException:
+                      pass
+
+          def respond(event, status, physical_id, data=None, reason=''):
+              body = {
+                  'Status': status,
+                  'Reason': reason or ('See CloudWatch logs ' + os.environ.get('AWS_LAMBDA_LOG_STREAM_NAME', '')),
+                  'PhysicalResourceId': physical_id,
+                  'StackId': event['StackId'],
+                  'RequestId': event['RequestId'],
+                  'LogicalResourceId': event['LogicalResourceId'],
+                  'Data': data or {},
+              }
+              req = urllib.request.Request(
+                  event['ResponseURL'],
+                  data=json.dumps(body).encode('utf-8'),
+                  method='PUT',
+                  headers={'content-type': '', 'content-length': str(len(json.dumps(body)))},
+              )
+              urllib.request.urlopen(req)
+
+          def build_project_input(props):
+              # `Project` is a JSON-encoded boto3 create_project payload.
+              # Stored as a string in the custom resource Properties
+              # because CFN's intrinsic functions need a single value
+              # type; the Lambda decodes it back to a dict here.
+              return json.loads(props['Project'])
+
+          def handler(event, context):
+              print('event:', json.dumps(event))
+              try:
+                  request_type = event['RequestType']
+                  props = event['ResourceProperties']
+                  action = props.get('Action', 'project')   # 'project' or 'webhook'
+
+                  if action == 'webhook':
+                      project = props['ProjectName']
+                      handle_webhook(event, props, request_type, project)
+                      respond(event, 'SUCCESS', f'{project}-webhook')
+                      return
+
+                  # default: project
+                  name = props['Name']
+
+                  if request_type == 'Create':
+                      payload = build_project_input(props)
+                      payload['name'] = name
+                      codebuild.create_project(**payload)
+                      respond(event, 'SUCCESS', name)
+                      return
+
+                  if request_type == 'Update':
+                      payload = build_project_input(props)
+                      payload['name'] = name
+                      codebuild.update_project(**payload)
+                      respond(event, 'SUCCESS', name)
+                      return
+
+                  if request_type == 'Delete':
+                      try:
+                          codebuild.delete_project(name=name)
+                      except codebuild.exceptions.ResourceNotFoundException:
+                          pass
+                      respond(event, 'SUCCESS', name)
+                      return
+
+                  respond(event, 'FAILED', name, reason=f'Unknown RequestType {request_type}')
+
+              except Exception as e:
+                  print('error:', repr(e))
+                  respond(event, 'FAILED', event.get('PhysicalResourceId') or 'unknown',
+                          reason=str(e))
+
+  # ─── Linux build project (custom resource) ───────────────────────
+  LinuxBuild:
+    Type: Custom::CodeBuildProject
+    Properties:
+      ServiceToken: !GetAtt BootstrapLambda.Arn
       Name: melete-build-linux
-      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
-      Source:
-        Type: GITHUB
-        Location: !Sub 'https://github.com/${GitHubRepo}.git'
-        BuildSpec: packaging/linux/buildspec.yml
-        Auth:
-          Type: CODECONNECTIONS
-          Resource: !Ref GitHubConnectionArn
-      SourceVersion: refs/heads/main
-      Triggers:
-        Webhook: true
-        FilterGroups:
-          - - Type: EVENT
-              Pattern: PUSH
-            - Type: HEAD_REF
-              Pattern: ^refs/tags/v.*$
-      Environment:
-        Type: LINUX_CONTAINER
-        Image: aws/codebuild/standard:7.0
-        ComputeType: BUILD_GENERAL1_LARGE
-        PrivilegedMode: true   # Docker-in-Docker for Flatpak builder
-        EnvironmentVariables:
-          - Name: RELEASES_BUCKET
-            Value: !Ref ReleasesBucket
-      Artifacts:
-        Type: NO_ARTIFACTS
-      LogsConfig:
-        CloudWatchLogs:
-          Status: ENABLED
-          GroupName: /aws/codebuild/melete-build-linux
-      TimeoutInMinutes: 60
+      Project: !Sub |
+        {
+          "description": "Melete Linux x86_64 installers (deb/rpm/AppImage/Arch/Flatpak)",
+          "source": {
+            "type": "GITHUB",
+            "location": "https://github.com/${GitHubRepo}.git",
+            "buildspec": "packaging/linux/buildspec.yml"
+          },
+          "sourceVersion": "refs/heads/main",
+          "artifacts": { "type": "NO_ARTIFACTS" },
+          "environment": {
+            "type": "LINUX_CONTAINER",
+            "image": "aws/codebuild/standard:7.0",
+            "computeType": "BUILD_GENERAL1_LARGE",
+            "privilegedMode": true,
+            "environmentVariables": [
+              { "name": "RELEASES_BUCKET", "value": "${ReleasesBucket}", "type": "PLAINTEXT" }
+            ]
+          },
+          "serviceRole": "${CodeBuildServiceRole.Arn}",
+          "logsConfig": {
+            "cloudWatchLogs": { "status": "ENABLED", "groupName": "/aws/codebuild/melete-build-linux" }
+          },
+          "timeoutInMinutes": 60
+        }
 
   # ─── Windows build project ───────────────────────────────────────
   WindowsBuild:
-    Type: AWS::CodeBuild::Project
+    Type: Custom::CodeBuildProject
     Properties:
+      ServiceToken: !GetAtt BootstrapLambda.Arn
       Name: melete-build-windows
-      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
-      Source:
-        Type: GITHUB
-        Location: !Sub 'https://github.com/${GitHubRepo}.git'
-        BuildSpec: packaging/windows/buildspec.yml
-        Auth:
-          Type: CODECONNECTIONS
-          Resource: !Ref GitHubConnectionArn
-      SourceVersion: refs/heads/main
-      Triggers:
-        Webhook: true
-        FilterGroups:
-          - - Type: EVENT
-              Pattern: PUSH
-            - Type: HEAD_REF
-              Pattern: ^refs/tags/v.*$
-      Environment:
-        Type: WINDOWS_SERVER_2022_CONTAINER
-        Image: aws/codebuild/windows-base:2022-1.0
-        ComputeType: BUILD_GENERAL1_MEDIUM
-        EnvironmentVariables:
-          - Name: RELEASES_BUCKET
-            Value: !Ref ReleasesBucket
-      Artifacts:
-        Type: NO_ARTIFACTS
-      LogsConfig:
-        CloudWatchLogs:
-          Status: ENABLED
-          GroupName: /aws/codebuild/melete-build-windows
-      TimeoutInMinutes: 90
+      Project: !Sub |
+        {
+          "description": "Melete Windows x86_64 MSI + portable zip (unsigned)",
+          "source": {
+            "type": "GITHUB",
+            "location": "https://github.com/${GitHubRepo}.git",
+            "buildspec": "packaging/windows/buildspec.yml"
+          },
+          "sourceVersion": "refs/heads/main",
+          "artifacts": { "type": "NO_ARTIFACTS" },
+          "environment": {
+            "type": "WINDOWS_SERVER_2022_CONTAINER",
+            "image": "aws/codebuild/windows-base:2022-1.0",
+            "computeType": "BUILD_GENERAL1_MEDIUM",
+            "environmentVariables": [
+              { "name": "RELEASES_BUCKET", "value": "${ReleasesBucket}", "type": "PLAINTEXT" }
+            ]
+          },
+          "serviceRole": "${CodeBuildServiceRole.Arn}",
+          "logsConfig": {
+            "cloudWatchLogs": { "status": "ENABLED", "groupName": "/aws/codebuild/melete-build-windows" }
+          },
+          "timeoutInMinutes": 90
+        }
 
   # ─── macOS build project (preview — conditional) ─────────────────
   MacOSBuild:
-    Type: AWS::CodeBuild::Project
+    Type: Custom::CodeBuildProject
     Condition: ProvisionMacOS
     Properties:
+      ServiceToken: !GetAtt BootstrapLambda.Arn
       Name: melete-build-macos
-      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
-      Source:
-        Type: GITHUB
-        Location: !Sub 'https://github.com/${GitHubRepo}.git'
-        BuildSpec: packaging/macos/buildspec.yml
-        Auth:
-          Type: CODECONNECTIONS
-          Resource: !Ref GitHubConnectionArn
-      SourceVersion: refs/heads/main
-      Triggers:
-        Webhook: true
-        FilterGroups:
-          - - Type: EVENT
-              Pattern: PUSH
-            - Type: HEAD_REF
-              Pattern: ^refs/tags/v.*$
-      Environment:
-        Type: MAC_ARM
-        Image: aws/codebuild/macos-arm-base:14
-        ComputeType: BUILD_GENERAL1_LARGE
-        EnvironmentVariables:
-          - Name: RELEASES_BUCKET
-            Value: !Ref ReleasesBucket
-      Artifacts:
-        Type: NO_ARTIFACTS
-      LogsConfig:
-        CloudWatchLogs:
-          Status: ENABLED
-          GroupName: /aws/codebuild/melete-build-macos
-      TimeoutInMinutes: 60
+      Project: !Sub |
+        {
+          "description": "Melete macOS arm64 .app + DMG (unsigned)",
+          "source": {
+            "type": "GITHUB",
+            "location": "https://github.com/${GitHubRepo}.git",
+            "buildspec": "packaging/macos/buildspec.yml"
+          },
+          "sourceVersion": "refs/heads/main",
+          "artifacts": { "type": "NO_ARTIFACTS" },
+          "environment": {
+            "type": "MAC_ARM",
+            "image": "aws/codebuild/macos-arm-base:14",
+            "computeType": "BUILD_GENERAL1_LARGE",
+            "environmentVariables": [
+              { "name": "RELEASES_BUCKET", "value": "${ReleasesBucket}", "type": "PLAINTEXT" }
+            ]
+          },
+          "serviceRole": "${CodeBuildServiceRole.Arn}",
+          "logsConfig": {
+            "cloudWatchLogs": { "status": "ENABLED", "groupName": "/aws/codebuild/melete-build-macos" }
+          },
+          "timeoutInMinutes": 60
+        }
+
+  # CodeBuild auto-webhook registration requires CODECONNECTIONS auth
+  # on the project's source, which this account hits an unresolvable
+  # AWS-side `OAuthProviderException` on (reproduced via both
+  # OrganizationAccountAccessRole and Lambda execution-role principals).
+  # Sidestep entirely — anonymous public-repo source pulls work, and
+  # tag-triggered builds run via `aws codebuild start-build` from
+  # either the manual workflow or a future EventBridge bridge.
 
   # ─── Manifest aggregator ─────────────────────────────────────────
   # Triggered manually after the per-OS builds finish (V1). A future
   # iteration adds an S3-event-driven Lambda that fires this once all
   # expected artefacts have landed for the version.
   ManifestBuild:
-    Type: AWS::CodeBuild::Project
+    Type: Custom::CodeBuildProject
     Properties:
+      ServiceToken: !GetAtt BootstrapLambda.Arn
       Name: melete-build-manifest
-      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
-      Source:
-        Type: GITHUB
-        Location: !Sub 'https://github.com/${GitHubRepo}.git'
-        BuildSpec: packaging/manifest/buildspec.yml
-        Auth:
-          Type: CODECONNECTIONS
-          Resource: !Ref GitHubConnectionArn
-      SourceVersion: refs/heads/main
-      Environment:
-        Type: LINUX_CONTAINER
-        Image: aws/codebuild/standard:7.0
-        ComputeType: BUILD_GENERAL1_SMALL
-        EnvironmentVariables:
-          - Name: RELEASES_BUCKET
-            Value: !Ref ReleasesBucket
-      Artifacts:
-        Type: NO_ARTIFACTS
-      LogsConfig:
-        CloudWatchLogs:
-          Status: ENABLED
-          GroupName: /aws/codebuild/melete-build-manifest
-      TimeoutInMinutes: 15
+      Project: !Sub |
+        {
+          "description": "Aggregates SHA256SUMS + manifest.json + latest.json after per-OS builds finish",
+          "source": {
+            "type": "GITHUB",
+            "location": "https://github.com/${GitHubRepo}.git",
+            "buildspec": "packaging/manifest/buildspec.yml"
+          },
+          "sourceVersion": "refs/heads/main",
+          "artifacts": { "type": "NO_ARTIFACTS" },
+          "environment": {
+            "type": "LINUX_CONTAINER",
+            "image": "aws/codebuild/standard:7.0",
+            "computeType": "BUILD_GENERAL1_SMALL",
+            "environmentVariables": [
+              { "name": "RELEASES_BUCKET", "value": "${ReleasesBucket}", "type": "PLAINTEXT" }
+            ]
+          },
+          "serviceRole": "${CodeBuildServiceRole.Arn}",
+          "logsConfig": {
+            "cloudWatchLogs": { "status": "ENABLED", "groupName": "/aws/codebuild/melete-build-manifest" }
+          },
+          "timeoutInMinutes": 15
+        }
 
 Outputs:
   ReleasesBucketName:
@@ -407,9 +533,6 @@ Outputs:
     Value: !Ref ReleasesBucket
     Export:
       Name: !Sub '${AWS::StackName}-ReleasesBucket'
-  GitHubConnectionArn:
-    Description: CodeConnections ARN supplied at deploy time.
-    Value: !Ref GitHubConnectionArn
   BuildStatusTopicArn:
     Description: Subscribe additional endpoints to this SNS topic for build alerts.
     Value: !Ref BuildStatusTopic
