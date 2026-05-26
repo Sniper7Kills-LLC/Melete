@@ -365,9 +365,11 @@ jobs:
             dist/*.sha256
           retention-days: 7
 
-  # ─── Windows unsigned MSI + portable zip ─────────────────────────
+  # ─── Windows unsigned portable .zip ──────────────────────────────
+  # MSI generation is parked until Phase B (EV code-signing) — see
+  # packaging/windows/build-msi.ps1 for rationale.
   windows:
-    name: Windows MSI + portable zip (unsigned)
+    name: Windows portable zip (unsigned)
     runs-on: windows-latest
     timeout-minutes: 75
     outputs:
@@ -381,10 +383,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
-
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-wix
 
       - name: Download + unpack gvsbuild GTK4 prebuilt
         shell: pwsh
@@ -433,7 +431,7 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.tag }}
 
-      - name: Build MSI + portable zip
+      - name: Build portable zip
         shell: pwsh
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -442,7 +440,7 @@ jobs:
       - name: SHA256
         shell: pwsh
         run: |
-          Get-ChildItem dist\*.msi, dist\*-portable.zip | ForEach-Object {
+          Get-ChildItem dist\*-portable.zip | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)" | Set-Content "$($_.FullName).sha256"
           }
@@ -451,7 +449,6 @@ jobs:
         with:
           name: melete-windows-x86_64
           path: |
-            dist/*.msi
             dist/*-portable.zip
             dist/*.sha256
           retention-days: 7
@@ -503,7 +500,6 @@ jobs:
               '.flatpak':      ('linux-x86_64',   'flatpak'),
               '.dmg':          ('macos-arm64',    'dmg'),
               '-app.zip':      ('macos-arm64',    'app'),
-              '.msi':          ('windows-x86_64', 'msi'),
               '-portable.zip': ('windows-x86_64', 'portable'),
           }
 

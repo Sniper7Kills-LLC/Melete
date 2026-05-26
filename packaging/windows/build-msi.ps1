@@ -1,23 +1,24 @@
-# Windows MSI + portable zip builder (Phase 7.5, #43).
+# Windows portable .zip builder (Phase 7.5, #43).
+#
+# Phase 7.5 ships a portable .zip only — the previous cargo-wix MSI
+# path is parked until Phase B (EV-cert code signing). An unsigned
+# MSI triggers Windows Defender SmartScreen warnings that are *more*
+# user-hostile than the same `.exe` inside a clearly-portable .zip,
+# so removing it is a net usability win in addition to dropping the
+# WiX harvest complexity.
 #
 # Prerequisites the CI step installs before invoking this script:
 #   - rustup target add x86_64-pc-windows-msvc
-#   - cargo install cargo-wix
 #   - gvsbuild prebuilt GTK4 + libadwaita unpacked under C:\gvsbuild
 #     so pkg-config + the linker can find gtk4 / pango / cairo / etc.
 #   - 7z (preinstalled on windows-latest)
 #
 # Inputs:
 #   - target/release/melete-app.exe
-#   - resources/icons/app.melete.Melete.svg
-#   - packaging/windows/wix/main.wxs
+#   - $env:GVSBUILD_ROOT/bin/*.dll  (when set)
 #
 # Outputs:
-#   - dist/Melete-${env:VERSION}-x86_64.msi
 #   - dist/Melete-${env:VERSION}-x86_64-portable.zip
-#
-# UNSIGNED. End users get a Windows Defender SmartScreen warning
-# until we ship with an EV code-signing cert (Phase B).
 
 $ErrorActionPreference = 'Stop'
 
@@ -26,16 +27,6 @@ Set-Location $RepoRoot
 
 $Version = if ($env:VERSION) { $env:VERSION } else { 'dev' }
 
-# MSI versions are 4-component integers (`a.b.c.d`). cargo-wix maps
-# semver pre-release suffixes only if they're numeric (`-rc.4`); any
-# non-numeric token (`-test`, `-alpha`) makes it bail. Strip whatever
-# follows the first `-` for the MSI version field; the human-readable
-# version stays on the filename + Release page.
-if ($Version -match '^(\d+\.\d+\.\d+)') {
-    $MsiVersion = $Matches[1]
-} else {
-    $MsiVersion = '0.0.0'
-}
 $Dist = Join-Path $RepoRoot 'dist'
 $Stage = Join-Path $Dist 'windows-stage'
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null
@@ -46,8 +37,7 @@ if (-not (Test-Path 'target\release\melete-app.exe')) {
     throw 'target\release\melete-app.exe missing — run cargo build --release first'
 }
 
-# Assemble the staging tree the WiX harvester + portable zip both
-# consume. melete-app.exe + every DLL gvsbuild emits goes into bin/.
+# Assemble bin/. melete-app.exe + every gvsbuild DLL.
 $Bin = Join-Path $Stage 'bin'
 New-Item -ItemType Directory -Force -Path $Bin | Out-Null
 Copy-Item target\release\melete-app.exe $Bin
@@ -57,21 +47,29 @@ if ($env:GVSBUILD_ROOT) {
     }
 }
 
-# Portable zip — drop-in folder users can run without an installer.
+# README.txt next to the binary so first-time users know what to do.
+$Readme = @"
+Melete — portable Windows build
+================================
+
+This folder is a drop-in install. To run:
+
+  bin\melete-app.exe
+
+Notes:
+- Unsigned. Windows SmartScreen may warn the first time; click "More info"
+  -> "Run anyway". A signed MSI installer will ship in a future release.
+- User data lives in %APPDATA%\melete\ (config) and %LOCALAPPDATA%\melete\
+  (notebooks). Uninstall: close the app, delete this folder, optionally
+  delete the data folders above.
+- AGPL-3.0-or-later. https://melete.app
+"@
+Set-Content -Path (Join-Path $Stage 'README.txt') -Value $Readme
+
+# Portable zip.
 $PortableZip = Join-Path $Dist "Melete-$Version-x86_64-portable.zip"
 Remove-Item -Force $PortableZip -ErrorAction SilentlyContinue
 & 7z a $PortableZip "$Stage\*" | Out-Null
-
-# MSI via cargo-wix. Pass --target-dir so the wix scratch lives under
-# target/ (cached by the workflow) instead of polluting the repo.
-& cargo wix `
-    --package melete-app `
-    --name Melete `
-    --install-version $MsiVersion `
-    --include "$Stage\bin" `
-    --output (Join-Path $Dist "Melete-$Version-x86_64.msi") `
-    --nocapture
-if ($LASTEXITCODE -ne 0) { throw "cargo wix failed with exit $LASTEXITCODE" }
+if ($LASTEXITCODE -ne 0) { throw "7z failed with exit $LASTEXITCODE" }
 
 Write-Host "[windows] portable zip → $PortableZip"
-Write-Host "[windows] MSI         → $Dist\Melete-$Version-x86_64.msi"
