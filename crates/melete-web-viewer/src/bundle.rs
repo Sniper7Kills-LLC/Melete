@@ -9,10 +9,12 @@
 //!
 //! Schema notes (the TS bundle is **not** byte-identical to what
 //! `journal-core`'s built-in `Serialize` impls emit). Differences:
-//!   - `BackgroundType` and `NotebookKind` use internal `kind`-tagging
-//!     in the JSON envelope, not serde's default external tagging.
-//!     `JsonBackgroundType` / `JsonNotebookKind` below match the wire
-//!     format and convert into the core types.
+//!   - `NotebookKind` uses internal `kind`-tagging in the JSON
+//!     envelope, not serde's default external tagging.
+//!     `JsonNotebookKind` below matches the wire format and converts
+//!     into the core type. (`BackgroundType` was unified to internal
+//!     tagging in `melete-core` so the JsonBackgroundType shim is
+//!     gone.)
 //!   - `PageTemplate` ids in the envelope are bare UUID strings, not
 //!     the tuple-newtype `{ "0": uuid }` form serde emits by default.
 //!     `JsonTemplateId` accepts either.
@@ -115,16 +117,18 @@ pub struct PageStub {
     pub flagged: bool,
 }
 
-/// `PageTemplate` as the web envelope serializes it. Internally-tagged
-/// `BackgroundType` is the main divergence from `melete_core::PageTemplate`'s
-/// default serde output; we round-trip through this struct on parse.
+/// `PageTemplate` as the web envelope serializes it. Holds the
+/// internally-tagged `BackgroundType` (which now matches
+/// `melete_core::BackgroundType`'s JSON shape after the
+/// `#[serde(tag = "kind")]` unification — see the type-level docs on
+/// `BackgroundType`) plus a few small id-shape conversions.
 #[derive(Debug, Clone, Deserialize)]
 pub struct JsonPageTemplate {
     pub id: JsonUuid,
     pub name: String,
     #[serde(default)]
     pub description: String,
-    pub background: JsonBackgroundType,
+    pub background: BackgroundType,
     /// `(width, height)` in mm.
     pub size_mm: (f64, f64),
     #[serde(default)]
@@ -153,43 +157,13 @@ impl From<JsonTilingMode> for TilingMode {
     }
 }
 
-/// Internally-tagged `BackgroundType` — the form the SPA's TS types
-/// emit (`{ "kind": "Grid", "spacing": 5 }`).
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind")]
-pub enum JsonBackgroundType {
-    Blank,
-    Dots { spacing: f64 },
-    Lines { spacing: f64 },
-    Grid { spacing: f64 },
-    Isometric { spacing: f64 },
-    Hexagonal { spacing: f64 },
-    Image { path: String },
-    Pdf { path: String, page: u32 },
-}
-
-impl From<JsonBackgroundType> for BackgroundType {
-    fn from(v: JsonBackgroundType) -> Self {
-        match v {
-            JsonBackgroundType::Blank => BackgroundType::Blank,
-            JsonBackgroundType::Dots { spacing } => BackgroundType::Dots { spacing },
-            JsonBackgroundType::Lines { spacing } => BackgroundType::Lines { spacing },
-            JsonBackgroundType::Grid { spacing } => BackgroundType::Grid { spacing },
-            JsonBackgroundType::Isometric { spacing } => BackgroundType::Isometric { spacing },
-            JsonBackgroundType::Hexagonal { spacing } => BackgroundType::Hexagonal { spacing },
-            JsonBackgroundType::Image { path } => BackgroundType::Image { path },
-            JsonBackgroundType::Pdf { path, page } => BackgroundType::Pdf { path, page },
-        }
-    }
-}
-
 impl From<JsonPageTemplate> for PageTemplate {
     fn from(t: JsonPageTemplate) -> Self {
         PageTemplate {
             id: TemplateId(t.id.0),
             name: t.name,
             description: t.description,
-            background: t.background.into(),
+            background: t.background,
             size_mm: t.size_mm,
             tiling: t.tiling.into(),
             default_viewport: t.default_viewport,

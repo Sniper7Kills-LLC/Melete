@@ -10,7 +10,15 @@ use crate::viewport::Viewport;
 pub struct TemplateId(pub Uuid);
 
 /// The background type for a page template.
+///
+/// Serializes with `#[serde(tag = "kind")]` (internal tagging) so the
+/// JSON wire format matches the SPA's TS `BackgroundConfig` shape and
+/// the web viewer can deserialize `melete-web-shim::parse_template_toml`
+/// output directly. The TOML on-disk format is separately mediated by
+/// `melete_templates::format::BackgroundFile` (`tag = "type"`,
+/// `rename_all = "lowercase"`) — this attribute only affects JSON.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
 pub enum BackgroundType {
     Blank,
     Dots {
