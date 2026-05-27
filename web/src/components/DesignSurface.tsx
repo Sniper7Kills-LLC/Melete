@@ -27,6 +27,7 @@ export function DesignSurface() {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const [previewReady, setPreviewReady] = useState(false);
+  const [firstRenderDone, setFirstRenderDone] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   // Page → screen scale: fit page width into an 800-px-ish surface.
@@ -98,6 +99,7 @@ export function DesignSurface() {
       try {
         await viewer.loadNotebook(bytes);
         viewer.renderPage(0, w, h);
+        setFirstRenderDone(true);
         console.debug(
           "[designer] rendered template",
           template.name,
@@ -208,13 +210,29 @@ export function DesignSurface() {
               </div>
             </div>
           )}
+          {/* Loading placeholder — visible from mount until the first
+              Vello render lands. `previewError` short-circuits to the
+              error banner above; we hide this overlay in that case so
+              the two don't stack. */}
+          {!firstRenderDone && !previewError && (
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white text-slate-500">
+              <div className="h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-indigo-500" />
+              <div className="text-sm font-medium text-slate-700">
+                Loading preview…
+              </div>
+              <div className="max-w-xs text-center text-xs text-slate-500">
+                Compiling the Vello WASM renderer. This usually takes a
+                couple of seconds on the first visit.
+              </div>
+            </div>
+          )}
           {template.widgets.map((w) => (
             <WidgetView
               key={w.id}
               widget={w}
               selected={w.id === selectedId}
               zoom={zoom}
-              transparent={previewReady}
+              transparent={firstRenderDone}
             />
           ))}
         </div>
