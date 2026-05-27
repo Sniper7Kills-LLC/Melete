@@ -62,7 +62,16 @@ pub fn build_notebook_view(
     canvas_pane: Overlay,
 ) -> NotebookView {
     let paned = Paned::new(Orientation::Horizontal);
-    paned.set_position(280);
+    // Restore the user's last sidebar width — `config.sidebar_width`
+    // is `Some(px)` after the first drag, `None` for a fresh install
+    // (fall back to the 280 px built-in). (#41 sidebar polish.)
+    let stored_cfg = crate::config::load();
+    let initial_sidebar_width = stored_cfg
+        .sidebar_width
+        .filter(|w| (120..=800).contains(w))
+        .unwrap_or(280);
+    let initial_bookmarks_expanded = stored_cfg.bookmarks_expanded;
+    paned.set_position(initial_sidebar_width);
     paned.set_hexpand(true);
     paned.set_vexpand(true);
 
@@ -123,7 +132,7 @@ pub fn build_notebook_view(
         parent: parent.clone(),
         sections_box: sections_box_rc.clone(),
         top_strip: top_strip_rc.clone(),
-        bookmarks_expanded: Rc::new(Cell::new(false)),
+        bookmarks_expanded: Rc::new(Cell::new(initial_bookmarks_expanded)),
         db: db.clone(),
         state: state.clone(),
         notebook_id,
@@ -132,6 +141,38 @@ pub fn build_notebook_view(
     };
 
     ctx.refresh();
+
+    // Persist sidebar width changes. GtkPaned doesn't expose a
+    // "position changed" signal directly; watch the `position`
+    // property. A 250 ms debounce keeps us from writing config on
+    // every pixel during a drag. (#41 sidebar polish.)
+    {
+        let last_written: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(Some(initial_sidebar_width)));
+        let paned_weak = paned.downgrade();
+        paned.connect_position_notify(move |p| {
+            let pos = p.position();
+            if last_written.get() == Some(pos) {
+                return;
+            }
+            let last_written = last_written.clone();
+            let paned_weak = paned_weak.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+                let Some(p) = paned_weak.upgrade() else {
+                    return;
+                };
+                let pos_now = p.position();
+                if last_written.get() == Some(pos_now) {
+                    return;
+                }
+                last_written.set(Some(pos_now));
+                let mut cfg = crate::config::load();
+                cfg.sidebar_width = Some(pos_now);
+                if let Err(e) = crate::config::save(&cfg) {
+                    tracing::warn!("save sidebar_width: {e}");
+                }
+            });
+        });
+    }
 
     {
         let ctx = ctx.clone();
@@ -370,7 +411,20 @@ fn build_bookmarks_sidebar_panel(ctx: &SidebarCtx, entries: &[(Page, String)]) -
         .build();
     {
         let cell = ctx.bookmarks_expanded.clone();
-        expander.connect_expanded_notify(move |e| cell.set(e.is_expanded()));
+        expander.connect_expanded_notify(move |e| {
+            let expanded = e.is_expanded();
+            cell.set(expanded);
+            // Persist across launches. Reload-modify-save keeps us
+            // from clobbering concurrent edits to other fields.
+            // (#41 sidebar polish.)
+            let mut cfg = crate::config::load();
+            if cfg.bookmarks_expanded != expanded {
+                cfg.bookmarks_expanded = expanded;
+                if let Err(e) = crate::config::save(&cfg) {
+                    tracing::warn!("save bookmarks_expanded: {e}");
+                }
+            }
+        });
     }
 
     let list = gtk4::ListBox::new();

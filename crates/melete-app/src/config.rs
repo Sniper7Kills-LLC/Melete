@@ -164,6 +164,20 @@ pub struct AppConfig {
     /// entitlement.
     #[serde(default)]
     pub autosync_default: bool,
+
+    /// Width of the notebook-view sidebar in pixels. `None` falls back
+    /// to the built-in default of 280 px. Persisted whenever the user
+    /// drags the GtkPaned divider so the layout follows them across
+    /// launches. (#41 sidebar polish.)
+    #[serde(default)]
+    pub sidebar_width: Option<i32>,
+
+    /// Last expanded state of the notebook sidebar's Bookmarks panel.
+    /// Persisted on every toggle so the panel remembers whether the
+    /// user wants it open or closed across launches. (#41 sidebar
+    /// polish.)
+    #[serde(default)]
+    pub bookmarks_expanded: bool,
 }
 
 pub fn default_sync_worker_count() -> usize {
@@ -242,6 +256,8 @@ impl Default for AppConfig {
             first_run_completed: false,
             sync_worker_count: default_sync_worker_count(),
             autosync_default: false,
+            sidebar_width: None,
+            bookmarks_expanded: false,
         }
     }
 }
