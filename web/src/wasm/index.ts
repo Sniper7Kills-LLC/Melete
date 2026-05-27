@@ -55,6 +55,12 @@ export interface Shim {
   parseNotebookTemplateToml(toml: string): NotebookTemplate;
   /** Serialize a `NotebookTemplate` to TOML. */
   serializeNotebookTemplateToml(t: NotebookTemplate): string;
+  /** Resolves once the underlying WASM (or the mock fallback) is loaded.
+   *  Callers that need a deterministic parse on first render — Gallery
+   *  card thumbnails, Share preview — should `await shim.ready()` before
+   *  invoking `parse*` so the sync entrypoints don't throw "WASM not
+   *  loaded yet". */
+  ready(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------
@@ -228,9 +234,14 @@ function realShim(): Shim {
     }
   }
   // Kick off the load eagerly; both paths are non-blocking for the UI.
-  void ensure();
+  // Cache the promise so callers `await shim.ready()` get the same
+  // resolution and don't re-trigger the dynamic import.
+  const readyPromise = ensure();
 
   return {
+    ready(): Promise<void> {
+      return readyPromise;
+    },
     parseTemplateToml(toml: string): PageTemplate {
       if (mod) return mod.parse_template_toml(toml);
       if (mockFallback) return mockFallback.parseTemplateToml(toml);
@@ -395,6 +406,9 @@ export function mockViewer(): Viewer {
  */
 export function mockShim(): Shim {
   return {
+    ready(): Promise<void> {
+      return Promise.resolve();
+    },
     parseTemplateToml(toml: string): PageTemplate {
       console.info("[mock-shim] parseTemplateToml (stub)", toml.slice(0, 80));
       // Real impl will deserialize via journal-templates::format. For

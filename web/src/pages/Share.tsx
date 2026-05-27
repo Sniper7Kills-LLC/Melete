@@ -178,7 +178,8 @@ function SharePagePreview({ bodyToml }: { bodyToml: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const t = await shim.parseTemplateToml(bodyToml);
+        await shim.ready();
+        const t = shim.parseTemplateToml(bodyToml);
         if (!cancelled) setParsed({ status: "ok", template: t });
       } catch (e) {
         if (!cancelled)

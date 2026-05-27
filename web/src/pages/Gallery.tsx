@@ -334,12 +334,19 @@ function usePagesData(): LoadState<PageEntry> {
   useEffect(() => {
     if (isStubBackend) return;
     let cancelled = false;
-    client.models.PageTemplate.list({
-      filter: { visibility: { eq: "PUBLIC" } },
-      authMode: "apiKey",
-      limit: 200,
-    })
-      .then((r) => {
+    // Block the parse step on the WASM shim being loaded — otherwise
+    // `parseTemplateToml` throws synchronously and every card lands
+    // with parsed=null + "no preview". `shim.ready()` resolves once
+    // either the real WASM or the mock fallback is in place.
+    Promise.all([
+      shim.ready(),
+      client.models.PageTemplate.list({
+        filter: { visibility: { eq: "PUBLIC" } },
+        authMode: "apiKey",
+        limit: 200,
+      }),
+    ])
+      .then(([, r]) => {
         if (cancelled) return;
         if (r.errors?.length) {
           setState({
@@ -354,7 +361,8 @@ function usePagesData(): LoadState<PageEntry> {
           let parsed: PageTemplate | null = null;
           try {
             parsed = shim.parseTemplateToml(row.bodyToml);
-          } catch {
+          } catch (e) {
+            console.warn("[gallery] parse failed for", row.id, e);
             parsed = null;
           }
           return {
@@ -461,12 +469,15 @@ function useBrushesData(): LoadState<BrushEntry> {
   useEffect(() => {
     if (isStubBackend) return;
     let cancelled = false;
-    client.models.Brush.list({
-      filter: { visibility: { eq: "PUBLIC" } },
-      authMode: "apiKey",
-      limit: 200,
-    })
-      .then((r) => {
+    Promise.all([
+      shim.ready(),
+      client.models.Brush.list({
+        filter: { visibility: { eq: "PUBLIC" } },
+        authMode: "apiKey",
+        limit: 200,
+      }),
+    ])
+      .then(([, r]) => {
         if (cancelled) return;
         if (r.errors?.length) {
           setState({
@@ -481,7 +492,8 @@ function useBrushesData(): LoadState<BrushEntry> {
           let parsed: Brush | null = null;
           try {
             parsed = shim.parseBrushToml(row.bodyToml);
-          } catch {
+          } catch (e) {
+            console.warn("[gallery] brush parse failed for", row.id, e);
             parsed = null;
           }
           return {
