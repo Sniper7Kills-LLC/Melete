@@ -11,7 +11,9 @@ import {
 } from "@/amplify-client";
 import { isStubBackend } from "@/amplify-config";
 import { TemplatePreview } from "@/components/TemplatePreview";
+import { NotebookTemplatePreview } from "@/components/NotebookTemplatePreview";
 import type { PageTemplate } from "@/types";
+import type { NotebookTemplate } from "@/types/notebook-template";
 import { shim } from "@/wasm";
 
 /**
@@ -147,6 +149,9 @@ export function Share() {
               {kind === "page" && (
                 <SharePagePreview bodyToml={state.row.bodyToml} />
               )}
+              {kind === "notebook" && (
+                <ShareNotebookPreview bodyToml={state.row.bodyToml} />
+              )}
               <div className="mt-4">
                 <span className="text-xs uppercase tracking-wide text-slate-500">
                   TOML body
@@ -232,6 +237,53 @@ function SharePagePreview({ bodyToml }: { bodyToml: string }) {
       </div>
     </div>
   );
+}
+
+/** Notebook-template preview block on `/t/notebook/:id`. Parses the
+ *  TOML lazily via the WASM shim and feeds the resulting
+ *  `NotebookTemplate` to `NotebookTemplatePreview`, which renders each
+ *  referenced page template via the same TemplatePreview component
+ *  the page-template Share page uses. */
+function ShareNotebookPreview({ bodyToml }: { bodyToml: string }) {
+  const [parsed, setParsed] = useState<
+    | { status: "loading" }
+    | { status: "err"; message: string }
+    | { status: "ok"; nt: NotebookTemplate }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await shim.ready();
+        const nt = shim.parseNotebookTemplateToml(bodyToml) as NotebookTemplate;
+        if (!cancelled) setParsed({ status: "ok", nt });
+      } catch (e) {
+        if (!cancelled)
+          setParsed({
+            status: "err",
+            message: e instanceof Error ? e.message : String(e),
+          });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bodyToml]);
+
+  if (parsed.status === "loading")
+    return (
+      <div className="mt-4 px-1 text-xs text-slate-500">
+        Parsing notebook template…
+      </div>
+    );
+  if (parsed.status === "err")
+    return (
+      <div className="mt-4 rounded border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+        Couldn&rsquo;t parse notebook template: {parsed.message}
+      </div>
+    );
+  return <NotebookTemplatePreview notebookTemplate={parsed.nt} />;
 }
 
 function kindLabel(k: Kind): string {
