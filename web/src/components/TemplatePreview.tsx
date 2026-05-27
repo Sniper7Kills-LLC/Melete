@@ -16,6 +16,36 @@ import { useEffect, useRef, useState } from "react";
 import type { NotebookBundle, PageTemplate } from "@/types";
 import { viewer } from "@/wasm";
 
+/** Normalise an externally-tagged serde enum value into the
+ *  internally-tagged `{ kind, ...payload }` shape the WASM viewer's
+ *  `JsonBackgroundType` (and the SPA's TS types) expect.
+ *
+ *  Why: `melete_core::BackgroundType` uses Rust's default external
+ *  tagging, so `melete-web-shim::parse_template_toml` emits the
+ *  template via serde-wasm-bindgen as either a bare string
+ *  (`"Blank"`) or a single-key object (`{"Grid":{"spacing":5}}`).
+ *  The Designer's local templates are already internally-tagged
+ *  (built directly from TS), so we only need this fix on the
+ *  "parsed from TOML" code path — Gallery thumbnails + Share
+ *  preview. Idempotent: an already-internally-tagged value passes
+ *  through unchanged. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toInternallyTagged(v: any): any {
+  if (typeof v === "string") return { kind: v };
+  if (v && typeof v === "object" && "kind" in v) return v;
+  if (v && typeof v === "object") {
+    const keys = Object.keys(v);
+    if (keys.length === 1) {
+      const k = keys[0];
+      const inner = v[k];
+      return inner && typeof inner === "object"
+        ? { kind: k, ...inner }
+        : { kind: k };
+    }
+  }
+  return v;
+}
+
 /** Wrap a single PageTemplate in a synthetic NotebookBundle the WASM
  *  viewer can deserialize. Keeps the template's actual background so
  *  the preview shows exactly what the desktop will paint. */
@@ -31,7 +61,9 @@ export function wrapTemplateForPreview(
   const [pageW, pageH] = template.size_mm;
   const previewTemplate: PageTemplate = {
     ...template,
-    background: keep ? template.background : { kind: "Blank" },
+    background: keep
+      ? (toInternallyTagged(template.background) as PageTemplate["background"])
+      : { kind: "Blank" },
     default_viewport: {
       center: { x: pageW / 2, y: pageH / 2 },
       zoom: spaZoom,
