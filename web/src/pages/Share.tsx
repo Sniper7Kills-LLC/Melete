@@ -10,6 +10,9 @@ import {
   type SavedKind,
 } from "@/amplify-client";
 import { isStubBackend } from "@/amplify-config";
+import { TemplatePreview } from "@/components/TemplatePreview";
+import type { PageTemplate } from "@/types";
+import { shim } from "@/wasm";
 
 /**
  * Read-only single-row viewer for shareable links.
@@ -141,6 +144,9 @@ export function Share() {
                 onDownload={() => download(state.row.bodyToml)}
                 downloadLabel={copied ? "Copied!" : "Download"}
               />
+              {kind === "page" && (
+                <SharePagePreview bodyToml={state.row.bodyToml} />
+              )}
               <div className="mt-4">
                 <span className="text-xs uppercase tracking-wide text-slate-500">
                   TOML body
@@ -151,6 +157,76 @@ export function Share() {
               </div>
             </div>
           </article>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Vello WASM preview block under the action row on the page-template
+ *  share page (#92). Parses bodyToml lazily so a TOML error renders a
+ *  small banner instead of crashing the route. */
+function SharePagePreview({ bodyToml }: { bodyToml: string }) {
+  const [parsed, setParsed] = useState<
+    | { status: "loading" }
+    | { status: "err"; message: string }
+    | { status: "ok"; template: PageTemplate }
+  >({ status: "loading" });
+  const [zoom, setZoom] = useState(2.2);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const t = await shim.parseTemplateToml(bodyToml);
+        if (!cancelled) setParsed({ status: "ok", template: t });
+      } catch (e) {
+        if (!cancelled)
+          setParsed({
+            status: "err",
+            message: e instanceof Error ? e.message : String(e),
+          });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bodyToml]);
+
+  return (
+    <div className="mt-4">
+      <div className="mb-2 flex items-center gap-3">
+        <span className="text-xs uppercase tracking-wide text-slate-500">
+          Preview
+        </span>
+        {parsed.status === "ok" && (
+          <label className="ml-auto flex items-center gap-1 text-xs text-slate-600">
+            zoom
+            <input
+              type="range"
+              min={1}
+              max={5}
+              step={0.1}
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+            />
+            <span className="w-10 text-right tabular-nums">
+              {zoom.toFixed(1)}×
+            </span>
+          </label>
+        )}
+      </div>
+      <div className="flex items-center justify-center overflow-auto rounded border border-slate-200 bg-slate-100 p-4">
+        {parsed.status === "loading" && (
+          <div className="px-3 py-6 text-xs text-slate-500">Parsing TOML…</div>
+        )}
+        {parsed.status === "err" && (
+          <div className="rounded border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+            Couldn&rsquo;t parse template: {parsed.message}
+          </div>
+        )}
+        {parsed.status === "ok" && (
+          <TemplatePreview template={parsed.template} zoom={zoom} />
         )}
       </div>
     </div>

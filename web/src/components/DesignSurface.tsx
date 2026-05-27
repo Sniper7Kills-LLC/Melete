@@ -1,10 +1,11 @@
 import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import type { NotebookBundle, PageTemplate, Widget, WidgetKindTag } from "@/types";
+import type { Widget, WidgetKindTag } from "@/types";
 import { useDesigner } from "@/store/designerStore";
 import { formatLength, useUnits } from "@/store/unitsStore";
 import { viewer } from "@/wasm";
+import { wrapTemplateForPreview } from "@/components/TemplatePreview";
 
 /**
  * Center pane: a millimeter-coordinate design surface. Renders widgets
@@ -92,7 +93,13 @@ export function DesignSurface() {
     // divs. Without this, the viewer's load_notebook path fits the
     // template into the canvas with a 0.95 margin and the Vello widget
     // rects drift slightly off the SPA's overlay rects.
-    const bundle = wrapTemplateInBundle(template, zoom);
+    // Designer wants the CSS smart-guide overlay to own the grid
+    // display, so swap to a Blank background here — the shared
+    // `wrapTemplateForPreview` keeps the template's actual background
+    // by default for non-designer surfaces (Share, etc).
+    const bundle = wrapTemplateForPreview(template, zoom, {
+      keepBackground: false,
+    });
     const json = JSON.stringify(bundle);
     const bytes = new TextEncoder().encode(json);
     (async () => {
@@ -393,76 +400,3 @@ function colorCss(c: { r: number; g: number; b: number; a: number }): string {
   return `rgba(${c.r},${c.g},${c.b},${c.a / 255})`;
 }
 
-/**
- * Wrap a single PageTemplate in a synthetic NotebookBundle the WASM
- * viewer can deserialize. Re-rendering the designer surface re-runs
- * `loadNotebook` + `renderPage(0)` against this bundle on every store
- * change, so the user sees the real Vello render of their template
- * while editing. UUIDs are stable per session — the viewer's internal
- * caches survive successive loads.
- */
-const SYNTHETIC_NOTEBOOK_ID = "00000000-0000-0000-0000-00000000aaaa";
-const SYNTHETIC_SECTION_ID = "00000000-0000-0000-0000-00000000bbbb";
-const SYNTHETIC_PAGE_ID = "00000000-0000-0000-0000-00000000cccc";
-
-function wrapTemplateInBundle(
-  template: PageTemplate,
-  spaZoom: number,
-): NotebookBundle {
-  const templateId =
-    typeof template.id === "string" ? template.id : template.id["0"];
-  const now = new Date().toISOString();
-  const [pageW, pageH] = template.size_mm;
-  // Force the viewport so the Rust viewer's render uses our exact
-  // mm→px scale and centers the page in the canvas. The Rust side's
-  // fit-to-canvas fallback would otherwise apply a 0.95 margin and
-  // produce widgets that drift away from the SPA's overlay rects.
-  // Substitute a Blank background — the designer's CSS smart-guide
-  // overlay handles grid display, so painting the template's grid
-  // bg through Vello would just produce a confusing double grid.
-  const previewTemplate: PageTemplate = {
-    ...template,
-    background: { kind: "Blank" },
-    default_viewport: {
-      center: { x: pageW / 2, y: pageH / 2 },
-      zoom: spaZoom,
-      rotation: 0,
-    },
-  };
-  return {
-    schema_version: 1,
-    notebook: {
-      id: SYNTHETIC_NOTEBOOK_ID,
-      name: "designer-preview",
-      kind: { kind: "Standard" },
-      assigned_templates: [templateId],
-    },
-    sections: [
-      {
-        id: SYNTHETIC_SECTION_ID,
-        notebook_id: SYNTHETIC_NOTEBOOK_ID,
-        name: "preview",
-        position: 0,
-        allowed_templates: null,
-        parent_section_id: null,
-      },
-    ],
-    pages: [
-      {
-        id: SYNTHETIC_PAGE_ID,
-        template_id: templateId,
-        section_id: SYNTHETIC_SECTION_ID,
-        position: 0,
-        name: "preview",
-        planner_address: null,
-        created_at: now,
-        modified_at: now,
-        widget_overrides: {},
-        widget_data: {},
-      },
-    ],
-    page_templates: [previewTemplate],
-    strokes_by_page: { [SYNTHETIC_PAGE_ID]: [] },
-    asset_refs: {},
-  };
-}
