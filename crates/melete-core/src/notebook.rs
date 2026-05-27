@@ -13,7 +13,15 @@ pub struct NotebookId(pub Uuid);
 pub struct SectionId(pub Uuid);
 
 /// Whether a notebook is a plain notebook or a planner.
+///
+/// Serializes with `#[serde(tag = "kind")]` (internal tagging) so the
+/// JSON wire format matches the SPA's TS `NotebookKind` shape and the
+/// web viewer can deserialize `Notebook.kindJson` directly — same
+/// rationale as `BackgroundType`. Local SQLite storage breaks the
+/// enum into discrete columns (`kind`, `template_id`,
+/// `creation_date`) and isn't affected.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind")]
 pub enum NotebookKind {
     Standard,
     Planner {

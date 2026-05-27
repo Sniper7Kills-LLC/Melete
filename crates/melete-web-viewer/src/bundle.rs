@@ -8,16 +8,14 @@
 //! per-page strokes, page templates) out of the result.
 //!
 //! Schema notes (the TS bundle is **not** byte-identical to what
-//! `journal-core`'s built-in `Serialize` impls emit). Differences:
-//!   - `NotebookKind` uses internal `kind`-tagging in the JSON
-//!     envelope, not serde's default external tagging.
-//!     `JsonNotebookKind` below matches the wire format and converts
-//!     into the core type. (`BackgroundType` was unified to internal
-//!     tagging in `melete-core` so the JsonBackgroundType shim is
-//!     gone.)
+//! `melete-core`'s built-in `Serialize` impls emit). Differences:
 //!   - `PageTemplate` ids in the envelope are bare UUID strings, not
 //!     the tuple-newtype `{ "0": uuid }` form serde emits by default.
 //!     `JsonTemplateId` accepts either.
+//!
+//! `BackgroundType` and `NotebookKind` are now internally-tagged in
+//! `melete-core` directly (matches the SPA's TS shape), so their
+//! shims here were deleted.
 //!
 //! Anything the viewer doesn't care about (planner addresses, widget
 //! overrides, cached fetch payloads) lands in `serde_json::Value` so
@@ -70,13 +68,13 @@ pub struct NotebookHeader {
     /// Either `{"0": "uuid"}` or a bare UUID string — accept both.
     pub id: JsonUuid,
     pub name: String,
-    /// Web envelope wraps the kind in an `{ "kind": "Standard" }`-style
-    /// internal-tagged object, vs serde's external `"Standard"` /
-    /// `{"Planner": {…}}` form. Capture the JSON verbatim so the viewer
-    /// doesn't have to roundtrip through `NotebookKind` at all (it
-    /// doesn't care about the variant).
+    /// `NotebookKind` itself is internally-tagged in `melete-core` —
+    /// JSON wire shape matches the SPA's TS `NotebookKind`, no shim
+    /// needed. Optional + `default` because the viewer doesn't
+    /// actually inspect the variant; a missing field deserialises to
+    /// `None` and the viewer treats it as a plain notebook.
     #[serde(default)]
-    pub kind: serde_json::Value,
+    pub kind: Option<NotebookKind>,
     #[serde(default)]
     pub assigned_templates: Vec<JsonUuid>,
 }
@@ -214,35 +212,6 @@ impl<'de> Deserialize<'de> for JsonUuid {
             }
         };
         Ok(JsonUuid(uuid))
-    }
-}
-
-/// Helper for the `NotebookKind` enum — viewer doesn't introspect kind
-/// today, but if a future caller wants it, parse the JSON's `kind`
-/// field via this. Internal-tagged, mirror of `web/src/types/index.ts`.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind")]
-pub enum JsonNotebookKind {
-    Standard,
-    Planner {
-        template_id: JsonUuid,
-        creation_date: String,
-    },
-}
-
-impl From<JsonNotebookKind> for NotebookKind {
-    fn from(k: JsonNotebookKind) -> Self {
-        match k {
-            JsonNotebookKind::Standard => NotebookKind::Standard,
-            JsonNotebookKind::Planner {
-                template_id,
-                creation_date,
-            } => NotebookKind::Planner {
-                template_id: TemplateId(template_id.0),
-                creation_date: chrono::NaiveDate::parse_from_str(&creation_date, "%Y-%m-%d")
-                    .unwrap_or_else(|_| chrono::NaiveDate::from_ymd_opt(2000, 1, 1).unwrap()),
-            },
-        }
     }
 }
 
