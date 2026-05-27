@@ -42,20 +42,24 @@ Amplify.configure(amplifyOutputs as any);
 
 function NavBar() {
   const linkBase =
-    "px-3 py-1.5 text-sm rounded transition-colors hover:bg-slate-200";
-  const linkActive = "bg-slate-900 text-white hover:bg-slate-900";
+    "px-3 py-1.5 text-sm rounded transition-colors hover:bg-slate-200 dark:hover:bg-slate-700";
+  const linkActive =
+    "bg-slate-900 text-white hover:bg-slate-900 dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-slate-200";
   const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `${linkBase} ${isActive ? linkActive : "text-slate-700"}`;
+    `${linkBase} ${isActive ? linkActive : "text-slate-700 dark:text-slate-300"}`;
   // Two visual clusters: "Design" (the three editors) and "Library"
   // (browse + personal). Keeps build-flow links together and separates
   // them from the discovery/management flow.
   return (
-    <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2">
-      <Link to="/" className="text-lg font-semibold text-slate-900">
+    <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-2 dark:border-slate-800 dark:bg-slate-900">
+      <Link
+        to="/"
+        className="text-lg font-semibold text-slate-900 dark:text-slate-100"
+      >
         Melete
       </Link>
       <nav className="flex items-center gap-1">
-        <span className="ml-1 text-[11px] uppercase tracking-wide text-slate-400">
+        <span className="ml-1 text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
           Design
         </span>
         <NavLink to="/designer" className={linkClass}>
@@ -67,8 +71,8 @@ function NavBar() {
         <NavLink to="/tooler" className={linkClass}>
           Brush designer
         </NavLink>
-        <span aria-hidden className="mx-2 h-5 w-px bg-slate-200" />
-        <span className="text-[11px] uppercase tracking-wide text-slate-400">
+        <span aria-hidden className="mx-2 h-5 w-px bg-slate-200 dark:bg-slate-700" />
+        <span className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">
           Library
         </span>
         <NavLink to="/gallery" className={linkClass}>
@@ -80,7 +84,7 @@ function NavBar() {
         <BillingAndAdminLinks linkClass={linkClass} />
       </nav>
       <UnitsSelector />
-      <span className="text-xs text-slate-400">
+      <span className="text-xs text-slate-400 dark:text-slate-500">
         {isStubBackend ? "Backend: stub" : "Backend: live"}
       </span>
       <AccountChip />
@@ -143,7 +147,7 @@ function BillingAndAdminLinks({
   if (authStatus !== "authenticated") return null;
   return (
     <>
-      <span aria-hidden className="mx-2 h-5 w-px bg-slate-200" />
+      <span aria-hidden className="mx-2 h-5 w-px bg-slate-200 dark:bg-slate-700" />
       <NavLink to="/billing" className={linkClass}>
         Billing
       </NavLink>
@@ -160,12 +164,12 @@ function UnitsSelector() {
   const units = useUnits((s) => s.units);
   const setUnits = useUnits((s) => s.setUnits);
   return (
-    <label className="ml-auto flex items-center gap-1 text-xs text-slate-600">
+    <label className="ml-auto flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
       Units
       <select
         value={units}
         onChange={(e) => setUnits(e.target.value as "mm" | "in")}
-        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs"
+        className="rounded border border-slate-300 bg-white px-2 py-1 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
       >
         <option value="mm">mm</option>
         <option value="in">inches</option>
@@ -208,9 +212,12 @@ function App() {
               <Route
                 path="*"
                 element={
-                  <div className="p-8 text-slate-600">
+                  <div className="p-8 text-slate-600 dark:text-slate-400">
                     Not found.{" "}
-                    <Link to="/" className="text-indigo-600 underline">
+                    <Link
+                      to="/"
+                      className="text-indigo-600 underline dark:text-indigo-400"
+                    >
                       Go home
                     </Link>
                     .

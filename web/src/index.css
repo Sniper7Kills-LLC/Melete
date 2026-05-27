@@ -17,4 +17,18 @@ body {
     "Segoe UI",
     Roboto,
     sans-serif;
+  background: #f8fafc; /* slate-50 */
+  color: #0f172a; /* slate-900 */
+}
+
+/* Mirrors the desktop's adw::StyleManager auto-detection — OS sets
+   the color-scheme, no in-app toggle. Tailwind utilities honour the
+   same media query via `darkMode: "media"` in tailwind.config.js;
+   these rules cover the html/body shell outside any component. */
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #0f172a; /* slate-900 */
+    color: #e2e8f0; /* slate-200 */
+    color-scheme: dark;
+  }
 }
