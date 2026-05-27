@@ -23,6 +23,7 @@ interface ViewerMod {
     init(canvas: HTMLCanvasElement): Promise<void>;
     loadNotebook(bytes: Uint8Array): void;
     renderPage(i: number, w: number, h: number): void;
+    renderPageToRgba(i: number, w: number, h: number): Promise<Uint8Array>;
   };
 }
 
@@ -88,18 +89,18 @@ async function pump(): Promise<void> {
     while (queue.length) {
       const job = queue.shift()!;
       try {
-        if (canvas!.width !== job.w) canvas!.width = job.w;
-        if (canvas!.height !== job.h) canvas!.height = job.h;
         const bundle = wrapTemplateForPreview(job.template, 1.0, {
           keepBackground: true,
         });
         const bytes = new TextEncoder().encode(JSON.stringify(bundle));
         viewer!.loadNotebook(bytes);
-        viewer!.renderPage(0, job.w, job.h);
-        // Yield a frame so the browser commits the wgpu submission to
-        // the canvas before we read it back.
-        await new Promise<void>((r) => requestAnimationFrame(() => r()));
-        const url = canvas!.toDataURL("image/png");
+        // Render via the Rust off-screen path — `canvas.toDataURL` on
+        // a live wgpu surface returns transparent on Chrome/Firefox
+        // because the swap chain doesn't preserve the drawing buffer.
+        // `renderPageToRgba` allocates a separate texture, copies to
+        // a staging buffer, maps async, returns the raw RGBA bytes.
+        const rgba = await viewer!.renderPageToRgba(0, job.w, job.h);
+        const url = rgbaToPngDataUrl(rgba, job.w, job.h);
         job.resolve(url);
       } catch (e) {
         console.warn("[thumbnailer] render failed", e);
@@ -109,6 +110,22 @@ async function pump(): Promise<void> {
   } finally {
     busy = false;
   }
+}
+
+/** Pack a Vello-emitted RGBA8 buffer into a `data:image/png` URL via a
+ *  scratch 2D canvas. Cheap (<5 ms for 280×360); a single scratch
+ *  canvas is reused across calls. */
+let encodeCanvas: HTMLCanvasElement | null = null;
+function rgbaToPngDataUrl(rgba: Uint8Array, w: number, h: number): string {
+  if (!encodeCanvas) encodeCanvas = document.createElement("canvas");
+  encodeCanvas.width = w;
+  encodeCanvas.height = h;
+  const ctx = encodeCanvas.getContext("2d");
+  if (!ctx) throw new Error("2d context unavailable");
+  const imageData = ctx.createImageData(w, h);
+  imageData.data.set(rgba);
+  ctx.putImageData(imageData, 0, 0);
+  return encodeCanvas.toDataURL("image/png");
 }
 
 /** Queue a thumbnail render. Resolves with a `data:image/png` URL on

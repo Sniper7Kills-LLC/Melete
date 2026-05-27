@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!--
+    Adwaita-friendly app icon. Transparent canvas (no background plate)
+    with a closed notebook + bookmark ribbon + pen. Scaled to fill the
+    128px canvas with ~6px breathing room. Palette matches the in-app
+    fieldbook chrome (indigo + amber on page-cream).
+  -->
+  <defs>
+    <linearGradient id="cover" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a4d80"/>
+      <stop offset="1" stop-color="#33365e"/>
+    </linearGradient>
+    <linearGradient id="coverShine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8b94a"/>
+      <stop offset="1" stop-color="#bf8d22"/>
+    </linearGradient>
+    <linearGradient id="page" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbf6e6"/>
+      <stop offset="1" stop-color="#ece2c5"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.6"/>
+      <feOffset dx="0" dy="1.6"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.34"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Page block — peeks out top + right of the cover. -->
+  <g filter="url(#softShadow)">
+    <rect x="22" y="10" width="92" height="100" rx="4" ry="4"
+          fill="url(#page)" stroke="#c8b98a" stroke-width="1"/>
+    <line x1="36" y1="32" x2="106" y2="32" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
+    <line x1="36" y1="46" x2="106" y2="46" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
+    <line x1="36" y1="60" x2="106" y2="60" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
+    <line x1="36" y1="74" x2="106" y2="74" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
+    <line x1="36" y1="88" x2="86"  y2="88" stroke="#a89766" stroke-opacity="0.45" stroke-width="1.4"/>
+  </g>
+
+  <!-- Cover — offset down + left so the page peeks out. -->
+  <g filter="url(#softShadow)">
+    <rect x="14" y="16" width="88" height="100" rx="6" ry="6"
+          fill="url(#cover)"/>
+    <rect x="14" y="16" width="88" height="100" rx="6" ry="6"
+          fill="url(#coverShine)"/>
+    <!-- Spine band on the left. -->
+    <rect x="14" y="16" width="9" height="100" rx="3" ry="3"
+          fill="#262849"/>
+    <!-- Editorial rule. -->
+    <rect x="34" y="58" width="50" height="4" rx="1.5" ry="1.5" fill="#e8b94a"/>
+    <!-- Amber J monogram. -->
+    <rect x="34" y="36" width="18" height="18" rx="3" ry="3" fill="#e8b94a"/>
+    <text x="37.5" y="51"
+          font-family="Iowan Old Style, Charter, Cambria, Liberation Serif, serif"
+          font-size="16" font-weight="700" fill="#262849">J</text>
+  </g>
+
+  <!--
+    Bookmark ribbon — drops from the top of the cover, V-notch tail
+    below the cover. Single polygon: top-left → top-right → down the
+    right edge → into the V → down the left edge.
+  -->
+  <polygon points="84,16 93,16 93,124 88.5,116 84,124" fill="url(#ribbon)"/>
+
+  <!--
+    Pen — laid diagonally across the lower-right. Geometry tuned so
+    the rotated tip + cap stay inside the 128px viewBox.
+  -->
+  <g filter="url(#softShadow)" transform="rotate(-26 86 102)">
+    <rect x="58" y="98" width="56" height="9" rx="3" ry="3"
+          fill="url(#ribbon)"/>
+    <rect x="92" y="92.5" width="16" height="3" rx="1.2" ry="1.2"
+          fill="#7a5a18"/>
+    <polygon points="58,98 58,107 50,107.5" fill="#262849"/>
+    <rect x="108" y="97" width="3" height="11" fill="#7a5a18"/>
+  </g>
+
+  <!-- Ink dot beneath the rotated pen tip. -->
+  <circle cx="40" cy="120" r="2" fill="#262849"/>
+</svg>

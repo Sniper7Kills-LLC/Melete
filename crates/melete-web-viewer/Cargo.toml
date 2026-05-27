@@ -28,6 +28,12 @@ wasm-bindgen = "0.2"
 # no direct `wasm_bindgen_futures::*` use shows up in the source.
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
+# Lightweight oneshot channel for the wgpu `map_async` callback in
+# `render_page_to_rgba`. `std::sync::mpsc` works on the desktop's
+# blocking `device.poll(Wait)` path but wasm needs an async-friendly
+# rendezvous that wasm_bindgen_futures can await without blocking
+# the JS event loop.
+futures-channel = { version = "0.3", default-features = false, features = ["std"] }
 web-sys = { version = "0.3", features = [
     "console",
     "Window",

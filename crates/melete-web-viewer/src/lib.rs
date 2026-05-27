@@ -384,6 +384,183 @@ impl Viewer {
         frame.present();
     }
 
+    /// Render page `index` at `(w, h)` into an off-screen wgpu texture
+    /// and read the result back as raw RGBA8 bytes (`w * h * 4`). Used
+    /// by the Gallery thumbnail pipeline — `canvas.toDataURL` on a
+    /// WebGPU surface returns a transparent image on most browsers, so
+    /// we go straight to GPU readback instead.
+    ///
+    /// Allocates a fresh texture + staging buffer per call; sizes are
+    /// small (≤ 320×400) and call rate is one-per-template-card so
+    /// caching isn't worth the complexity.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen(js_name = renderPageToRgba)]
+    pub async fn render_page_to_rgba(
+        &mut self,
+        index: u32,
+        w: u32,
+        h: u32,
+    ) -> Result<Vec<u8>, JsValue> {
+        if w == 0 || h == 0 {
+            return Ok(Vec::new());
+        }
+        let state = self
+            .inner
+            .as_mut()
+            .ok_or_else(|| js_err("viewer not initialised"))?;
+        let bundle = self
+            .bundle
+            .as_ref()
+            .ok_or_else(|| js_err("no notebook loaded"))?;
+        let page = bundle
+            .pages
+            .get(index as usize)
+            .ok_or_else(|| js_err(format!("page index {index} out of range")))?;
+
+        let template = self
+            .template_by_page
+            .get(&page.id.0)
+            .cloned()
+            .unwrap_or_else(blank_template);
+        let strokes = self
+            .strokes_by_page
+            .get(&page.id.0)
+            .cloned()
+            .unwrap_or_default();
+
+        // Compute a fit-to-thumbnail viewport explicitly — don't touch
+        // `self.transform` since the live render path mutates it.
+        let (tw_mm, th_mm) = template.size_mm;
+        let zoom = ((w as f64 / tw_mm).min(h as f64 / th_mm)) * 0.95;
+        let viewport = template.default_viewport.unwrap_or(Viewport {
+            center: Point {
+                x: tw_mm * 0.5,
+                y: th_mm * 0.5,
+            },
+            zoom,
+            rotation: 0.0,
+        });
+        let transform = ViewportTransform::new(viewport, w as f64, h as f64);
+
+        let bg = page_template_background(&template);
+        let page_rect = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: tw_mm,
+            height: th_mm,
+        };
+
+        state.scene.reset();
+        build_scene(
+            &mut state.scene,
+            &transform,
+            &bg,
+            page_rect,
+            &template,
+            &strokes,
+            &mut self.widget_renderer,
+            w,
+            h,
+        );
+
+        // Off-screen render target. STORAGE_BINDING needed by vello's
+        // coarse rasteriser; COPY_SRC so we can copy_texture_to_buffer.
+        let texture = state.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("thumb-target"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: TEXTURE_FORMAT,
+            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        state
+            .renderer
+            .render_to_texture(
+                &state.device,
+                &state.queue,
+                &state.scene,
+                &view,
+                &RenderParams {
+                    base_color: PColor::from_rgba8(255, 255, 255, 255),
+                    width: w,
+                    height: h,
+                    antialiasing_method: AaConfig::Area,
+                },
+            )
+            .map_err(|e| js_err(format!("vello render: {e:?}")))?;
+
+        // Row pitch must be a multiple of 256. We pack the readback in
+        // the aligned stride and unpack on the way out.
+        let unpadded_bpr = w * 4;
+        let padded_bpr = unpadded_bpr.div_ceil(256) * 256;
+        let buffer_size = (padded_bpr as u64) * (h as u64);
+        let staging = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("thumb-staging"),
+            size: buffer_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = state
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("thumb-copy"),
+            });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &staging,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded_bpr),
+                    rows_per_image: Some(h),
+                },
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
+        state.queue.submit(std::iter::once(encoder.finish()));
+
+        // wasm wgpu's `map_async` returns a Promise; await it via
+        // wasm_bindgen_futures.
+        let buf_slice = staging.slice(..);
+        let (sender, receiver) = futures_channel::oneshot::channel();
+        buf_slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = sender.send(r);
+        });
+        receiver
+            .await
+            .map_err(|e| js_err(format!("map recv: {e}")))?
+            .map_err(|e| js_err(format!("map: {e:?}")))?;
+
+        let data = buf_slice.get_mapped_range();
+        let mut out = Vec::with_capacity((unpadded_bpr * h) as usize);
+        for row in 0..(h as usize) {
+            let start = row * padded_bpr as usize;
+            let end = start + unpadded_bpr as usize;
+            out.extend_from_slice(&data[start..end]);
+        }
+        drop(data);
+        staging.unmap();
+        Ok(out)
+    }
+
     pub fn pan(&mut self, dx: f64, dy: f64) {
         if let Some(t) = self.transform.as_mut() {
             t.pan(dx, dy);
