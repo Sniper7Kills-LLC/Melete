@@ -101,16 +101,14 @@ function realViewer(): Viewer {
     if (inner) return;
     try {
       // The wasm-bindgen `--target web` output exports a `default`
-      // initializer plus the named class. The init call points the
-      // module at the `.wasm` URL Vite resolves at build time.
-      // Path is built dynamically so TS doesn't try to resolve the
-      // generated file at typecheck (the `generated/` dir is
-      // gitignored and may not exist when `pnpm typecheck` runs).
-      // Path stored in a variable so tsc treats this as a dynamic
-      // import — the generated/ tree is gitignored and may not exist
-      // when `npm run typecheck` runs in CI. Vite resolves the literal
-      // at build time via the @vite-ignore hint.
-      const viewerPath = "./generated/viewer/melete_web_viewer.js";
+      // initializer plus the named class. Build-wasm.sh emits the
+      // generated tree to `web/public/wasm/viewer/`, which Vite
+      // copies to `dist/wasm/viewer/` verbatim — so the absolute
+      // URL `/wasm/viewer/…` works both in `vite dev` (public/
+      // mounted at /) and in the production build. Storing the path
+      // in a variable + `@vite-ignore` keeps tsc happy (the public/
+      // tree is gitignored and may not exist at typecheck).
+      const viewerPath = "/wasm/viewer/melete_web_viewer.js";
       const mod: any = await import(/* @vite-ignore */ viewerPath);
       // Default export is the wasm initializer fn.
       await mod.default();
@@ -209,11 +207,11 @@ function realShim(): Shim {
   async function ensure(): Promise<void> {
     if (mod || mockFallback) return;
     try {
-      // Dynamic path so TS doesn't try to resolve the gitignored
-      // generated module at typecheck.
-      // Dynamic-via-variable so tsc skips static resolution of the
-      // gitignored generated/ tree (see viewer above for rationale).
-      const shimPath = "./generated/shim/melete_web_shim.js";
+      // Absolute /wasm/shim/… URL — see the viewer comment above for
+      // the same `public/` -> `dist/` layout rationale. Dynamic-
+      // via-variable + `@vite-ignore` skips static resolution of
+      // the gitignored public/wasm/ tree.
+      const shimPath = "/wasm/shim/melete_web_shim.js";
       const m: any = await import(/* @vite-ignore */ shimPath);
       await m.default();
       mod = {
