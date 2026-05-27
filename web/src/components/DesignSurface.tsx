@@ -93,12 +93,12 @@ export function DesignSurface() {
     // divs. Without this, the viewer's load_notebook path fits the
     // template into the canvas with a 0.95 margin and the Vello widget
     // rects drift slightly off the SPA's overlay rects.
-    // Designer wants the CSS smart-guide overlay to own the grid
-    // display, so swap to a Blank background here — the shared
-    // `wrapTemplateForPreview` keeps the template's actual background
-    // by default for non-designer surfaces (Share, etc).
+    // Keep the template's real background so the designer preview
+    // matches what desktop will paint. The CSS smart-guide overlay
+    // toggles off in the JSX when the Vello render is live so the
+    // two grids don't double up.
     const bundle = wrapTemplateForPreview(template, zoom, {
-      keepBackground: false,
+      keepBackground: true,
     });
     const json = JSON.stringify(bundle);
     const bytes = new TextEncoder().encode(json);
@@ -194,7 +194,7 @@ export function DesignSurface() {
             ref={previewCanvasRef}
             className="pointer-events-none absolute inset-0 h-full w-full"
           />
-          {showGuides && (
+          {showGuides && !firstRenderDone && (
             <div
               className="pointer-events-none absolute inset-0"
               style={{

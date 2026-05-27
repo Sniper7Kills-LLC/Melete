@@ -26,6 +26,7 @@ import {
 } from "@/types/brush";
 import type { PageTemplate } from "@/types";
 import { shim } from "@/wasm";
+import { thumbnailFor } from "@/wasm/thumbnailer";
 
 /**
  * Gallery — public-facing browse of shareable artefacts (page
@@ -818,19 +819,39 @@ function PageTemplateTab({ data }: { data: LoadState<PageEntry> }) {
 
 function PageTemplateCard({ entry }: { entry: PageEntry }) {
   const [copied, setCopied] = useState(false);
+  const [thumb, setThumb] = useState<string | null>(null);
   function download() {
     void navigator.clipboard.writeText(entry.bodyToml).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     });
   }
+  useEffect(() => {
+    if (!entry.parsed) return;
+    let cancelled = false;
+    const [pw, ph] = entry.parsed.size_mm;
+    const targetW = 280;
+    const targetH = Math.max(1, Math.round((ph / pw) * targetW));
+    void thumbnailFor(entry.parsed, targetW, targetH).then((url) => {
+      if (!cancelled) setThumb(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.id, entry.parsed]);
   const widgetCount = entry.parsed?.widgets.length ?? null;
   return (
     <article className="flex flex-col overflow-hidden rounded border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md">
       <div
         className={`flex aspect-[3/4] items-center justify-center bg-gradient-to-br ${entry.swatch} relative`}
       >
-        {entry.parsed ? (
+        {thumb ? (
+          <img
+            src={thumb}
+            alt={entry.name}
+            className="h-[88%] w-[80%] rounded bg-white object-contain shadow"
+          />
+        ) : entry.parsed ? (
           <PageThumbnail
             template={entry.parsed}
             templateId={entry.id}
