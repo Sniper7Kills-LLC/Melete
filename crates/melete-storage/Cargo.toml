@@ -22,7 +22,7 @@ toml = { workspace = true }
 sha2 = "0.10"
 hex = "0.4"
 dirs = { workspace = true }
-hmac = { version = "0.12", optional = true }
+hmac = { version = "0.13", optional = true }
 keyring = { version = "3", default-features = false, features = ["sync-secret-service", "crypto-rust"], optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"], optional = true }
 base64 = { version = "0.22", optional = true }
