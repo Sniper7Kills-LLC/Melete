@@ -34,7 +34,7 @@ uuid = { workspace = true }
 dirs = { workspace = true }
 toml = { workspace = true }
 serde = { workspace = true }
-poppler-rs = { version = "0.24", features = ["v22_7"], optional = true }
+poppler-rs = { version = "0.26", features = ["v22_7"], optional = true }
 glow = { version = "0.16", optional = true }
 libloading = { version = "0.8", optional = true }
 melete-widgets = { path = "../melete-widgets", optional = true }

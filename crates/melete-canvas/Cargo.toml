@@ -16,7 +16,7 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
-poppler-rs = { version = "0.24", features = ["v22_7"], optional = true }
+poppler-rs = { version = "0.26", features = ["v22_7"], optional = true }
 vello = { version = "0.8", optional = true }
 pollster = { version = "0.4", optional = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif"], optional = true }
